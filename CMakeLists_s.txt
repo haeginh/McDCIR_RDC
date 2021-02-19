@@ -23,6 +23,7 @@ set(CMAKE_C_STANDARD 99)
 #option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
 #find_package(LIBIGL REQUIRED QUIET)
 
+include_directories(${PROJECT_SOURCE_DIR}/include)
 file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cc)
 file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.h)
 
