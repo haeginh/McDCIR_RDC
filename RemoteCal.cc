@@ -342,9 +342,10 @@ int main(int argc, char** argv){
 
     MatrixXd V_calib;
     MatrixXd C_calib;
+    MatrixXd jointTrans;
     if(calibFrame){
         int headJ(24), eyeLJ(22), eyeRJ(23);
-        MatrixXd jointTrans = MatrixXd::Zero(C.rows(),3);
+        jointTrans = MatrixXd::Zero(C.rows(),3);
          for(int i=0;i<BE.rows();i++){
             if(calibLengths.find(i)==calibLengths.end()){
                 calibLengths[i] = lengths[i];
@@ -424,6 +425,14 @@ int main(int argc, char** argv){
                 if(listenerIP.empty()){
                     cout<<"Listener IP: "; cin>>listenerIP;
                     cout<<"Listener port: "; cin>>listenerPort;
+                    cout<<"Send calib info to listener.."<<flush;
+                    try {
+                        ClientSocket client_socket(listenerIP, listenerPort );
+                        client_socket << "calib info" ;
+                        client_socket.SendDoubleBuffer(jointTrans.block(0,0,C.rows()-1,3).data(),72);
+                    }
+                    catch (SocketException& e) {cout << "Exception was caught:" << e.description() << endl;}
+                    cout<<"done"<<endl;
                 }
                 cout<<"Start the dose calculation!>>>>>>>>>>>>>"<<endl;
             }

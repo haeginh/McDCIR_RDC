@@ -166,11 +166,11 @@ int Socket::recv ( std::string& s ) const
 
 int Socket::recv ( double* arr, int num) const
 {
-  double buf[num];
+  //double buf[num];
 
-  int status = ::recv ( m_sock, (void*) buf, num*sizeof(double), 0 );
+  int status = ::recv ( m_sock, (void*) arr, num*sizeof(double), 0 );
 
-  for(int i=0;i<num;i++) std::cout<<buf[i]<<std::endl;
+  //for(int i=0;i<num;i++) std::cout<<buf[i]<<std::endl;
   if ( status == -1 )
     {
       std::cout << "status == -1   errno == " << errno << "  in Socket::recv\n";
