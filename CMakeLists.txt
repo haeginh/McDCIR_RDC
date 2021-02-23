@@ -49,6 +49,7 @@ target_link_libraries(RemoteCal PRIVATE
     igl::opengl_glfw
     igl::tetgen
     )
-
+target_link_libraries(Calculator ${Geant4_LIBRARIES})
+target_link_libraries(Listener ${Geant4_LIBRARIES})
 
 

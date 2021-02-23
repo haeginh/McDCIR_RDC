@@ -4,7 +4,7 @@
 #include <vector>
 #include <array>
 #include <utility>
-#include <igl/Timer.h>
+#include "G4Timer.hh"
 
 using namespace std;
 int main ( int argc, char** argv )
@@ -46,7 +46,7 @@ int main ( int argc, char** argv )
                     new_sock.SendIntBuffer(&errCode, 1);
                 }
                 else if(data=="init"){
-                    igl::Timer timer; timer.start();
+                    G4Timer timer; timer.Start();
                     int vNum; new_sock.RecvIntBuffer(&vNum,1);
                     cout<<"Get data for "<<vNum<<" vertices..."<<flush;
                     for(int i=0;i<vNum;i++){
@@ -59,8 +59,8 @@ int main ( int argc, char** argv )
                         W.push_back(w);
                         new_sock.RecvDoubleBuffer(wj.data(),24);
                         Wj.push_back(wj);
-                    } timer.stop(); double vTime = timer.getElapsedTimeInSec();
-                    cout<<vTime<<endl; timer.start();
+                    } timer.Stop(); double vTime = timer.GetRealElapsed();
+                    cout<<vTime<<endl; timer.Start();
 
                     int tNum; new_sock.RecvIntBuffer(&tNum,1);
                     cout<<"Get data for "<<tNum<<" tetrahedrons..."<<flush;
@@ -68,8 +68,8 @@ int main ( int argc, char** argv )
                         array<int, 4> t;
                         new_sock.RecvIntBuffer(t.data(),4);
                         T.push_back(t);
-                    }timer.stop(); double tTime = timer.getElapsedTimeInSec();
-                    cout<<tTime<<endl; timer.start();
+                    }timer.Stop(); double tTime = timer.GetRealElapsed();
+                    cout<<tTime<<endl; timer.Start();
 
                     int fNum; new_sock.RecvIntBuffer(&fNum,1);
                     cout<<"Get data for "<<fNum<<" faces..."<<flush;
@@ -77,8 +77,8 @@ int main ( int argc, char** argv )
                         array<int, 3> f;
                         new_sock.RecvIntBuffer(f.data(),3);
                         F.push_back(f);
-                    }timer.stop();double fTime = timer.getElapsedTimeInSec();
-                    cout<<fTime<<endl; timer.start();
+                    }timer.Stop(); double fTime = timer.GetRealElapsed();
+                    cout<<fTime<<endl; timer.Start();
 
                     cout<<"total: "<<vTime+fTime+tTime<<endl;
                     break;
@@ -125,7 +125,7 @@ int main ( int argc, char** argv )
                     string str;
                     new_sock >> str; cout<<"Get data for "+str+" vertices..."<<flush;
                     int vNum = atoi(str.c_str());
-                    igl::Timer timer; timer.start();
+                    G4Timer timer; timer.Start();
                     for(int i=0;i<vNum;i++){
                         array<double, 3> p;
                         array<double, 22> w;
@@ -133,8 +133,8 @@ int main ( int argc, char** argv )
                         new_sock.RecvDoubleBuffer(p.data(),3);
                         new_sock.RecvDoubleBuffer(w.data(),22);
                         new_sock.RecvDoubleBuffer(wj.data(),24);
-                    }timer.stop();
-                    cout<<timer.getElapsedTimeInSec()<<endl;
+                    }timer.Stop();
+                    cout<<timer.GetRealElapsed()<<endl;
                 }
                 else if(data=="calib info"){
                     new_sock.RecvDoubleBuffer(calib.data(),72);
