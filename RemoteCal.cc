@@ -28,14 +28,10 @@
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
 
-typedef
-  std::vector<Eigen::Quaterniond,Eigen::aligned_allocator<Eigen::Quaterniond> >
-  RotationList;
-
 void PrintUsage(){
     cout<<"<Usage>"<<endl;
     cout<<"pre-processing    -> ./MotionCapt [phantom_prefix(.mesh, .tgf)] [outer.ply]"<<endl;
-    cout<<"animating/doseCal -> ./MotionCapt [phantom_prefix(.mesh, .tgf, _o.dmat, _oj.dmat, _o.bary)] (-ply [internal.ply])"<<endl;
+    cout<<"animating/doseCal -> ./MotionCapt [phantom_prefix(.mesh, .tgf, _o.dmat, _oj.dmat, _o.bary)] (-rst [rst.ply])"<<endl;
     cout<<"                     (PLY file is for animating visualization)"<<endl;
     exit(1);
 }
@@ -167,19 +163,53 @@ int main(int argc, char** argv){
     cout<<"Read "+prefix+"_oj.dmat"<<endl;
     igl::readDMAT(prefix+"_oj.dmat",W_j);
     igl::normalize_row_sums(W_j,W_j);
-    cout<<"Read "+prefix+".mesh"<<endl;
-    igl::readMESH(prefix+".mesh", V, T, F);
-    cout<<"Read "+prefix+".bary"<<endl;
-    map<int, map<int, double>> baryCoord = ReadBaryFile(prefix+".bary");
-    SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V_o.rows());
+//    cout<<"Read "+prefix+".mesh"<<endl;
+//    igl::readMESH(prefix+".mesh", V, T, F);
+//    cout<<"Read "+prefix+".bary"<<endl;
+//    map<int, map<int, double>> baryCoord = ReadBaryFile(prefix+".bary");
+//    SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V_o.rows());
 
+    MatrixXd V_v2, T_v2, W_v2, Wj_v2; //data for version 2
+    string listenerIP; int listenerPort;
     if(argc==4){
-        if(string(argv[2])!="-ply") PrintUsage();
+        if(string(argv[2])!="-rst") PrintUsage();
         MatrixXd V_ply; MatrixXi F_ply;
         cout<<"Set for "<<string(argv[3])<<endl;
         igl::readPLY(string(argv[3]),V_ply,F_ply);
-        baryCoord = GenerateBarycentricCoord(V_o,T_o,V_ply);
-        bary = GenerateBarySparse(baryCoord,V_o.rows());
+        map<int, map<int, double>> baryCoord = GenerateBarycentricCoord(V_o,T_o,V_ply);
+        SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V_o.rows());
+
+        MatrixXi F_tmp;
+        igl::copyleft::tetgen::tetrahedralize(V_ply, F_ply, "pYq", V_v2, T_v2, F_tmp);
+        map<int, map<int, double>> baryCoord2 = GenerateBarycentricCoord(V_o,T_o,V_v2);
+        SparseMatrix<double> bary2 = GenerateBarySparse(baryCoord2,V_o.rows());
+        W_v2 = bary2 * W_o; Wj_v2 = bary2*W_j;
+
+        cout<<"Listener IP: "; cin>>listenerIP;
+        cout<<"Listener port: "; cin>>listenerPort;
+        cout<<"Send calib info to listener.."<<flush;
+        try {
+            ClientSocket client_socket(listenerIP, listenerPort );
+            client_socket << "init" ;
+            int vNum = V_v2.rows();
+            client_socket.SendIntBuffer(&vNum,1);
+            for(int i=0;i<vNum;i++){
+                client_socket.SendDoubleBuffer(V_v2.row(i).data(),3);
+                client_socket.SendDoubleBuffer(W_v2.row(i).data(),22);
+                client_socket.SendDoubleBuffer(Wj_v2.row(i).data(),24);
+            }
+            int tNum = T_v2.rows();
+            client_socket.SendIntBuffer(&tNum,1);
+            for(int i=0;i<tNum;i++)
+                client_socket.SendDoubleBuffer(T_v2.row(i).data(),4);
+            int fNum = F_ply.rows();
+            client_socket.SendIntBuffer(&fNum,1);
+            for(int i=0;i<fNum;i++)
+                client_socket.SendIntBuffer(F_ply.row(i).data(),3);
+        }
+        catch (SocketException& e) {cout << "Exception was caught:" << e.description() << endl;}
+        cout<<"done"<<endl;
+
         V_o = V_ply; F_o = F_ply; W_o = bary*W_o; W_j = bary*W_j;
     }
 
@@ -311,7 +341,7 @@ int main(int argc, char** argv){
                 k4abt_body_t body;
                 VERIFY(k4abt_frame_get_body_skeleton(bodyFrame, 0, &body.skeleton), "Get skeleton from body frame failed!");
                 for(int i=0;i<BE.rows();i++){
-                    if(BE(i,1)>=i2k.size()) continue; //extrimity
+                    if(BE(i,1)>=(int)i2k.size()) continue; //extrimity
                     k4a_float3_t t0 = body.skeleton.joints[i2k[BE(i,0)]].position;
                     k4a_float3_t t1 = body.skeleton.joints[i2k[BE(i,1)]].position;
                     float d[3] = {t1.xyz.x-t0.xyz.x,t1.xyz.y-t0.xyz.y,t1.xyz.z-t0.xyz.z};
@@ -391,7 +421,7 @@ int main(int argc, char** argv){
      }
     viewer.data().show_custom_labels = true;
     bool calib(false), doseCal(false);
-    string listenerIP; int listenerPort;
+
     viewer.callback_key_down = [&](igl::opengl::glfw::Viewer &,unsigned char key, int)->bool
     {
         switch(key){
@@ -475,7 +505,7 @@ int main(int argc, char** argv){
                 if(k4abt_frame_get_num_bodies(bodyFrame)) {
                     k4abt_body_t body;
                     k4abt_frame_get_body_skeleton(bodyFrame, 0, &body.skeleton);
-                    for(int i=0;i<poseJoints.size();i++){
+                    for(size_t i=0;i<poseJoints.size();i++){
                         C_disp(i,0)=body.skeleton.joints[poseJoints[i]].position.xyz.x*0.1;
                         C_disp(i,1)=body.skeleton.joints[poseJoints[i]].position.xyz.y*0.1;
                         C_disp(i,2)=body.skeleton.joints[poseJoints[i]].position.xyz.z*0.1;
@@ -508,6 +538,7 @@ int main(int argc, char** argv){
                         try {
                             ClientSocket client_socket(listenerIP, listenerPort );
                             client_socket << "quaternion" ;
+                            if(!calib) stamp = -stamp;
                             client_socket.SendDoubleBuffer(&stamp,1);
 
                             double arrQ[88], arrT[66];

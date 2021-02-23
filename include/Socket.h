@@ -40,7 +40,9 @@ class Socket
 
   // Buffer Transimission
   bool send ( const double*, int ) const;
+  bool send ( const int*, int ) const;
   int recv ( double*, int ) const;
+  int recv ( int*, int ) const;
 
 
   void set_non_blocking ( const bool );

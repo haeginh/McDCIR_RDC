@@ -49,6 +49,24 @@ const ClientSocket& ClientSocket::SendDoubleBuffer ( const double* buf, int num)
     return *this;
 }
 
+const ClientSocket& ClientSocket::RecvIntBuffer ( int* arr, int num ) const
+{
+  if ( ! Socket::recv ( arr, num ) )
+    {
+      throw SocketException ( "Could not read from socket." );
+    }
+
+  return *this;
+}
+
+const ClientSocket& ClientSocket::SendIntBuffer ( const int* buf, int num) const{
+    if ( ! Socket::send ( buf, num ) )
+      {
+        throw SocketException ( "Could not write to socket." );
+      }
+
+    return *this;
+}
 
 const ClientSocket& ClientSocket::operator >> ( std::string& s ) const
 {

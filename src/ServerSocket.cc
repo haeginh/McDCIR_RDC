@@ -69,6 +69,25 @@ const ServerSocket& ServerSocket::SendDoubleBuffer ( const double* buf, int num)
     return *this;
 }
 
+const ServerSocket& ServerSocket::RecvIntBuffer ( int* arr, int num ) const
+{
+  if ( ! Socket::recv ( arr, num ) )
+    {
+      throw SocketException ( "Could not read from socket." );
+    }
+
+  return *this;
+}
+
+const ServerSocket& ServerSocket::SendIntBuffer ( const int* buf, int num) const{
+    if ( ! Socket::send ( buf, num ) )
+      {
+        throw SocketException ( "Could not write to socket." );
+      }
+
+    return *this;
+}
+
 void ServerSocket::accept ( ServerSocket& sock )
 {
   if ( ! Socket::accept ( sock ) )

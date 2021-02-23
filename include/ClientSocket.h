@@ -19,6 +19,8 @@ class ClientSocket : private Socket
 
   const ClientSocket& RecvDoubleBuffer ( double*, int ) const;
   const ClientSocket& SendDoubleBuffer ( const double*, int ) const;
+  const ClientSocket& RecvIntBuffer ( int*, int ) const;
+  const ClientSocket& SendIntBuffer ( const int*, int ) const;
 
   const bool is_valid() const { return Socket::is_valid(); }
 };

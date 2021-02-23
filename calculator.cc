@@ -1,5 +1,6 @@
 #include "ClientSocket.h"
 #include "SocketException.h"
+#include "ModelImport.h"
 #include <iostream>
 #include <string>
 #include <array>
@@ -7,19 +8,21 @@
 using namespace std;
 int main ( int argc, char** argv)
 {
+    //read mesh file
+    G4String model(argv[1]);
+    ModelImport modelImport(model);
+
+
     array<double, 72> calib;
     bool calibRecved(false);
 
     try{
         while(!calibRecved){
             ClientSocket client_socket_init ( "localhost", 30303 );
-            client_socket_init<<"init";
-            string reply;
-            client_socket_init>> reply;
-            if(reply=="prepared"){
-                client_socket_init.RecvDoubleBuffer(calib.data(),72);
-                calibRecved = true;
-            }
+            client_socket_init<<"init_c";
+            int vNum;
+            client_socket_init.RecvIntBuffer(&vNum,1);
+            if(!vNum)continue;
         }
 
         while(true){
