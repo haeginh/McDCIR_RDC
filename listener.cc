@@ -40,14 +40,15 @@ int main ( int argc, char** argv )
             {
                 ServerSocket new_sock;
                 server.accept ( new_sock );
-                std::string data;
+                std::string data("");
                 new_sock >> data;
                 if(data=="init_c"){
                     new_sock.SendIntBuffer(&errCode, 1);
                 }
-                else if(data=="init"){
+                else if(data.substr(0,4)=="init"){
                     G4Timer timer; timer.Start();
-                    int vNum; new_sock.RecvIntBuffer(&vNum,1);
+                    string dump; int vNum, tNum, fNum;
+                    stringstream ss(data); ss>>dump>>vNum>>tNum>>fNum;
                     cout<<"Get data for "<<vNum<<" vertices..."<<flush;
                     for(int i=0;i<vNum;i++){
                         array<double, 3> p;
@@ -62,7 +63,6 @@ int main ( int argc, char** argv )
                     } timer.Stop(); double vTime = timer.GetRealElapsed();
                     cout<<vTime<<endl; timer.Start();
 
-                    int tNum; new_sock.RecvIntBuffer(&tNum,1);
                     cout<<"Get data for "<<tNum<<" tetrahedrons..."<<flush;
                     for(int i=0;i<tNum;i++){
                         array<int, 4> t;
@@ -71,7 +71,6 @@ int main ( int argc, char** argv )
                     }timer.Stop(); double tTime = timer.GetRealElapsed();
                     cout<<tTime<<endl; timer.Start();
 
-                    int fNum; new_sock.RecvIntBuffer(&fNum,1);
                     cout<<"Get data for "<<fNum<<" faces..."<<flush;
                     for(int i=0;i<fNum;i++){
                         array<int, 3> f;

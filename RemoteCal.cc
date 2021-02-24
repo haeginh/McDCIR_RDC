@@ -187,24 +187,18 @@ int main(int argc, char** argv){
 
         cout<<"Listener IP: "; cin>>listenerIP;
         cout<<"Listener port: "; cin>>listenerPort;
-        cout<<"Send calib info to listener.."<<flush;
+        cout<<"Send init info to listener.."<<flush;
         try {
-            ClientSocket client_socket(listenerIP, listenerPort );
-            client_socket << "init" ;
-            int vNum = V_v2.rows();
-            client_socket.SendIntBuffer(&vNum,1);
-            for(int i=0;i<vNum;i++){
+            ClientSocket client_socket(listenerIP, listenerPort);
+            client_socket << "init "+to_string(V_v2.rows())+" "+to_string(T_v2.rows())+" "+to_string(F_ply.rows()) ;
+            for(int i=0;i<V_v2.rows();i++){
                 client_socket.SendDoubleBuffer(V_v2.row(i).data(),3);
                 client_socket.SendDoubleBuffer(W_v2.row(i).data(),22);
                 client_socket.SendDoubleBuffer(Wj_v2.row(i).data(),24);
             }
-            int tNum = T_v2.rows();
-            client_socket.SendIntBuffer(&tNum,1);
-            for(int i=0;i<tNum;i++)
+            for(int i=0;i<T_v2.rows();i++)
                 client_socket.SendDoubleBuffer(T_v2.row(i).data(),4);
-            int fNum = F_ply.rows();
-            client_socket.SendIntBuffer(&fNum,1);
-            for(int i=0;i<fNum;i++)
+            for(int i=0;i<F_ply.rows();i++)
                 client_socket.SendIntBuffer(F_ply.row(i).data(),3);
         }
         catch (SocketException& e) {cout << "Exception was caught:" << e.description() << endl;}
