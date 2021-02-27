@@ -22,10 +22,9 @@ include(${Geant4_USE_FILE})
 FIND_PACKAGE(k4a REQUIRED)
 FIND_PACKAGE(k4abt REQUIRED)
 
+# libigl
 add_subdirectory(extern)
 add_subdirectory(helper)
-
-# libigl
 option(LIBIGL_WITH_OPENGL            "Use OpenGL"         ON)
 option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
 option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
@@ -48,6 +47,7 @@ target_link_libraries(RemoteCal PRIVATE
     igl::core
     igl::opengl_glfw
     igl::tetgen
+    ${Geant4_LIBRARIES}
     )
 target_link_libraries(Calculator ${Geant4_LIBRARIES})
 target_link_libraries(Listener ${Geant4_LIBRARIES})

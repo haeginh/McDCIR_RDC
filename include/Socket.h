@@ -49,6 +49,9 @@ class Socket
 
   bool is_valid() const { return m_sock != -1; }
 
+  //Get functions
+  sockaddr_in GetAdrrInfo() {return m_addr;}
+
  private:
 
   int m_sock;

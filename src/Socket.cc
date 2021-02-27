@@ -38,7 +38,9 @@ bool Socket::create()
   int on = 1;
   if ( setsockopt ( m_sock, SOL_SOCKET, SO_REUSEADDR, ( const char* ) &on, sizeof ( on ) ) == -1 )
     return false;
-
+//  timeval tv;
+//  tv.tv_sec = 300;
+//setsockopt ( m_sock, SOL_SOCKET, SO_RCVTIMEO, ( const char* ) &tv, sizeof ( timeval ) ) ;
 
   return true;
 
@@ -97,7 +99,6 @@ bool Socket::accept ( Socket& new_socket ) const
 {
   int addr_length = sizeof ( m_addr );
   new_socket.m_sock = ::accept ( m_sock, ( sockaddr * ) &m_addr, ( socklen_t * ) &addr_length );
-
   if ( new_socket.m_sock <= 0 )
     return false;
   else
@@ -126,7 +127,7 @@ bool Socket::send ( const std::string s ) const
 
 bool Socket::send ( const double* buff, int num ) const
 {
-  int status = ::send ( m_sock, (void*) buff, sizeof(double)*num, MSG_NOSIGNAL );
+  int status = ::send ( m_sock, (void*) buff, num*8, MSG_NOSIGNAL );
   if ( status == -1 )
     {
       return false;
@@ -179,7 +180,7 @@ int Socket::recv ( std::string& s ) const
 
 int Socket::recv ( double* arr, int num) const
 {
-  int status = ::recv ( m_sock, (void*) arr, num*sizeof(double), 0 );
+  int status = ::recv ( m_sock, (void*) arr, num*8, 0 );
 
   if ( status == -1 )
     {

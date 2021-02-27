@@ -163,49 +163,58 @@ int main(int argc, char** argv){
     cout<<"Read "+prefix+"_oj.dmat"<<endl;
     igl::readDMAT(prefix+"_oj.dmat",W_j);
     igl::normalize_row_sums(W_j,W_j);
-//    cout<<"Read "+prefix+".mesh"<<endl;
-//    igl::readMESH(prefix+".mesh", V, T, F);
-//    cout<<"Read "+prefix+".bary"<<endl;
-//    map<int, map<int, double>> baryCoord = ReadBaryFile(prefix+".bary");
-//    SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V_o.rows());
+    //    cout<<"Read "+prefix+".mesh"<<endl;
+    //    igl::readMESH(prefix+".mesh", V, T, F);
+    //    cout<<"Read "+prefix+".bary"<<endl;
+    //    map<int, map<int, double>> baryCoord = ReadBaryFile(prefix+".bary");
+    //    SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V_o.rows());
 
-    MatrixXd V_v2, T_v2, W_v2, Wj_v2; //data for version 2
+    MatrixXd V_v2, W_v2, Wj_v2; //data for version 2
+    MatrixXi T_v2;
+    //    if(argc==4){
+    if(string(argv[2])!="-rst") PrintUsage();
+    MatrixXd V_ply; MatrixXi F_ply;
+    cout<<"Set for "<<string(argv[3])<<endl;
+    igl::readPLY(string(argv[3]),V_ply,F_ply);
+    map<int, map<int, double>> baryCoord = GenerateBarycentricCoord(V_o,T_o,V_ply);
+    SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V_o.rows());
+
+    MatrixXi F_tmp;
+    igl::copyleft::tetgen::tetrahedralize(V_ply, F_ply, "pYq", V_v2, T_v2, F_tmp);
+    map<int, map<int, double>> baryCoord2 = GenerateBarycentricCoord(V_o,T_o,V_v2);
+    SparseMatrix<double> bary2 = GenerateBarySparse(baryCoord2,V_o.rows());
+    W_v2 = bary2 * W_o; Wj_v2 = bary2*W_j;
+
+    //    try {
     string listenerIP; int listenerPort;
-    if(argc==4){
-        if(string(argv[2])!="-rst") PrintUsage();
-        MatrixXd V_ply; MatrixXi F_ply;
-        cout<<"Set for "<<string(argv[3])<<endl;
-        igl::readPLY(string(argv[3]),V_ply,F_ply);
-        map<int, map<int, double>> baryCoord = GenerateBarycentricCoord(V_o,T_o,V_ply);
-        SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V_o.rows());
-
-        MatrixXi F_tmp;
-        igl::copyleft::tetgen::tetrahedralize(V_ply, F_ply, "pYq", V_v2, T_v2, F_tmp);
-        map<int, map<int, double>> baryCoord2 = GenerateBarycentricCoord(V_o,T_o,V_v2);
-        SparseMatrix<double> bary2 = GenerateBarySparse(baryCoord2,V_o.rows());
-        W_v2 = bary2 * W_o; Wj_v2 = bary2*W_j;
-
-        cout<<"Listener IP: "; cin>>listenerIP;
-        cout<<"Listener port: "; cin>>listenerPort;
-        cout<<"Send init info to listener.."<<flush;
-        try {
-            ClientSocket client_socket(listenerIP, listenerPort);
-            client_socket << "init "+to_string(V_v2.rows())+" "+to_string(T_v2.rows())+" "+to_string(F_ply.rows()) ;
-            for(int i=0;i<V_v2.rows();i++){
-                client_socket.SendDoubleBuffer(V_v2.row(i).data(),3);
-                client_socket.SendDoubleBuffer(W_v2.row(i).data(),22);
-                client_socket.SendDoubleBuffer(Wj_v2.row(i).data(),24);
-            }
-            for(int i=0;i<T_v2.rows();i++)
-                client_socket.SendDoubleBuffer(T_v2.row(i).data(),4);
-            for(int i=0;i<F_ply.rows();i++)
-                client_socket.SendIntBuffer(F_ply.row(i).data(),3);
-        }
-        catch (SocketException& e) {cout << "Exception was caught:" << e.description() << endl;}
-        cout<<"done"<<endl;
-
-        V_o = V_ply; F_o = F_ply; W_o = bary*W_o; W_j = bary*W_j;
+    cout<<"Listener IP: "; cin>>listenerIP;
+    cout<<"Listener port: "; cin>>listenerPort;
+    ClientSocket client_socket(listenerIP, listenerPort);
+    cout<<"Send init info to listener.."<<flush;
+    client_socket << "init "+to_string(V_v2.rows())+" "+to_string(T_v2.rows())+" "+to_string(F_ply.rows()) ;
+    for(int i=0;i<V_v2.rows();i++){
+        Vector3d v=V_v2.row(i);
+        client_socket.SendDoubleBuffer(v.data(),3, 1);
+        VectorXd w=W_v2.row(i);
+        client_socket.SendDoubleBuffer(w.data(),22, 1);
+        VectorXd wj=Wj_v2.row(i);
+        client_socket.SendDoubleBuffer(wj.row(i).data(),24, 1);
     }
+
+    for(int i=0;i<T_v2.rows();i++){
+        VectorXi t=T_v2.row(i);
+        client_socket.SendIntBuffer(t.data(),4);
+    }
+    for(int i=0;i<F_ply.rows();i++){
+        Vector3i f=F_ply.row(i);
+        client_socket.SendIntBuffer(f.data(),3);
+    }
+    //     }
+    //     catch (SocketException& e) {cout << "Exception was caught:" << e.description() << endl;}
+    cout<<"done"<<endl;
+
+    V_o = V_ply; F_o = F_ply; W_o = bary*W_o; W_j = bary*W_j;
+    //   }
 
     vector<map<int, double>> cleanWeights;
     double epsilon(1e-5);
@@ -272,7 +281,7 @@ int main(int argc, char** argv){
     tf2<<0,-1,0,1,0,0,0,0,1;
     kinectDataRot[14]=Quaterniond(tf2);
 
-   RotationList alignRot;
+    RotationList alignRot;
     map<int, Vector3d> desiredOrt;
     groups={12,13,5,6,22,23,18,19};
     for(int id:groups) desiredOrt[id] = Vector3d(0,1,0);
@@ -301,7 +310,7 @@ int main(int argc, char** argv){
     window3d.SetKeyCallback(ProcessKey);
 
     int calibFrame(0);
-//    map<int, Vec3> uprightOrien;
+    //    map<int, Vec3> uprightOrien;
     map<int, double> calibLengths;
     Vector3d eyeL_pos(0,0,0), eyeR_pos(0,0,0);
 
@@ -366,11 +375,10 @@ int main(int argc, char** argv){
 
     MatrixXd V_calib;
     MatrixXd C_calib;
-    MatrixXd jointTrans;
+    MatrixXd jointTrans = MatrixXd::Zero(C.rows(),3);;
     if(calibFrame){
         int headJ(24), eyeLJ(22), eyeRJ(23);
-        jointTrans = MatrixXd::Zero(C.rows(),3);
-         for(int i=0;i<BE.rows();i++){
+        for(int i=0;i<BE.rows();i++){
             if(calibLengths.find(i)==calibLengths.end()){
                 calibLengths[i] = lengths[i];
                 jointTrans.row(BE(i,1)) = jointTrans.row(BE(P(i),1));
@@ -384,18 +392,20 @@ int main(int argc, char** argv){
             jointTrans.row(BE(i,1)) += jointTrans.row(BE(P(i),1));
         }
 
-         eyeR_pos /= (double)calibFrame*10;
-         eyeL_pos /= (double)calibFrame*10;
-         jointTrans.row(eyeLJ) = C.row(headJ) + jointTrans.row(headJ) + eyeL_pos.transpose() - C.row(eyeLJ);
-         jointTrans.row(eyeRJ) = C.row(headJ) + jointTrans.row(headJ) + eyeR_pos.transpose() - C.row(eyeRJ);
-         jointTrans.row(headJ) = MatrixXd::Zero(1,3); jointTrans(headJ, 1) = (jointTrans(eyeLJ,1)+jointTrans(eyeRJ,1))*0.5;
-         C_calib = C+jointTrans;
+        eyeR_pos /= (double)calibFrame*10;
+        eyeL_pos /= (double)calibFrame*10;
+        jointTrans.row(eyeLJ) = C.row(headJ) + jointTrans.row(headJ) + eyeL_pos.transpose() - C.row(eyeLJ);
+        jointTrans.row(eyeRJ) = C.row(headJ) + jointTrans.row(headJ) + eyeR_pos.transpose() - C.row(eyeRJ);
+        jointTrans.row(headJ) = MatrixXd::Zero(1,3); jointTrans(headJ, 1) = (jointTrans(eyeLJ,1)+jointTrans(eyeRJ,1))*0.5;
+        C_calib = C+jointTrans;
 
-         cout<<W_j.rows()<<"*"<<W_j.cols()<<endl;
-         cout<<jointTrans.rows()<<"*"<<jointTrans.cols()<<endl;
+        cout<<W_j.rows()<<"*"<<W_j.cols()<<endl;
+        cout<<jointTrans.rows()<<"*"<<jointTrans.cols()<<endl;
         V_calib = V_o+W_j*jointTrans.block(0,0,C.rows()-1,3);
     }
-
+    MatrixXd jt = jointTrans.block(0,0,C.rows()-1,3);
+    client_socket.SendDoubleBuffer(jt.data(), jt.size());
+    cout<<jt<<endl;
 
     // igl viewer
     igl::opengl::glfw::Viewer viewer;
@@ -412,7 +422,7 @@ int main(int argc, char** argv){
         Vector3d pos = (C.row(BE(i,0))+C.row(BE(i,1))).transpose()*0.5 + Vector3d(1,0,0);
         string label = to_string(i);
         viewer.data().add_label(pos,label);
-     }
+    }
     viewer.data().show_custom_labels = true;
     bool calib(false), doseCal(false);
 
@@ -445,22 +455,8 @@ int main(int argc, char** argv){
             return true;
         case '/': //calculate dose
             doseCal = !doseCal;
-            if(doseCal){
-                if(listenerIP.empty()){
-                    cout<<"Listener IP: "; cin>>listenerIP;
-                    cout<<"Listener port: "; cin>>listenerPort;
-                    cout<<"Send calib info to listener.."<<flush;
-                    try {
-                        ClientSocket client_socket(listenerIP, listenerPort );
-                        client_socket << "calib info" ;
-                        client_socket.SendDoubleBuffer(jointTrans.block(0,0,C.rows()-1,3).data(),72);
-                    }
-                    catch (SocketException& e) {cout << "Exception was caught:" << e.description() << endl;}
-                    cout<<"done"<<endl;
-                }
-                cout<<"Start the dose calculation!>>>>>>>>>>>>>"<<endl;
-            }
-            else cout<<"<<<<<<<<<<<<<Stop the dose calculation!"<<endl;
+            if(doseCal) cout<<"Start the dose calculation!>>>>>>>>>>>>>"<<endl;
+                   else cout<<"<<<<<<<<<<<<<Stop the dose calculation!"<<endl;
             return true;
         }
         return true;
@@ -530,8 +526,6 @@ int main(int argc, char** argv){
                     if(doseCal){
                         //TCP/IP
                         try {
-                            ClientSocket client_socket(listenerIP, listenerPort );
-                            client_socket << "quaternion" ;
                             if(!calib) stamp = -stamp;
                             client_socket.SendDoubleBuffer(&stamp,1);
 

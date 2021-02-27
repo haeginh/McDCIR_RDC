@@ -25,7 +25,7 @@ const ClientSocket& ClientSocket::operator << ( const std::string& s ) const
     {
       throw SocketException ( "Could not write to socket." );
     }
-
+  else usleep(1);
   return *this;
 
 }
@@ -40,12 +40,12 @@ const ClientSocket& ClientSocket::RecvDoubleBuffer ( double* arr, int num ) cons
   return *this;
 }
 
-const ClientSocket& ClientSocket::SendDoubleBuffer ( const double* buf, int num) const{
+const ClientSocket& ClientSocket::SendDoubleBuffer ( const double* buf, int num, int wait) const{
     if ( ! Socket::send ( buf, num ) )
       {
         throw SocketException ( "Could not write to socket." );
       }
-
+    else usleep(wait);
     return *this;
 }
 
@@ -59,12 +59,12 @@ const ClientSocket& ClientSocket::RecvIntBuffer ( int* arr, int num ) const
   return *this;
 }
 
-const ClientSocket& ClientSocket::SendIntBuffer ( const int* buf, int num) const{
+const ClientSocket& ClientSocket::SendIntBuffer ( const int* buf, int num, int wait) const{
     if ( ! Socket::send ( buf, num ) )
       {
         throw SocketException ( "Could not write to socket." );
       }
-
+    else usleep(wait);
     return *this;
 }
 

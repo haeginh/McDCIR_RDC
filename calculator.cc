@@ -9,32 +9,35 @@ using namespace std;
 int main ( int argc, char** argv)
 {
     //read mesh file
-    G4String model(argv[1]);
-    ModelImport modelImport(model);
-
-
-    array<double, 72> calib;
-    bool calibRecved(false);
-
+   // G4String model(argv[1]);
     try{
-        while(!calibRecved){
-            ClientSocket client_socket_init ( "localhost", 30303 );
-            client_socket_init<<"init_c";
-            int vNum;
-            client_socket_init.RecvIntBuffer(&vNum,1);
-            if(!vNum)continue;
+        G4String data;
+        ClientSocket* client_socket;
+        while(true){
+            data.clear();
+            client_socket = new ClientSocket ( "localhost", 30303 );
+            (*client_socket)<<"Idle";
+            (*client_socket)>>data;
+            if(data.substr(0,4)!="wait") break;
+            delete client_socket;
         }
+        G4String dump;
+        (*client_socket) >>dump;
+        G4int calID = atoi(dump.c_str());
+        cout<<"Activated as Cal #"<<calID<<endl;
+
+        ModelImport* modelImport = new ModelImport(client_socket);
+        modelImport->RecvInitData();
 
         while(true){
-            ClientSocket client_socket ( "localhost", 30303 );
-            client_socket<<"Idle";
-            double time;
-            array<double, 88> quatArr;
-            array<double, 66> transArr;
-            client_socket.RecvDoubleBuffer(&time, 1);
-            if(time==0) continue;
-            client_socket.RecvDoubleBuffer(quatArr.data(), 88);
-            client_socket.RecvDoubleBuffer(transArr.data(), 66);
+//            client_socket<<"Idle";
+//            double time;
+//            array<double, 88> quatArr;
+//            array<double, 66> transArr;
+//            client_socket.RecvDoubleBuffer(&time, 1);
+//            if(time==0) continue;
+//            client_socket.RecvDoubleBuffer(quatArr.data(), 88);
+//            client_socket.RecvDoubleBuffer(transArr.data(), 66);
             //              cout<<quatArr.at(0)<<" "<<quatArr.at(1)<<" "<<quatArr.at(2)<<" "<<quatArr.at(3)<<endl;
             //              cout<<transArr.at(0)<<" "<<transArr.at(2)<<" "<<transArr.at(3)<<endl;
         }

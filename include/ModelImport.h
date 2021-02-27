@@ -4,19 +4,21 @@
 #include "G4Tet.hh"
 #include <Eigen/Geometry>
 #include "functions.h"
+#include "ClientSocket.h"
 
 class ModelImport
 {
 public:
-    ModelImport(G4String modelName);
+    ModelImport(ClientSocket*);
     G4bool RecvInitData();
     void PostureChange(const RotationList &vQ, const std::vector<Vector3d> &vT);
 
 private:
-    G4int vNum;
-    std::vector<G4ThreeVector>  V, V_calib, U;
+    ClientSocket* socket;
+    std::vector<G4ThreeVector>  U;
     std::vector<std::map<int, double>> W;
     Eigen::MatrixXi F, T;
+    MatrixXd V, V_calib, Wj;
     std::vector<G4Tet*> tetVec;
 
     std::vector<G4ThreeVector> V_G4;
