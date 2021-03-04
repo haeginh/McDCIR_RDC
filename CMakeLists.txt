@@ -15,8 +15,12 @@ if (OPENMP_FOUND)
 endif()
 
 #Geant4
-find_package(Geant4 REQUIRED)
-include(${Geant4_USE_FILE})
+option(WITH_GEANT4_UIVIS "Build example with Geant4 UI and Vis drivers" ON)
+if(WITH_GEANT4_UIVIS)
+  find_package(Geant4 REQUIRED ui_all vis_all)
+else()
+  find_package(Geant4 REQUIRED)
+endif()
 
 #k4a
 FIND_PACKAGE(k4a REQUIRED)
@@ -30,12 +34,14 @@ option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
 option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
 find_package(LIBIGL REQUIRED QUIET)
 
-file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cc)
+file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cpp)
 file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.h)
+file(GLOB g4sources ${PROJECT_SOURCE_DIR}/src/*.cc)
+file(GLOB g4headers ${PROJECT_SOURCE_DIR}/include/*.hh)
 include_directories(${PROJECT_SOURCE_DIR}/include
                     ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/)
 add_executable(RemoteCal RemoteCal.cc ${sources} ${headers})
-add_executable(Calculator calculator.cc ${sources} ${headers})
+add_executable(Calculator calculator.cc ${sources} ${headers} ${g4sources} ${g4headers})
 add_executable(Listener listener.cc ${sources} ${headers})
 
 # Dependencies of this library

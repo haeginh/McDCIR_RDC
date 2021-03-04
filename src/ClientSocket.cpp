@@ -16,6 +16,7 @@ ClientSocket::ClientSocket ( std::string host, int port )
       throw SocketException ( "Could not bind to port." );
     }
 
+  //Socket::set_non_blocking(false);
 }
 
 

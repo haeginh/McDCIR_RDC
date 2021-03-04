@@ -1,15 +1,40 @@
 #include "ClientSocket.h"
 #include "SocketException.h"
-#include "ModelImport.h"
+#include "ModelImport.hh"
 #include <iostream>
 #include <string>
 #include <array>
 
+//G4
+#include "G4RunManagerFactory.hh"
+#include "detectorconstruction.hh"
+#include "actioninitialization.hh"
+#include "runaction.hh"
+#include "FTFP_BERT.hh"
+#include "G4PhysListFactory.hh"
+#include "G4StepLimiterPhysics.hh"
+
+#include "G4VisExecutive.hh"
+#include "G4UIExecutive.hh"
+#include "G4UImanager.hh"
+#include "G4Timer.hh"
 using namespace std;
 int main ( int argc, char** argv)
 {
-    //read mesh file
-   // G4String model(argv[1]);
+    auto* runManager =
+      G4RunManagerFactory::CreateRunManager(G4RunManagerType::Default);
+    G4UIExecutive* ui = 0;
+    if(argc==2)  runManager->SetNumberOfThreads(atoi(argv[1]));
+    else         ui = new G4UIExecutive(argc, argv);
+
+    G4VModularPhysicsList* physicsList = new FTFP_BERT;
+    physicsList->RegisterPhysics(new G4StepLimiterPhysics());
+    runManager->SetUserInitialization(physicsList);
+
+    G4VisManager* visManager = new G4VisExecutive("Quiet");
+    visManager->Initialize();
+    G4UImanager* UImanager = G4UImanager::GetUIpointer();
+
     try{
         G4String data;
         ClientSocket* client_socket;
@@ -21,25 +46,56 @@ int main ( int argc, char** argv)
             if(data.substr(0,4)!="wait") break;
             delete client_socket;
         }
-        G4String dump;
-        (*client_socket) >>dump;
-        G4int calID = atoi(dump.c_str());
+        G4int calID = atoi(data.c_str());
         cout<<"Activated as Cal #"<<calID<<endl;
 
         ModelImport* modelImport = new ModelImport(client_socket);
         modelImport->RecvInitData();
+        DetectorConstruction* det = new DetectorConstruction(modelImport, client_socket);
 
-        while(true){
-//            client_socket<<"Idle";
-//            double time;
-//            array<double, 88> quatArr;
-//            array<double, 66> transArr;
-//            client_socket.RecvDoubleBuffer(&time, 1);
-//            if(time==0) continue;
-//            client_socket.RecvDoubleBuffer(quatArr.data(), 88);
-//            client_socket.RecvDoubleBuffer(transArr.data(), 66);
-            //              cout<<quatArr.at(0)<<" "<<quatArr.at(1)<<" "<<quatArr.at(2)<<" "<<quatArr.at(3)<<endl;
-            //              cout<<transArr.at(0)<<" "<<transArr.at(2)<<" "<<transArr.at(3)<<endl;
+        runManager->SetUserInitialization(det);
+        runManager->SetUserInitialization(new ActionInitialization(modelImport));
+
+        if(ui){
+            UImanager->ApplyCommand("/control/execute init_vis.mac");
+            UImanager->ApplyCommand("/control/execute gui.mac");
+            ui->SessionStart();
+        }else{
+           // UImanager->ApplyCommand("/tracking/verbose 2");
+            runManager->Initialize();
+            UImanager->ApplyCommand("/gun/particle gamma");
+            UImanager->ApplyCommand("/gun/energy 50 keV");
+            const RunAction* runAction
+              = static_cast<const RunAction*>(runManager->GetUserRunAction());
+            G4int numOfPack = floor(modelImport->GetNumOfFace() / 180)+1;
+            while(true){
+                array<double, 155> pack;
+                client_socket->RecvDoubleBuffer(pack.data(),155);
+
+                G4cout<<"calculate frame #"<<(int)pack[0]<<G4endl;
+                RotationList vQ;
+                vector<Vector3d> vT;
+                for(int i=0;i<22;i++){
+                    vQ.push_back(Quaterniond(pack[4*i+1],pack[4*i+2],pack[4*i+3],pack[4*i+4]));
+                    vT.push_back(Vector3d(pack[3*i+89], pack[3*i+90], pack[3*i+91])*cm);
+                }
+                bool calib(false);
+                if(pack[0]<0) calib = true;
+                det->SetUpNewFrame(vQ,vT, calib);
+                runManager->GeometryHasBeenModified();
+                runManager->BeamOn(10000);
+                const std::vector<G4Accumulable<G4double>*>* doseVec = runAction->GetDoseVec();
+                double buff[180]; string dump;
+                G4Timer timer; timer.Start();
+                G4cout<<"Send dose data..."<<std::flush;
+                for(int i=0, n=0;i<numOfPack;i++){
+                    for(int j=0;j<180 && n<modelImport->GetNumOfFace();j++, n++)
+                        buff[j] = (*doseVec)[n]->GetValue();
+                    client_socket->SendDoubleBuffer(buff,180);
+                    if(n<modelImport->GetNumOfFace())(*client_socket)>>dump;
+                }timer.Stop();
+                G4cout<<timer.GetRealElapsed()<<"s"<<G4endl;
+            }
         }
     }
     catch ( SocketException& e )
@@ -47,6 +103,7 @@ int main ( int argc, char** argv)
       std::cout << "Exception was caught:" << e.description() << "\n";
     }
 
+ //   delete runManager;
   return 0;
 }
 

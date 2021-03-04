@@ -21,6 +21,7 @@ ServerSocket::ServerSocket ( int port )
       throw SocketException ( "Could not listen to socket." );
     }
 
+  //Socket::set_non_blocking(false);
 }
 
 ServerSocket::~ServerSocket()

@@ -4,10 +4,7 @@
 #include <ctime>
 #include "functions.h"
 
-//#include "KinectData.h"
-//#include "Polygon.hh"
 #include "bodytracking.hh"
-//#include "bodydeformer.hh"
 #include <igl/readTGF.h>
 #include <igl/writeTGF.h>
 #include <igl/readDMAT.h>
@@ -27,6 +24,7 @@
 #include <igl/Timer.h>
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
+#include <thread>
 
 void PrintUsage(){
     cout<<"<Usage>"<<endl;
@@ -192,29 +190,30 @@ int main(int argc, char** argv){
     ClientSocket client_socket(listenerIP, listenerPort);
     cout<<"Send init info to listener.."<<flush;
     client_socket << "init "+to_string(V_v2.rows())+" "+to_string(T_v2.rows())+" "+to_string(F_ply.rows()) ;
+    string chk;
+    client_socket>>chk;
     for(int i=0;i<V_v2.rows();i++){
         Vector3d v=V_v2.row(i);
-        client_socket.SendDoubleBuffer(v.data(),3, 1);
         VectorXd w=W_v2.row(i);
-        client_socket.SendDoubleBuffer(w.data(),22, 1);
         VectorXd wj=Wj_v2.row(i);
-        client_socket.SendDoubleBuffer(wj.row(i).data(),24, 1);
+        VectorXd packet(49); packet << v, w, wj;
+        client_socket.SendDoubleBuffer(packet.data(),49);
+        client_socket>>chk;
     }
 
     for(int i=0;i<T_v2.rows();i++){
         VectorXi t=T_v2.row(i);
         client_socket.SendIntBuffer(t.data(),4);
+        client_socket>>chk;
     }
     for(int i=0;i<F_ply.rows();i++){
         Vector3i f=F_ply.row(i);
         client_socket.SendIntBuffer(f.data(),3);
+        client_socket>>chk;
     }
-    //     }
-    //     catch (SocketException& e) {cout << "Exception was caught:" << e.description() << endl;}
     cout<<"done"<<endl;
 
     V_o = V_ply; F_o = F_ply; W_o = bary*W_o; W_j = bary*W_j;
-    //   }
 
     vector<map<int, double>> cleanWeights;
     double epsilon(1e-5);
@@ -462,11 +461,17 @@ int main(int argc, char** argv){
         return true;
     };
 
-    int frameNo(0);
     vector<int> poseJoints = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24, 8, 15, 21, 25, 28, 30};
     time_t startT;
     igl::Timer timeStamp;
-    //double stamp;
+
+    //frame data
+    int frameNo(0); //0: final sig, <0: calib, >0 calibX, start from 1
+//    vector<int> timeVec;
+//    vector<array<double, 88>> qVec;
+//    vector<array<double, 66>> tVec;
+    vector<array<double, 155>> frameData;
+
     viewer.callback_pre_draw = [&](igl::opengl::glfw::Viewer &)->bool
     {
         if(viewer.core().is_animating){
@@ -526,21 +531,22 @@ int main(int argc, char** argv){
                     if(doseCal){
                         //TCP/IP
                         try {
-                            if(!calib) stamp = -stamp;
-                            client_socket.SendDoubleBuffer(&stamp,1);
+                            int sig = ++frameNo;
+                            if(calib){ stamp = -stamp; sig = -sig;}
 
-                            double arrQ[88], arrT[66];
+                            array<double, 155> pack; //sig, vQ, vT
+                            pack[0] = (double)sig;
                             for(int i=0;i<BE.rows();i++){
-                                arrQ[4*i] = vQ[i].w(); arrQ[4*i+1] = vQ[i].x(); arrQ[4*i+2] = vQ[i].y(); arrQ[4*i+3] = vQ[i].z();
-                                arrT[3*i] = vT[i](0); arrT[3*i+1] = vT[i](1); arrT[3*i+2] = vT[i](2);
+                                pack[4*i+1] = vQ[i].w(); pack[4*i+2] = vQ[i].x(); pack[4*i+3] = vQ[i].y(); pack[4*i+4] = vQ[i].z();
+                                pack[3*i+89] = vT[i](0); pack[3*i+90] = vT[i](1); pack[3*i+91] = vT[i](2);
                             }
-                            client_socket.SendDoubleBuffer(arrQ,88);
-                            client_socket.SendDoubleBuffer(arrT,66);
+                            client_socket.SendDoubleBuffer(pack.data(),155);
+                            pack[0] = stamp;
+                            frameData.push_back(pack);
                         }
                         catch (SocketException& e) {cout << "Exception was caught:" << e.description() << endl;}
                         timer.stop();
-                        cout<<"Frame #"<<frameNo<<" ("<<stamp<<"s) : "<<timer.getElapsedTimeInSec()<<"s"<<endl;
-                        frameNo++;
+                        cout<<"Frame #"<<frameNo<<" ("<<fabs(stamp)<<"s) : "<<timer.getElapsedTimeInSec()<<"s"<<endl;
                     }
                 }
 
@@ -549,9 +555,58 @@ int main(int argc, char** argv){
         }
         return false;
     };
+
+    MatrixXd color(F_o.rows(),3);
+    thread vis_th([&](){
+        ClientSocket socket2("localhost", 30303 );
+        while(true){
+            socket2<<"vis";
+            string data;
+            socket2>>data;
+            cout<<data<<endl;
+            if(data.substr(0,4)!="wait") break;
+        }
+        VectorXd accumulatedDose(F_o.rows());
+        int numOfPack = floor(F_o.rows()/180)+1;
+        while(true){
+            int frameNo;
+            socket2.RecvIntBuffer(&frameNo,1);
+            socket2<<"chk";
+            double buff[180];
+            VectorXd dose(F_o.rows());
+            for(int i=0, n=0;i<numOfPack;i++){
+                socket2.RecvDoubleBuffer(buff,180);
+                for(int j=0;j<180 && n<F_o.size();j++, n++)
+                    dose[n] = buff[j];
+                if(n<F.size())socket2<<"chk";
+            }
+            if(frameNo==1) accumulatedDose += dose * frameData[0][0];
+            else accumulatedDose += dose * (frameData[frameNo-1][0] - frameData[frameNo-2][0]);
+            double max = accumulatedDose.maxCoeff();
+            VectorXd normalized = accumulatedDose / max;
+            for(int i=0;i<normalized.rows();i++){
+                if(normalized[i]>0.5){
+                    C(i,0) = 2*normalized[i]-1;
+                    C(i,1) = (1-normalized[i])*2;
+                    C(i,2) = 0;
+                }else{
+                    C(i,0) = 0;
+                    C(i,1) = 2*normalized[i];
+                    C(i,2) = -2*normalized[i]+1;
+                }
+            }
+            viewer.data().set_colors(color);
+        }
+    });
+
     startT = time(NULL);
     timeStamp.start();
     viewer.launch();
+
+    //quit signal
+    int sig = 0;
+    client_socket.SendIntBuffer(&sig,1);
+    vis_th.join();
 
     return EXIT_SUCCESS;
 }
