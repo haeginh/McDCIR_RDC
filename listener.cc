@@ -33,7 +33,11 @@ int main ( int argc, char** argv )
 
     //posture data
     vector<array<double, 155>> frameData;
-    mutex m;
+    mutex m, m2;
+
+    //dose data
+    map<int, vector<double>> doseData;
+    int numOfPack(0);
 
     bool quitSig(false);
 
@@ -59,6 +63,7 @@ int main ( int argc, char** argv )
                             G4Timer timer; timer.Start();
                             string dump; int vNum, tNum, fNum;
                             stringstream ss(data); ss>>dump>>vNum>>tNum>>fNum;
+                            numOfPack = floor(fNum/180)+1;
                             dump = "chk";
                             (*sock) << dump;
                             cout<<"RC_proc: Get data for "<<vNum<<" vertices..."<<flush;
@@ -104,6 +109,25 @@ int main ( int argc, char** argv )
                                 frameData.push_back(pack);
                                 cout<<"RC_proc: received frame #"<<frameNo<<endl;
                                 m.unlock();
+
+                                cout<<"RC_proc: send "<<doseData.size()<<" dose data"<<endl;
+                                m2.lock();
+                                int count = doseData.size();
+                                sock->SendIntBuffer(&count,1);
+                                (*sock)>>dump;
+                                for(auto iter:doseData){
+                                    sock->SendIntBuffer(&iter.first,1);
+                                    (*sock)>>dump;
+                                    double buff[180];
+                                    for(int i=0, n=0;i<numOfPack;i++){
+                                        for(int j=0;j<180 && n<F.size();j++, n++)
+                                            buff[j] = iter.second[n];
+                                        sock->SendDoubleBuffer(buff,180);
+                                        if(n<F.size()) (*sock)>>dump;
+                                    }
+                                }
+                                doseData.clear();
+                                m2.unlock();
                             }
                             quitSig = true;
                     },_sock, _data);
@@ -122,9 +146,6 @@ int main ( int argc, char** argv )
 
         //2. CAL_threads (producer)
         //dose data
-        map<int, vector<double>> doseData;
-        mutex m2;
-        thread* remoteCal_vis;
         int numOfPack = floor(F.size()/180)+1;
 
         while ( true )
@@ -182,45 +203,14 @@ int main ( int argc, char** argv )
                                             dose.push_back(buff[j]);
                                         if(n<F.size())(*sock)<<"chk";
                                     }
-
                                     m2.lock();
                                     doseData[abs((int)pack[0])] = dose;
                                     m2.unlock();
                                 }
                             }, _sock, calID));
                 cout<<"Calculator #"<<calID++<<" was activated!"<<endl;
-                continue;
             }
-            else if(data.substr(0,3)=="vis" && remoteCal_vis==NULL){
-                (*_sock)<<"chk";
-                remoteCal_vis = new thread([&](ServerSocket* sock){
-                        cout<<"VIS_proc was generated"<<endl;
-                        string dump;
-                        while(true){
-                            m2.lock();
-                            if(doseData.size()==0){
-                                m2.unlock();
-                                usleep(10);
-                                continue;
-                            }
-                            cout<<"VIS_proc: send "<<doseData.size()<<" dose data"<<endl;
-                            for(auto iter:doseData){
-                                sock->SendIntBuffer(&iter.first,1);
-                                (*sock)>>dump;
-                                double buff[180];
-                                for(int i=0, n=0;i<numOfPack;i++){
-                                    for(int j=0;j<180 && n<F.size();j++, n++)
-                                        buff[j] = iter.second[n];
-                                    sock->SendDoubleBuffer(buff,180);
-                                    if(n<F.size()) (*sock)>>dump;
-                                }
-                            }
-                            m2.unlock();
-                        }
-                }, _sock);
-                continue;
-            }
-            delete _sock;
+            else delete _sock;
         }
     }
     catch ( SocketException& ) {}
