@@ -23,51 +23,81 @@
 // * acceptance of all terms of the Geant4 Software license.          *
 // ********************************************************************
 //
-// TETPrimaryGeneratorAction.cc
-// \file   MRCP_GEANT4/External/src/TETPrimaryGeneratorAction.cc
-// \author Haegin Han
-// \update
-// \
+//
 
+#ifndef MeshHit_h
+#define MeshHit_h 1
 
-#include "primarygeneratoraction.hh"
-#include "G4ParticleTable.hh"
-#include "G4ParticleDefinition.hh"
-#include "G4RunManager.hh"
-#include "detectorconstruction.hh"
-#include "G4PhysicalVolumeStore.hh"
+#include "G4VHit.hh"
+#include "G4THitsCollection.hh"
+#include "G4Allocator.hh"
+#include "G4Threading.hh"
 
-PrimaryGeneratorAction::PrimaryGeneratorAction()
-    :worldHalfZ(2*m) // supposed to be get from det.
-
+class MeshHit : public G4VHit
 {
-    fParticleGun = new G4ParticleGun(1);
-    fMessenger   = new PrimaryMessenger(this);
+  public:
+    MeshHit();
+    MeshHit(const MeshHit&);
+    virtual ~MeshHit();
 
-    source = G4ThreeVector(0,81,0)*cm;
-    isocenter = G4ThreeVector(0,0,60)*cm;
-    SetSource(rot);
-    G4ParticleDefinition* gamma
-      = G4ParticleTable::GetParticleTable()->FindParticle("gamma");
-    fParticleGun->SetParticleDefinition(gamma);
-    fParticleGun->SetParticleEnergy(50*keV);
+    // operators
+    const MeshHit& operator=(const MeshHit&);
+    G4bool operator==(const MeshHit&) const;
 
-    detY = -35.3*cm;
-    detMinDir = G4ThreeVector(-30.61*cm*0.5,detY,-39.54*cm*0.5)-source;
-    detXdir = G4ThreeVector(30.61*cm, 0, 0);
-    detZdir = G4ThreeVector(0, 0, 39.54*cm);
+    inline void* operator new(size_t);
+    inline void  operator delete(void*);
+
+    // methods from base class
+    virtual void Draw() {}
+    virtual void Print();
+
+    // methods to handle data
+    void Add(G4double skin, G4double lens);
+
+    // get methods
+    G4double GetSkinD() const;
+    G4double GetLensD() const;
+
+  private:
+    G4double skinDose;
+    G4double lensDose;
+};
+
+
+using MeshHitsCollection = G4THitsCollection<MeshHit>;
+
+extern G4ThreadLocal G4Allocator<MeshHit>* MeshHitAllocator;
+
+inline void* MeshHit::operator new(size_t)
+{
+  if (!MeshHitAllocator) {
+    MeshHitAllocator = new G4Allocator<MeshHit>;
+  }
+  void *hit;
+  hit = (void *) MeshHitAllocator->MallocSingle();
+  return hit;
 }
 
-PrimaryGeneratorAction::~PrimaryGeneratorAction()
+inline void MeshHit::operator delete(void *hit)
 {
-    delete fParticleGun;
-    delete fMessenger;
+  if (!MeshHitAllocator) {
+    MeshHitAllocator = new G4Allocator<MeshHit>;
+  }
+  MeshHitAllocator->FreeSingle((MeshHit*) hit);
 }
 
-void PrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
-{
-    fParticleGun->SetParticleMomentumDirection(SampleADirection());
-    fParticleGun->GeneratePrimaryVertex(anEvent);
+inline void MeshHit::Add(G4double skin, G4double lens) {
+  skinDose += skin;
+  lensDose += lens;
+}
+
+inline G4double MeshHit::GetSkinD() const {
+  return skinDose;
+}
+
+inline G4double MeshHit::GetLensD() const {
+  return lensDose;
 }
 
 
+#endif

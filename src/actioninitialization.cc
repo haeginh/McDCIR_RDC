@@ -29,10 +29,9 @@
 #include "actioninitialization.hh"
 #include "primarygeneratoraction.hh"
 #include "runaction.hh"
-#include "eventaction.hh"
 
-ActionInitialization::ActionInitialization(ModelImport* _tetmodel)
- : G4VUserActionInitialization(), tetmodel(_tetmodel)
+ActionInitialization::ActionInitialization()
+ : G4VUserActionInitialization()
 {}
 
 ActionInitialization::~ActionInitialization()
@@ -40,15 +39,13 @@ ActionInitialization::~ActionInitialization()
 
 void ActionInitialization::BuildForMaster() const
 {
-    SetUserAction(new RunAction(tetmodel));
+    SetUserAction(new RunAction());
 }
 
 void ActionInitialization::Build() const
 {
     // initialise UserAction classes
     SetUserAction(new PrimaryGeneratorAction());
-    RunAction* fRunAction =  new RunAction(tetmodel);
-    SetUserAction(fRunAction);
-    SetUserAction(new EventAction(fRunAction,tetmodel));
+    SetUserAction(new RunAction());
 }
 

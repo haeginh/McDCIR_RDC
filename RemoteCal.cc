@@ -1,8 +1,11 @@
 #include "ClientSocket.h"
 #include "SocketException.h"
+
 #include <iostream>
 #include <ctime>
-#include "functions.h"
+#include <thread>
+#include <functions.h>
+#include <mutex>
 
 #include "bodytracking.hh"
 #include <igl/readTGF.h>
@@ -24,6 +27,7 @@
 #include <igl/Timer.h>
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
+#include <Eigen/SparseCore>
 
 void PrintUsage(){
     cout<<"<Usage>"<<endl;
@@ -35,11 +39,11 @@ void PrintUsage(){
 
 using namespace Eigen;
 using namespace std;
+typedef Triplet<double> T;
 
 int main(int argc, char** argv){
     if(argc!=3 && argc!=2 && argc!=4) PrintUsage();
     string prefix = argv[1];
-
 
     //main variables
     MatrixXd C, V_o, W_o, W_j, V;
@@ -160,58 +164,13 @@ int main(int argc, char** argv){
     cout<<"Read "+prefix+"_oj.dmat"<<endl;
     igl::readDMAT(prefix+"_oj.dmat",W_j);
     igl::normalize_row_sums(W_j,W_j);
-    //    cout<<"Read "+prefix+".mesh"<<endl;
-    //    igl::readMESH(prefix+".mesh", V, T, F);
-    //    cout<<"Read "+prefix+".bary"<<endl;
-    //    map<int, map<int, double>> baryCoord = ReadBaryFile(prefix+".bary");
-    //    SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V_o.rows());
 
-    MatrixXd V_v2, W_v2, Wj_v2; //data for version 2
-    MatrixXi T_v2;
-    //    if(argc==4){
     if(string(argv[2])!="-rst") PrintUsage();
     MatrixXd V_ply; MatrixXi F_ply;
     cout<<"Set for "<<string(argv[3])<<endl;
     igl::readPLY(string(argv[3]),V_ply,F_ply);
     map<int, map<int, double>> baryCoord = GenerateBarycentricCoord(V_o,T_o,V_ply);
     SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V_o.rows());
-
-    MatrixXi F_tmp;
-    igl::copyleft::tetgen::tetrahedralize(V_ply, F_ply, "pYq", V_v2, T_v2, F_tmp);
-    map<int, map<int, double>> baryCoord2 = GenerateBarycentricCoord(V_o,T_o,V_v2);
-    SparseMatrix<double> bary2 = GenerateBarySparse(baryCoord2,V_o.rows());
-    W_v2 = bary2 * W_o; Wj_v2 = bary2*W_j;
-
-    //    try {
-    string listenerIP; int listenerPort;
-    cout<<"Listener IP: "; cin>>listenerIP;
-    cout<<"Listener port: "; cin>>listenerPort;
-    ClientSocket client_socket(listenerIP, listenerPort);
-    cout<<"Send init info to listener.."<<flush;
-    client_socket << "init "+to_string(V_v2.rows())+" "+to_string(T_v2.rows())+" "+to_string(F_ply.rows()) ;
-    string chk;
-    client_socket>>chk;
-    for(int i=0;i<V_v2.rows();i++){
-        Vector3d v=V_v2.row(i);
-        VectorXd w=W_v2.row(i);
-        VectorXd wj=Wj_v2.row(i);
-        VectorXd packet(49); packet << v, w, wj;
-        client_socket.SendDoubleBuffer(packet.data(),49);
-        client_socket>>chk;
-    }
-
-    for(int i=0;i<T_v2.rows();i++){
-        VectorXi t=T_v2.row(i);
-        client_socket.SendIntBuffer(t.data(),4);
-        client_socket>>chk;
-    }
-    for(int i=0;i<F_ply.rows();i++){
-        Vector3i f=F_ply.row(i);
-        client_socket.SendIntBuffer(f.data(),3);
-        client_socket>>chk;
-    }
-    cout<<"done"<<endl;
-
     V_o = V_ply; F_o = F_ply; W_o = bary*W_o; W_j = bary*W_j;
 
     vector<map<int, double>> cleanWeights;
@@ -402,8 +361,6 @@ int main(int argc, char** argv){
         V_calib = V_o+W_j*jointTrans.block(0,0,C.rows()-1,3);
     }
     MatrixXd jt = jointTrans.block(0,0,C.rows()-1,3);
-    client_socket.SendDoubleBuffer(jt.data(), jt.size());
-    cout<<jt<<endl;
 
     // igl viewer
     igl::opengl::glfw::Viewer viewer;
@@ -454,7 +411,7 @@ int main(int argc, char** argv){
         case '/': //calculate dose
             doseCal = !doseCal;
             if(doseCal) cout<<"Start the dose calculation!>>>>>>>>>>>>>"<<endl;
-                   else cout<<"<<<<<<<<<<<<<Stop the dose calculation!"<<endl;
+            else cout<<"<<<<<<<<<<<<<Stop the dose calculation!"<<endl;
             return true;
         }
         return true;
@@ -466,12 +423,42 @@ int main(int argc, char** argv){
 
     //frame data
     int frameNo(0); //0: final sig, <0: calib, >0 calibX, start from 1
-    vector<array<double, 155>> frameData;
-    VectorXd accumulatedDose = VectorXd::Zero(F_o.rows());
-    int numOfPack = floor(F_o.rows()/180)+1;
-    int numOfDoseData(0);
 
-    viewer.core().animation_max_fps = 3;
+    //dose map
+    map<int, pair<double, double>> doseMap; //<skinD, lensD>
+    int ijk[3];
+    mutex m;
+    thread receiverTH = thread([&](){
+        while(true){
+            string listenerIP; int listenerPort;
+            cout<<"Listener IP: "; cin>>listenerIP;
+            cout<<"Listener port: "; cin>>listenerPort;
+            ClientSocket client_socket(listenerIP, listenerPort);
+            cout<<"Send init info to listener.."<<flush;
+            client_socket << "vis";
+            client_socket.RecvIntBuffer(ijk, 3); client_socket <<"chk";
+            cout<<"World grid : "<<ijk[0]<<" * "<<ijk[1]<<" * "<<ijk[2]<<endl;
+            cout<<"RECV: waiting data..."<<endl;
+            int numOfData; client_socket.RecvIntBuffer(&numOfData,1); client_socket << "chk";
+            cout<<"RECV: recving " <<numOfData<<" data..."<<endl;
+            int numOfPack = floor(numOfData / 180)+1;
+            double buff[180], buff2[180]; int buffInt[180];
+            m.lock();
+            doseMap.clear();
+            for(int i=0, n=0;i<numOfPack;i++){
+                client_socket.RecvIntBuffer(buffInt, 180); client_socket<<"chk";
+                client_socket.RecvDoubleBuffer(buff, 180); client_socket<<"chk";
+                client_socket.RecvDoubleBuffer(buff2, 180);client_socket<<"chk";
+                for(int j=0;j<180 && n<numOfData;j++, n++){
+                    doseMap[buffInt[j]] = make_pair(buff[j], buff2[j]);
+                }
+            }
+            m.unlock();
+        }
+    });
+
+    //animator
+    viewer.core().animation_max_fps = 10;
     viewer.callback_pre_draw = [&](igl::opengl::glfw::Viewer &)->bool
     {
         if(viewer.core().is_animating){
@@ -529,74 +516,29 @@ int main(int argc, char** argv){
                     viewer.data().compute_normals();
 
                     if(doseCal){
-                        //TCP/IP
-                        try {
-                            int sig = ++frameNo;
-                            if(calib){ stamp = -stamp; sig = -sig;}
-
-                            array<double, 155> pack; //sig, vQ, vT
-                            pack[0] = (double)sig;
-                            for(int i=0;i<BE.rows();i++){
-                                pack[4*i+1] = vQ[i].w(); pack[4*i+2] = vQ[i].x(); pack[4*i+3] = vQ[i].y(); pack[4*i+4] = vQ[i].z();
-                                pack[3*i+89] = vT[i](0); pack[3*i+90] = vT[i](1); pack[3*i+91] = vT[i](2);
-
-//                                pack[4*i+1] = 1; pack[4*i+2] = 0; pack[4*i+3] = 0; pack[4*i+4] = 0;
-//                                pack[3*i+89] = 0; pack[3*i+90] = 0; pack[3*i+91] = 0;
+                        MatrixXd color=MatrixXd::Ones(V_o.rows(),3);
+                        if(doseMap.size()>0){
+                            U = U.array()+200;
+                            U *= 0.2;
+                            VectorXd values = ArrayXd::Zero(V_o.rows());
+                            m.lock();
+                            for(int i=0;i<U.rows();i++){
+                                int idx = floor(U(i,0))*ijk[2]*ijk[1]+floor(U(i,1))*ijk[1]+floor(U(i,2));
+                                auto iter = doseMap.find(idx);
+                                if(iter==doseMap.end()) continue;
+                                values(i) = iter->second.first;
                             }
-                            client_socket.SendDoubleBuffer(pack.data(),155);
-                            pack[0] = stamp;
-                            frameData.push_back(pack);
-
-                            int numData;
-                            client_socket.RecvIntBuffer(&numData,1);
-                            client_socket<<"chk";
-                            numOfDoseData += numData;
-                            for(int i=0;i<numData;i++){
-                                client_socket.RecvIntBuffer(&frameNo,1);
-                                client_socket<<"chk";
-                                double buff[180];
-                                VectorXd dose(F_o.rows());
-                                for(int i=0, n=0;i<numOfPack;i++){
-                                    client_socket.RecvDoubleBuffer(buff,180);
-                                    for(int j=0;j<180 && n<F_o.rows();j++, n++)
-                                        dose[n] = buff[j];
-                                    if(n<F_o.rows())client_socket<<"chk";
-                                }
-                                if(frameNo==1) accumulatedDose += dose * frameData[0][0];
-                                else accumulatedDose += dose * (frameData[frameNo-1][0] - frameData[frameNo-2][0]);
-                            }
-
-                            MatrixXd color=MatrixXd::Ones(F_o.rows(),3);
-                            if(accumulatedDose.sum()==0) viewer.data().set_colors(color);
-                            else{
-                                vector<double> tmpVec(accumulatedDose.data(), accumulatedDose.data()+F_o.rows());
-                                sort(tmpVec.begin(),tmpVec.end());
-                                tmpVec.erase(unique(tmpVec.begin(),tmpVec.end()),tmpVec.end());
-                                double min = log10(tmpVec[1]);
-                                double widthInv = 1/(log10(tmpVec.back()) - min);
-
-                            for(int i=0;i<accumulatedDose.rows();i++){
-                                if(accumulatedDose[i]==0) continue;
-                                double val = (log10(accumulatedDose[i])-min)*widthInv;
-                                if(val>0.5){
-                                    color(i,0) = 2*val-1;
-                                    color(i,1) = (1-val)*2;
-                                    color(i,2) = 0;
-                                }else{
-                                    color(i,0) = 0;
-                                    color(i,1) = 2*val;
-                                    color(i,2) = -2*val+1;
-                                }
-                            }
-                            viewer.data().set_colors(color);
-                            }
+                            m.unlock();
+                            values *= 1/values.maxCoeff();
+                            values = 1-values.array();
+                            color.col(1) = values;
+                            color.col(2) = values;
                         }
-                        catch (SocketException& e) {cout << "Exception was caught:" << e.description() << endl;}
+                        viewer.data().set_colors(color);
                         timer.stop();
-                        cout<<"Frame #"<<frameNo<<" / dose #:"<<numOfDoseData<<" ("<<fabs(stamp)<<"s) : "<<timer.getElapsedTimeInSec()<<"s"<<endl;
+                        cout<<"Frame #"<<frameNo<<" ("<<fabs(stamp)<<"s) : "<<timer.getElapsedTimeInSec()<<"s"<<endl;
                     }
                 }
-
                 k4abt_frame_release(bodyFrame);
             }
         }
@@ -605,11 +547,14 @@ int main(int argc, char** argv){
 
     startT = time(NULL);
     timeStamp.start();
-    viewer.launch();
+
+    thread viewerTH = thread([&](){viewer.launch();});
+
+    viewerTH.join();
+    receiverTH.join();
 
     //quit signal
     int sig = 0;
-    client_socket.SendIntBuffer(&sig,1);
 
     return EXIT_SUCCESS;
 }

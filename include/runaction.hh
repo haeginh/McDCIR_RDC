@@ -29,9 +29,8 @@
 #define RunAction_h 1
 
 #include "G4UserRunAction.hh"
-#include "G4Accumulable.hh"
 #include "globals.hh"
-#include "ModelImport.hh"
+#include "run.hh"
 #include <vector>
 
 /// Run action class
@@ -39,21 +38,19 @@
 class RunAction : public G4UserRunAction
 {
   public:
-    RunAction(ModelImport* _tetmodel);
+    RunAction();
     virtual ~RunAction();
 
+    virtual G4Run* GenerateRun();
     virtual void BeginOfRunAction(const G4Run*);
     virtual void   EndOfRunAction(const G4Run*);
 
-    void CountEvent()           { fGoodEvents ++; }
-    void SumDose(G4int id, G4double dose) { (*fSumDose[id]) += dose; }
-    const std::vector<G4Accumulable<G4double>*>* GetDoseVec() const {return &fSumDose;}
+    const std::map<G4int, std::pair<G4double, G4double>>* GetDoseMap() const
+    {return fRun->GetDoseMap();}
 
 private:
-    ModelImport* tetmodel;
-    std::map<int, double> massMap;
-    G4Accumulable<G4int>    fGoodEvents;
-    std::vector<G4Accumulable<G4double>*> fSumDose;
+    Run* fRun;
+    std::map<G4int, std::pair<G4double, G4double>> doseMap;
 };
 
 #endif

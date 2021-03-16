@@ -49,23 +49,51 @@
 #include "G4SDManager.hh"
 #include "G4MultiFunctionalDetector.hh"
 #include "G4SystemOfUnits.hh"
+#include "G4GeometryManager.hh"
+#include "G4RunManager.hh"
+
+#include "detmessenger.hh"
 
 #include "ModelImport.hh"
 #include "tetparam.hh"
-#include "detectormessenger.hh"
 
-class DetectorMessenger;
+class DetMessenger;
 class DetectorConstruction : public G4VUserDetectorConstruction
 {
 public:
-    DetectorConstruction(ModelImport* tetData, ClientSocket* sock);
+    DetectorConstruction(ModelImport* tetData);
     virtual ~DetectorConstruction();
 
     virtual G4VPhysicalVolume* Construct();
     virtual void ConstructSDandField();
-    void SetUpNewFrame(const RotationList &vQ, const std::vector<Vector3d> &vT, bool calib);
-    void NextFrame();
-    ClientSocket* GetSock(){return sock;}
+
+    void SetPatient(G4ThreeVector _rot, G4ThreeVector trans){
+        G4double angle = _rot.mag();
+        G4RotationMatrix rot; rot.setAxis(_rot/angle); rot.setTheta(angle*degree);
+        transform = G4Transform3D(rot, trans);//-G4ThreeVector(0,0,worldHalfZ));
+
+        if(container_phys){
+            G4GeometryManager::GetInstance()->OpenGeometry();
+            delete container_phys;
+            container_phys = new G4PVPlacement(transform, container_logic, "PhantomPhysical",
+                                               worldPhysical->GetLogicalVolume(), false, 0);
+        }
+    }
+
+    void SetDetector(G4RotationMatrix rot, G4ThreeVector trans){
+        det_transform = G4Transform3D(rot, trans);//-G4ThreeVector(0,0,worldHalfZ));
+
+        if(det_phys){
+            G4GeometryManager::GetInstance()->OpenGeometry();
+            auto det_log = det_phys->GetLogicalVolume();
+            delete det_phys;
+            det_phys = new G4PVPlacement(det_transform, det_log, "PhantomPhysical",
+                                               worldPhysical->GetLogicalVolume(), false, 0);
+            //G4GeometryManager::GetInstance()->CloseGeometry();
+            G4RunManager::GetRunManager()->GeometryHasBeenModified();
+        }
+    }
+//    G4double GetWorldHalfZ(){return worldHalfZ;}
 
 private:
     void SetupWorldGeometry();
@@ -76,12 +104,13 @@ private:
     G4Box*             container_sol;
     G4LogicalVolume*   container_logic;
     G4VPhysicalVolume* container_phys;
+    G4VPhysicalVolume* det_phys;
+    G4Transform3D transform, det_transform;
 
     ModelImport*    tetData;
-    G4LogicalVolume*   tetLogic;
+    DetMessenger*   fMessenger;
 
-    ClientSocket* sock;
-    DetectorMessenger* fMessenger;
+//    G4double worldHalfZ;
 };
 
 #endif

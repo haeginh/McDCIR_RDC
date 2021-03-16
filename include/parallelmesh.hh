@@ -23,51 +23,38 @@
 // * acceptance of all terms of the Geant4 Software license.          *
 // ********************************************************************
 //
-// TETPrimaryGeneratorAction.cc
-// \file   MRCP_GEANT4/External/src/TETPrimaryGeneratorAction.cc
-// \author Haegin Han
-// \update
-// \
+/// \file RE06/include/ParallelMesh.hh
+/// \brief Definition of the ParallelMesh class
+//
+//
 
+#ifndef ParallelMesh_h
+#define ParallelMesh_h 1
 
-#include "primarygeneratoraction.hh"
-#include "G4ParticleTable.hh"
-#include "G4ParticleDefinition.hh"
-#include "G4RunManager.hh"
-#include "detectorconstruction.hh"
-#include "G4PhysicalVolumeStore.hh"
+#include "G4VUserParallelWorld.hh"
+#include "globals.hh"
 
-PrimaryGeneratorAction::PrimaryGeneratorAction()
-    :worldHalfZ(2*m) // supposed to be get from det.
+class G4LogicalVolume;
+class G4VPhysicalVolume;
 
+class ParallelMesh : public G4VUserParallelWorld
 {
-    fParticleGun = new G4ParticleGun(1);
-    fMessenger   = new PrimaryMessenger(this);
+  public:
+    ParallelMesh(G4String worldName);
+    virtual ~ParallelMesh();
 
-    source = G4ThreeVector(0,81,0)*cm;
-    isocenter = G4ThreeVector(0,0,60)*cm;
-    SetSource(rot);
-    G4ParticleDefinition* gamma
-      = G4ParticleTable::GetParticleTable()->FindParticle("gamma");
-    fParticleGun->SetParticleDefinition(gamma);
-    fParticleGun->SetParticleEnergy(50*keV);
+    virtual void Construct();
+    virtual void ConstructSD();
 
-    detY = -35.3*cm;
-    detMinDir = G4ThreeVector(-30.61*cm*0.5,detY,-39.54*cm*0.5)-source;
-    detXdir = G4ThreeVector(30.61*cm, 0, 0);
-    detZdir = G4ThreeVector(0, 0, 39.54*cm);
-}
+    void GetIJK(G4int &_ni, G4int &_nj, G4int &_nk){
+        _ni = ni; _nj = nj; _nk = nk;
+    }
 
-PrimaryGeneratorAction::~PrimaryGeneratorAction()
-{
-    delete fParticleGun;
-    delete fMessenger;
-}
+private:
+    G4LogicalVolume* boxZ_log;
+    G4int ni, nj, nk;
+};
 
-void PrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
-{
-    fParticleGun->SetParticleMomentumDirection(SampleADirection());
-    fParticleGun->GeneratePrimaryVertex(anEvent);
-}
 
+#endif
 

@@ -34,6 +34,7 @@
 #include "G4UIcmdWithoutParameter.hh"
 
 #include "primarymessenger.hh"
+#include "G4GeometryManager.hh"
 
 PrimaryMessenger::PrimaryMessenger(PrimaryGeneratorAction* _primary)
 :G4UImessenger(), fPrimary(_primary)
@@ -43,25 +44,14 @@ PrimaryMessenger::PrimaryMessenger(PrimaryGeneratorAction* _primary)
     fRotCmd = new G4UIcmdWith3Vector("/beam/rot", this);
     fRotCmd->SetGuidance("unit axis vector * angle in degree");
 
-    fSourceCmd = new G4UIcmdWith3VectorAndUnit("/beam/source", this);
-    fSourceCmd->SetDefaultUnit("cm");
-
-    fAngleCmd = new G4UIcmdWithADoubleAndUnit("/beam/angle", this);
-    fAngleCmd->SetDefaultUnit("deg");
-
-    fTransCmd = new G4UIcmdWith3VectorAndUnit("/beam/trans", this);
+    fTransCmd = new G4UIcmdWith3VectorAndUnit("/beam/isoC", this);
     fTransCmd->SetDefaultUnit("cm");
-
-    fCloseCmd = new G4UIcmdWithoutParameter("/beam/close", this);
 }
 
 PrimaryMessenger::~PrimaryMessenger() {
     delete fBeamDir;
     delete fRotCmd;
-    delete fSourceCmd;
-    delete fAngleCmd;
     delete fTransCmd;
-    delete fCloseCmd;
 }
 
 void PrimaryMessenger::SetNewValue(G4UIcommand* command, G4String newValue)
@@ -72,18 +62,10 @@ void PrimaryMessenger::SetNewValue(G4UIcommand* command, G4String newValue)
         G4ThreeVector axis = vec.unit();
         rot = G4RotationMatrix();
         rot.rotate(ang, axis);
-    }
-    else if(command == fSourceCmd){
-        fPrimary->SetDefaultSource(fSourceCmd->GetNew3VectorValue(newValue));
-    }
-    else if(command == fAngleCmd){
-        fPrimary->SetAngle(fAngleCmd->GetNewDoubleValue(newValue));
+        fPrimary->SetSource(rot);
     }
     else if(command == fTransCmd){
-        trans = fTransCmd->GetNew3VectorValue(newValue);
-    }
-    else if(command == fCloseCmd){
-        fPrimary->SetSource(rot,trans);
+        fPrimary->SetSourceTrans(fTransCmd->GetNew3VectorValue(newValue));
     }
 }
 

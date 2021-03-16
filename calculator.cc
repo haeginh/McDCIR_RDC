@@ -1,4 +1,4 @@
-#include "ClientSocket.h"
+#include "ServerSocket.h"
 #include "SocketException.h"
 #include "ModelImport.hh"
 #include <iostream>
@@ -8,11 +8,13 @@
 //G4
 #include "G4RunManagerFactory.hh"
 #include "detectorconstruction.hh"
+#include "parallelmesh.hh"
 #include "actioninitialization.hh"
 #include "runaction.hh"
 #include "FTFP_BERT.hh"
 #include "G4PhysListFactory.hh"
 #include "G4StepLimiterPhysics.hh"
+#include "G4ParallelWorldPhysics.hh"
 
 #include "G4VisExecutive.hh"
 #include "G4UIExecutive.hh"
@@ -21,89 +23,115 @@
 using namespace std;
 int main ( int argc, char** argv)
 {
+    int port = 30303;
     auto* runManager =
-      G4RunManagerFactory::CreateRunManager(G4RunManagerType::Default);
+            G4RunManagerFactory::CreateRunManager(G4RunManagerType::Default);
     G4UIExecutive* ui = 0;
     if(argc==2)  runManager->SetNumberOfThreads(atoi(argv[1]));
     else         ui = new G4UIExecutive(argc, argv);
 
-    G4VModularPhysicsList* physicsList = new FTFP_BERT;
-    physicsList->RegisterPhysics(new G4StepLimiterPhysics());
-    runManager->SetUserInitialization(physicsList);
-
     G4VisManager* visManager = new G4VisExecutive("Quiet");
     visManager->Initialize();
     G4UImanager* UImanager = G4UImanager::GetUIpointer();
+    //generate socket for each source
+    DetectorConstruction* det = new DetectorConstruction(new ModelImport());
+    auto parallel = new ParallelMesh("MeshTally");
+    det->RegisterParallelWorld(parallel);
+    runManager->SetUserInitialization(det);
+    G4VModularPhysicsList* physicsList = new FTFP_BERT;
+    //    physicsList->RegisterPhysics(new G4StepLimiterPhysics());
+    physicsList->RegisterPhysics(new G4ParallelWorldPhysics("MeshTally"));
+    runManager->SetUserInitialization(physicsList);
+    runManager->SetUserInitialization(new ActionInitialization());
+
+    if(ui){
+        UImanager->ApplyCommand("/control/execute init_vis.mac");
+        UImanager->ApplyCommand("/control/execute gui.mac");
+        ui->SessionStart();
+    }
+
+    runManager->Initialize();
 
     try{
-        G4String data;
-        ClientSocket* client_socket;
-        while(true){
-            data.clear();
-            client_socket = new ClientSocket ( "localhost", 30303 );
-            (*client_socket)<<"Idle";
-            (*client_socket)>>data;
-            if(data.substr(0,4)!="wait") break;
-            delete client_socket;
-        }
-        G4int calID = atoi(data.c_str());
-        cout<<"Activated as Cal #"<<calID<<endl;
+        // Create the socket
+        ServerSocket server(port);
+        G4cout << "Listening...."<<G4endl;
 
-        ModelImport* modelImport = new ModelImport(client_socket);
-        modelImport->RecvInitData();
-        DetectorConstruction* det = new DetectorConstruction(modelImport, client_socket);
+        try{
+            ServerSocket vis;
+            server.accept ( vis );
 
-        runManager->SetUserInitialization(det);
-        runManager->SetUserInitialization(new ActionInitialization(modelImport));
+            G4String data;
+            vis>>data;
+            if(data.substr(0,4)=="vis")
+                G4cout<<"Visualizer successfully connected!"<<G4endl;
+            else
+                G4cout<<"WARNING>> Wrong signal: "<<data<<G4endl;
 
-        if(ui){
-            UImanager->ApplyCommand("/control/execute init_vis.mac");
-            UImanager->ApplyCommand("/control/execute gui.mac");
-            ui->SessionStart();
-        }else{
-           // UImanager->ApplyCommand("/tracking/verbose 2");
-            runManager->Initialize();
-            UImanager->ApplyCommand("/gun/particle gamma");
-            UImanager->ApplyCommand("/gun/energy 50 keV");
-            const RunAction* runAction
-              = static_cast<const RunAction*>(runManager->GetUserRunAction());
-            G4int numOfPack = floor(modelImport->GetNumOfFace() / 180)+1;
-            while(true){
-                array<double, 155> pack;
-                client_socket->RecvDoubleBuffer(pack.data(),155);
+            G4int ijkData[3];
+            parallel->GetIJK(ijkData[0], ijkData[1], ijkData[2]);
+            vis.SendIntBuffer(ijkData, 3);
 
-                G4cout<<"calculate frame #"<<(int)pack[0]<<G4endl;
-                RotationList vQ;
-                vector<Vector3d> vT;
-                for(int i=0;i<22;i++){
-                    vQ.push_back(Quaterniond(pack[4*i+1],pack[4*i+2],pack[4*i+3],pack[4*i+4]));
-                    vT.push_back(Vector3d(pack[3*i+89], pack[3*i+90], pack[3*i+91])*cm);
+            while (true){
+                G4bool cont(true);
+                while(cont){ //command (U-define: /beam/rot x y z)
+                    G4cout<<"command>>"<<std::flush; char buff[100];
+                    G4cin.getline(buff, sizeof(buff));
+                    G4String command=buff;
+                    if(command.back()!='\\') cont = false;
+                    else command = command.substr(0, command.length()-1);
+                    stringstream ss(command); G4String start; ss>>start;
+                    if(start=="patient"){
+                        G4ThreeVector pos, rot;
+                        ss>>pos>>rot;
+                        det->SetPatient(pos, rot);
+                    }else if(command=="tracker"){
+                        G4cout<<"Tracker rotation in vector: "<<std::flush;
+                        char trackerBuff[100]; G4cin.getline(trackerBuff, sizeof(trackerBuff));
+                        command = trackerBuff;
+                        UImanager->ApplyCommand("/beam/rot "+command);
+                        UImanager->ApplyCommand("/det/rot "+command);
+                    }else UImanager->ApplyCommand(command);
                 }
-                bool calib(false);
-                if(pack[0]<0) calib = true;
-                det->SetUpNewFrame(vQ,vT, calib);
-                runManager->GeometryHasBeenModified();
-                runManager->BeamOn(10000);
-                const std::vector<G4Accumulable<G4double>*>* doseVec = runAction->GetDoseVec();
-                double buff[180]; string dump;
+                runManager->BeamOn(1000000);
+                const RunAction* runAction
+                        = static_cast<const RunAction*>(runManager->GetUserRunAction());
+                const std::map<G4int, std::pair<G4double, G4double>>* doseVec = runAction->GetDoseMap();
+                double buff[180], buff2[180]; int buffInt[180];
                 G4Timer timer; timer.Start();
-                G4cout<<"Send dose data..."<<std::flush;
+                G4cout<<"Send "<<doseVec->size()<< " dose data..."<<std::flush;
+                G4int numOfData = doseVec->size();
+                G4int numOfPack = floor(numOfData / 180)+1;
+
+                string dump; dump.clear();
+                vis.SendIntBuffer(&numOfData,1);
+                vis>>dump;
+                auto iter = doseVec->begin();
                 for(int i=0, n=0;i<numOfPack;i++){
-                    for(int j=0;j<180 && n<modelImport->GetNumOfFace();j++, n++)
-                        buff[j] = (*doseVec)[n]->GetValue();
-                    client_socket->SendDoubleBuffer(buff,180);
-                    if(n<modelImport->GetNumOfFace())(*client_socket)>>dump;
-                }timer.Stop();
+                    for(int j=0;j<180 && n<numOfData;j++, n++, iter++){
+                        buffInt[j] = iter->first;
+                        buff[j] = iter->second.first;
+                        buff2[j] = iter->second.second;
+                    }
+                    vis.SendIntBuffer(buffInt,180); vis>>dump;
+                    vis.SendDoubleBuffer(buff,180); vis>>dump;
+                    vis.SendDoubleBuffer(buff2,180);vis>>dump;
+                }
+                timer.Stop();
                 G4cout<<timer.GetRealElapsed()<<"s"<<G4endl;
             }
+        }
+        catch ( SocketException& e )
+        {
+            std::cout << "Exception was caught:" << e.description() << "\n";
         }
     }
     catch ( SocketException& e )
     {
-      std::cout << "Exception was caught:" << e.description() << "\n";
+        std::cout << "Exception was caught:" << e.description() << "\n";
     }
 
- //   delete runManager;
-  return 0;
+    //   delete runManager;
+    return 0;
 }
 

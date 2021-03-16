@@ -38,7 +38,9 @@
 #include "G4SystemOfUnits.hh"
 #include "primarymessenger.hh"
 #include "G4RotationMatrix.hh"
-#include "G4RandomDirection.hh"
+#include "Randomize.hh"
+#include "G4VPhysicalVolume.hh"
+#include "G4GeometryManager.hh"
 
 class PrimaryMessenger;
 
@@ -51,18 +53,18 @@ class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction
   public:
     virtual void   GeneratePrimaries(G4Event* anEvent);
 
-    void SetAngle(G4double angle){
-        cosTheta = cos(angle);
-    }
-    void SetDefaultSource(G4ThreeVector pos){
-        source = pos;
-    }
-    void SetSource(G4RotationMatrix _rot, G4ThreeVector trans){
+    void SetSource(G4RotationMatrix _rot){
         rot = _rot;
-        fParticleGun->SetParticlePosition(rot*source + trans);
+        fParticleGun->SetParticlePosition(rot*source + isocenter);
     }
+    void SetSourceTrans(G4ThreeVector _trans) {isocenter = _trans;}
     G4ThreeVector SampleADirection(){
-        return rot*G4RandomDirection(cosTheta);
+        return rot*(detMinDir+(detXdir*G4UniformRand()+detZdir*G4UniformRand()));
+    }
+    G4RotationMatrix GetRot(){return rot;}
+    G4ThreeVector GetDetPos(){
+        G4ThreeVector dir = rot*(detMinDir+(detXdir+detZdir)*0.5);
+        return isocenter + dir.unit()*(detY+7.5*cm);
     }
 
   private:
@@ -71,6 +73,12 @@ class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction
     G4double cosTheta;
     G4RotationMatrix rot;
     G4ThreeVector source;
+    G4double tranZ;
+    G4double worldHalfZ;
+
+    G4double detY;
+    G4ThreeVector detMinDir, detXdir, detZdir;
+    G4ThreeVector sourcePos, isocenter;
 };
 
 #endif

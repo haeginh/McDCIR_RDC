@@ -23,31 +23,49 @@
 // * acceptance of all terms of the Geant4 Software license.          *
 // ********************************************************************
 //
-// \author Haegin Han
-//
 
-#include "G4UIdirectory.hh"
-#include "G4UIcmdWithoutParameter.hh"
+#include "run.hh"
 
-#include "detectormessenger.hh"
-
-DetectorMessenger::DetectorMessenger(DetectorConstruction* _det)
-:G4UImessenger(), fDet(_det)
+Run::Run()
+:G4Run()
 {
-    fDetDir = new G4UIdirectory("/frame/");
-    fNextCmd = new G4UIcmdWithoutParameter("/frame/next", this);
+    fCollID_skin
+    = G4SDManager::GetSDMpointer()->GetCollectionID("meshSD/doseS");
+    fCollID_lens
+    = G4SDManager::GetSDMpointer()->GetCollectionID("meshSD/doseE");
 }
 
-DetectorMessenger::~DetectorMessenger() {
-    delete fDetDir;
-    delete fNextCmd;
-}
+Run::~Run()
+{}
 
-void DetectorMessenger::SetNewValue(G4UIcommand* command, G4String newValue)
+void Run::RecordEvent(const G4Event* event)
 {
-    if(command == fNextCmd){
-        fDet->NextFrame();
-        (*fDet->GetSock())<<"result!";
+    // Hits collections
+    //
+    G4HCofThisEvent* HCE = event->GetHCofThisEvent();
+    if(!HCE) return;
+
+    auto doseMapS =
+            *static_cast<G4THitsMap<G4double>*>(HCE->GetHC(fCollID_skin))->GetMap();
+    auto doseMapE =
+            *static_cast<G4THitsMap<G4double>*>(HCE->GetHC(fCollID_lens))->GetMap();
+
+    for(auto itr:doseMapS){
+        doseMap[itr.first].first += *itr.second;
+        doseMap[itr.first].second += *doseMapE[itr.first];
     }
 }
 
+void Run::Merge(const G4Run* run)
+{
+    const Run* localRun = static_cast<const Run*>(run);
+    // merge the data from each thread
+    auto localMap = localRun->doseMap;
+
+    for(auto itr : localMap){
+        doseMap[itr.first].first  += itr.second.first;
+        doseMap[itr.first].second += itr.second.second;
+    }
+
+    G4Run::Merge(run);
+}

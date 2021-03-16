@@ -24,56 +24,42 @@
 // ********************************************************************
 //
 //
+/// \file MeshSD.hh
+/// \brief Definition of the MeshSD class
 
-#include "eventaction.hh"
-#include "runaction.hh"
+#ifndef MeshSD_h
+#define MeshSD_h 1
 
-#include "G4Event.hh"
-#include "G4SDManager.hh"
-#include "G4HCofThisEvent.hh"
+#include "G4VSensitiveDetector.hh"
+
 #include "G4THitsMap.hh"
 
-EventAction::EventAction(RunAction* runAction, ModelImport* _tetmodel)
- : G4UserEventAction(),
-   fRunAction(runAction), tetmodel(_tetmodel), fCollID(-1), nonTargetNo(-1)
-{}
+#include <vector>
 
-EventAction::~EventAction()
-{ }
+class G4Step;
+class G4HCofThisEvent;
 
-void EventAction::BeginOfEventAction(const G4Event*)
-{ }
-
-void EventAction::EndOfEventAction(const G4Event* evt )
+class MeshSD : public G4VSensitiveDetector
 {
-   //Hits collections
-  G4HCofThisEvent* HCE = evt->GetHCofThisEvent();
-  if(!HCE) return;
+  public:
+    MeshSD(const G4String& name, G4int i, G4int j, G4int k, G4double cellVol);
+    virtual ~MeshSD();
 
-  // Get hits collections IDs
-  if (fCollID< 0) {
-    G4SDManager* SDMan = G4SDManager::GetSDMpointer();
-    fCollID  = SDMan->GetCollectionID("phantomSD/edep");
-    nonTargetNo = tetmodel->GetNonTargetNum();
-    G4double divide3 = 1./3.;
-    for(int i=nonTargetNo; i<tetmodel->GetNumOfTet();i++){
-        skinIDs[i] = floor((double)(i-nonTargetNo) * divide3);
-    }
-  }
+    virtual void   Initialize(G4HCofThisEvent* hitCollection);
+    virtual G4bool ProcessHits(G4Step* step, G4TouchableHistory* history);
+    virtual void   EndOfEvent(G4HCofThisEvent* hitCollection);
 
-  G4THitsMap<G4double>* evtMap =
-                     (G4THitsMap<G4double>*)(HCE->GetHC(fCollID));
+  private:
+    void CalculateDoses(G4double energy, G4double &skinDose, G4double &lensDose);
 
-  std::map<G4int,G4double*>::iterator itr;
-  bool first(true);
-  for (itr = evtMap->GetMap()->begin(); itr != evtMap->GetMap()->end(); itr++) {
-    G4int copyNb  = (itr->first);
-    if(copyNb<nonTargetNo) continue;
-    G4double edep = *(itr->second);
-    fRunAction->SumDose(skinIDs[copyNb], edep);
-    if(first){
-      fRunAction->CountEvent();
-      first = false;
-    }
-  }
-}
+  private:
+    G4THitsMap<G4double>* fHitsMapS;
+    G4THitsMap<G4double>* fHitsMapE;
+    G4int    ni, nj, nk;
+    std::vector<G4double> energyVec;
+    std::vector<G4double> skinDvec, lensDvec;
+    G4ParticleDefinition* gamma;
+};
+
+#endif
+

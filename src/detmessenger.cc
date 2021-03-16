@@ -23,51 +23,60 @@
 // * acceptance of all terms of the Geant4 Software license.          *
 // ********************************************************************
 //
-// TETPrimaryGeneratorAction.cc
-// \file   MRCP_GEANT4/External/src/TETPrimaryGeneratorAction.cc
 // \author Haegin Han
-// \update
-// \
+//
 
+#include "G4UIdirectory.hh"
+#include "G4UIcmdWith3Vector.hh"
+#include "G4UIcmdWith3VectorAndUnit.hh"
+#include "G4UIcmdWithADoubleAndUnit.hh"
+#include "G4UIcmdWithoutParameter.hh"
 
-#include "primarygeneratoraction.hh"
-#include "G4ParticleTable.hh"
-#include "G4ParticleDefinition.hh"
-#include "G4RunManager.hh"
-#include "detectorconstruction.hh"
-#include "G4PhysicalVolumeStore.hh"
+#include "detmessenger.hh"
+#include "G4GeometryManager.hh"
 
-PrimaryGeneratorAction::PrimaryGeneratorAction()
-    :worldHalfZ(2*m) // supposed to be get from det.
-
+DetMessenger::DetMessenger(DetectorConstruction* _det)
+:G4UImessenger(), fDet(_det)
 {
-    fParticleGun = new G4ParticleGun(1);
-    fMessenger   = new PrimaryMessenger(this);
+    fDetDir = new G4UIdirectory("/det/");
 
-    source = G4ThreeVector(0,81,0)*cm;
+    fRotCmd = new G4UIcmdWith3Vector("/det/rot", this);
+    fRotCmd->SetGuidance("unit axis vector * angle in degree");
+
+    fIsoCmd = new G4UIcmdWith3VectorAndUnit("/det/isoC", this);
+    fIsoCmd->SetDefaultUnit("cm");
+
+    //primary values
     isocenter = G4ThreeVector(0,0,60)*cm;
-    SetSource(rot);
-    G4ParticleDefinition* gamma
-      = G4ParticleTable::GetParticleTable()->FindParticle("gamma");
-    fParticleGun->SetParticleDefinition(gamma);
-    fParticleGun->SetParticleEnergy(50*keV);
-
+    source = G4ThreeVector(0,81,0)*cm;
     detY = -35.3*cm;
     detMinDir = G4ThreeVector(-30.61*cm*0.5,detY,-39.54*cm*0.5)-source;
     detXdir = G4ThreeVector(30.61*cm, 0, 0);
     detZdir = G4ThreeVector(0, 0, 39.54*cm);
 }
 
-PrimaryGeneratorAction::~PrimaryGeneratorAction()
-{
-    delete fParticleGun;
-    delete fMessenger;
+DetMessenger::~DetMessenger() {
+    delete fDetDir;
+    delete fRotCmd;
+    delete fIsoCmd;
 }
 
-void PrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
+void DetMessenger::SetNewValue(G4UIcommand* command, G4String newValue)
 {
-    fParticleGun->SetParticleMomentumDirection(SampleADirection());
-    fParticleGun->GeneratePrimaryVertex(anEvent);
+    if(command == fRotCmd){
+        G4ThreeVector vec = fRotCmd->GetNew3VectorValue(newValue);
+        double ang = vec.mag() * deg;
+        G4ThreeVector axis = vec.unit();
+        rot = G4RotationMatrix();
+        rot.rotate(ang, axis);
+        G4ThreeVector dir = rot*(detMinDir+(detXdir+detZdir)*0.5);
+        G4cout<<isocenter + dir.unit()*(detY+7.5*cm)<<G4endl;
+        fDet->SetDetector(rot, isocenter + dir.unit()*(-detY+7.5*cm));
+    }
+    else if(command == fIsoCmd){
+        isocenter = fIsoCmd->GetNew3VectorValue(newValue);
+        G4ThreeVector dir = rot*(detMinDir+(detXdir+detZdir)*0.5);
+        fDet->SetDetector(rot, isocenter + dir.unit()*(detY+7.5*cm));
+    }
 }
-
 

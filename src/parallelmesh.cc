@@ -23,51 +23,55 @@
 // * acceptance of all terms of the Geant4 Software license.          *
 // ********************************************************************
 //
-// TETPrimaryGeneratorAction.cc
-// \file   MRCP_GEANT4/External/src/TETPrimaryGeneratorAction.cc
-// \author Haegin Han
-// \update
-// \
+//
+//
 
+#include "parallelmesh.hh"
+#include "meshsd.hh"
 
-#include "primarygeneratoraction.hh"
-#include "G4ParticleTable.hh"
-#include "G4ParticleDefinition.hh"
-#include "G4RunManager.hh"
-#include "detectorconstruction.hh"
-#include "G4PhysicalVolumeStore.hh"
+#include "G4LogicalVolume.hh"
+#include "G4PVPlacement.hh"
+#include "G4PVReplica.hh"
+#include "G4Box.hh"
 
-PrimaryGeneratorAction::PrimaryGeneratorAction()
-    :worldHalfZ(2*m) // supposed to be get from det.
+#include "G4SDManager.hh"
+#include "G4SystemOfUnits.hh"
 
+//G4ThreadLocal G4bool ParallelMesh::fSDConstructed = false;
+
+ParallelMesh::ParallelMesh(G4String worldName)
+:G4VUserParallelWorld(worldName)
 {
-    fParticleGun = new G4ParticleGun(1);
-    fMessenger   = new PrimaryMessenger(this);
-
-    source = G4ThreeVector(0,81,0)*cm;
-    isocenter = G4ThreeVector(0,0,60)*cm;
-    SetSource(rot);
-    G4ParticleDefinition* gamma
-      = G4ParticleTable::GetParticleTable()->FindParticle("gamma");
-    fParticleGun->SetParticleDefinition(gamma);
-    fParticleGun->SetParticleEnergy(50*keV);
-
-    detY = -35.3*cm;
-    detMinDir = G4ThreeVector(-30.61*cm*0.5,detY,-39.54*cm*0.5)-source;
-    detXdir = G4ThreeVector(30.61*cm, 0, 0);
-    detZdir = G4ThreeVector(0, 0, 39.54*cm);
 }
 
-PrimaryGeneratorAction::~PrimaryGeneratorAction()
+ParallelMesh::~ParallelMesh()
+{}
+
+void ParallelMesh::Construct()
 {
-    delete fParticleGun;
-    delete fMessenger;
+    G4VPhysicalVolume* ghostWorld = GetWorld();
+    G4LogicalVolume* worldLogical = ghostWorld->GetLogicalVolume();
+
+    G4double halfX=2.5*cm, halfY=2.5*cm, halfZ=2.5*cm;
+    ni = ((G4Box*)worldLogical->GetSolid())->GetXHalfLength() / halfX;
+    nj = ((G4Box*)worldLogical->GetSolid())->GetYHalfLength() / halfY;
+    nk = ((G4Box*)worldLogical->GetSolid())->GetZHalfLength() / halfZ;
+
+    G4Box* boxX = new G4Box("BoxX", halfX, halfY*nj, halfZ*nk);
+    G4LogicalVolume* boxX_log = new G4LogicalVolume(boxX, 0, "boxX_log");
+    G4Box* boxY = new G4Box("BoxY", halfX, halfY, halfZ*nk);
+    G4LogicalVolume* boxY_log = new G4LogicalVolume(boxY, 0, "boxY_log");
+    G4Box* boxZ = new G4Box("BoxZ", halfX, halfY, halfZ);
+    boxZ_log = new G4LogicalVolume(boxZ, 0, "boxZ_log");
+
+    new G4PVReplica("meshX", boxX_log, worldLogical, kXAxis, ni, halfX*2);
+    new G4PVReplica("meshY", boxY_log, boxX_log, kYAxis, nj, halfY*2);
+    new G4PVReplica("meshZ", boxZ_log, boxY_log, kZAxis, nk, halfZ*2);
 }
 
-void PrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
+void ParallelMesh::ConstructSD()
 {
-    fParticleGun->SetParticleMomentumDirection(SampleADirection());
-    fParticleGun->GeneratePrimaryVertex(anEvent);
+    SetSensitiveDetector(boxZ_log, new MeshSD("meshSD", ni, nj, nk, 1*cm3));
 }
 
 

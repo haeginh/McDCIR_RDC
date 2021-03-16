@@ -23,11 +23,13 @@
 // * acceptance of all terms of the Geant4 Software license.          *
 // ********************************************************************
 //
+// TETDetMessenger.cc
+// \file   MRCP_GEANT4/External/src/TETModelImport.cc
 // \author Haegin Han
 //
 
-#ifndef DetectorMessenger_HH_
-#define DetectorMessenger_HH_ 1
+#ifndef DetMessenger_HH_
+#define DetMessenger_HH_ 1
 
 #include "globals.hh"
 #include "G4UImessenger.hh"
@@ -35,21 +37,31 @@
 #include "G4RotationMatrix.hh"
 
 class G4UIdirectory;
+class G4UIcmdWith3Vector;
+class G4UIcmdWith3VectorAndUnit;
+class G4UIcmdWithADoubleAndUnit;
 class G4UIcmdWithoutParameter;
 class DetectorConstruction;
 
-class DetectorMessenger: public G4UImessenger
+class DetMessenger: public G4UImessenger
 {
 public:
-    DetectorMessenger(DetectorConstruction* det);
-    virtual ~DetectorMessenger();
+    DetMessenger(DetectorConstruction* det);
+    virtual ~DetMessenger();
 
     virtual void SetNewValue(G4UIcommand*, G4String);
 
 private:
-    DetectorConstruction*    fDet;
-    G4UIdirectory*           fDetDir;
-    G4UIcmdWithoutParameter* fNextCmd;
+    DetectorConstruction*   fDet;
+    G4UIdirectory*          fDetDir;
+    G4UIcmdWith3Vector*     fRotCmd;
+    G4UIcmdWith3VectorAndUnit* fIsoCmd;
+
+    G4RotationMatrix rot;
+
+    //primary values
+    G4ThreeVector isocenter, source, detMinDir, detXdir, detZdir;
+    G4double detY;
 };
 
 #endif

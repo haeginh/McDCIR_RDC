@@ -52,12 +52,11 @@ void TetParam::ComputeTransformation(
                    const G4int,G4VPhysicalVolume*) const
 {}
 
-//G4Material* TetParam::ComputeMaterial(const G4int copyNo,
-//                                                 G4VPhysicalVolume* phy,
-//                                                 const G4VTouchable* )
-//{
-//    // return the material data for each material index
-//    //return tetData->GetMaterial(tetData->GetMaterialIdx(copyNo));
-//}
+G4Material* TetParam::ComputeMaterial(const G4int copyNo,
+                                            G4VPhysicalVolume*,
+                                      const G4VTouchable* )
+{
+    return tetData->GetMaterial(tetData->GetMaterialIdx(copyNo));
+}
 
 

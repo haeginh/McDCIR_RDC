@@ -23,51 +23,29 @@
 // * acceptance of all terms of the Geant4 Software license.          *
 // ********************************************************************
 //
-// TETPrimaryGeneratorAction.cc
-// \file   MRCP_GEANT4/External/src/TETPrimaryGeneratorAction.cc
-// \author Haegin Han
-// \update
-// \
 
+#ifndef Run_h
+#define Run_h 1
 
-#include "primarygeneratoraction.hh"
-#include "G4ParticleTable.hh"
-#include "G4ParticleDefinition.hh"
-#include "G4RunManager.hh"
-#include "detectorconstruction.hh"
-#include "G4PhysicalVolumeStore.hh"
+#include "G4Run.hh"
+#include "G4Event.hh"
+#include "G4THitsMap.hh"
+#include "G4SDManager.hh"
 
-PrimaryGeneratorAction::PrimaryGeneratorAction()
-    :worldHalfZ(2*m) // supposed to be get from det.
-
+class Run : public G4Run
 {
-    fParticleGun = new G4ParticleGun(1);
-    fMessenger   = new PrimaryMessenger(this);
+public:
+    Run();
+    virtual ~Run();
 
-    source = G4ThreeVector(0,81,0)*cm;
-    isocenter = G4ThreeVector(0,0,60)*cm;
-    SetSource(rot);
-    G4ParticleDefinition* gamma
-      = G4ParticleTable::GetParticleTable()->FindParticle("gamma");
-    fParticleGun->SetParticleDefinition(gamma);
-    fParticleGun->SetParticleEnergy(50*keV);
+    virtual void RecordEvent(const G4Event*);
+    virtual void Merge(const G4Run*);
 
-    detY = -35.3*cm;
-    detMinDir = G4ThreeVector(-30.61*cm*0.5,detY,-39.54*cm*0.5)-source;
-    detXdir = G4ThreeVector(30.61*cm, 0, 0);
-    detZdir = G4ThreeVector(0, 0, 39.54*cm);
-}
+    const std::map<G4int, std::pair<G4double, G4double>>* GetDoseMap() const {return &doseMap;}
 
-PrimaryGeneratorAction::~PrimaryGeneratorAction()
-{
-    delete fParticleGun;
-    delete fMessenger;
-}
+private:
+    G4int   fCollID_skin, fCollID_lens;
+    std::map<G4int, std::pair<G4double, G4double>>  doseMap;
+};
 
-void PrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
-{
-    fParticleGun->SetParticleMomentumDirection(SampleADirection());
-    fParticleGun->GeneratePrimaryVertex(anEvent);
-}
-
-
+#endif

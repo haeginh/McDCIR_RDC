@@ -55,13 +55,9 @@ private:
     PrimaryGeneratorAction* fPrimary;
     G4UIdirectory*          fBeamDir;
     G4UIcmdWith3Vector*     fRotCmd;
-    G4UIcmdWith3VectorAndUnit* fSourceCmd;
-    G4UIcmdWithADoubleAndUnit* fAngleCmd;
     G4UIcmdWith3VectorAndUnit* fTransCmd;
-    G4UIcmdWithoutParameter*   fCloseCmd;
 
     G4RotationMatrix rot;
-    G4ThreeVector trans;
 };
 
 #endif

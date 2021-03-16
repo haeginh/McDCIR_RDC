@@ -33,21 +33,19 @@
 
 #include "G4VUserActionInitialization.hh"
 #include "G4String.hh"
-#include "ModelImport.hh"
 
 class TETModelImport;
 
 class ActionInitialization : public G4VUserActionInitialization
 {
 public:
-    ActionInitialization(ModelImport* _tetmodel);
+    ActionInitialization();
     virtual ~ActionInitialization();
 
     virtual void BuildForMaster() const;
     virtual void Build() const;
 
 private:
-    ModelImport* tetmodel;
 };
 
 #endif

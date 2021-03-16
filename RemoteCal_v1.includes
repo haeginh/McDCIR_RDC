@@ -1,0 +1,7 @@
+include
+/home/hurel/codes/Geant4/10.07.p01/include/Geant4
+/home/hurel/codes/CLHEP/2.4.4.0/include
+/home/hurel/codes/libigl/include
+src
+src/src
+src/include
