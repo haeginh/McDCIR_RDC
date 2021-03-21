@@ -4,6 +4,7 @@ include/detectormessenger.hh
 include/eventaction.hh
 include/primarygeneratoraction.hh
 include/primarymessenger.hh
+include/run.hh
 include/runaction.hh
 src/ClientSocket.cpp
 src/ServerSocket.cpp
@@ -14,6 +15,7 @@ src/eventaction.cc
 src/functions.cpp
 src/primarygeneratoraction.cc
 src/primarymessenger.cc
+src/run.cc
 src/runaction.cc
 src/tetparam.cc
 include/detectorconstruction.hh

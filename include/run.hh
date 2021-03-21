@@ -42,10 +42,11 @@ public:
     virtual void Merge(const G4Run*);
 
     const std::map<G4int, std::pair<G4double, G4double>>* GetDoseMap() const {return &doseMap;}
-
+    G4double GetDap(){return dap;}
 private:
-    G4int   fCollID_skin, fCollID_lens;
+    G4int   fCollID_skin, fCollID_lens, fCollID_dap;
     std::map<G4int, std::pair<G4double, G4double>>  doseMap;
+    G4double dap;
 };
 
 #endif

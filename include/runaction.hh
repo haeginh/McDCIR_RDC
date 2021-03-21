@@ -51,6 +51,7 @@ class RunAction : public G4UserRunAction
 private:
     Run* fRun;
     std::map<G4int, std::pair<G4double, G4double>> doseMap;
+    G4int nps;
 };
 
 #endif

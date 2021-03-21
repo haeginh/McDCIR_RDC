@@ -42,6 +42,7 @@ class G4UIcmdWith3VectorAndUnit;
 class G4UIcmdWithADoubleAndUnit;
 class G4UIcmdWithoutParameter;
 class PrimaryGeneratorAction;
+class G4UIcmdWithAString;
 
 class PrimaryMessenger: public G4UImessenger
 {
@@ -56,6 +57,7 @@ private:
     G4UIdirectory*          fBeamDir;
     G4UIcmdWith3Vector*     fRotCmd;
     G4UIcmdWith3VectorAndUnit* fTransCmd;
+    G4UIcmdWithAString*     fSpecCmd;
 
     G4RotationMatrix rot;
 };

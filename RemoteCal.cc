@@ -365,20 +365,62 @@ int main(int argc, char** argv){
     // igl viewer
     igl::opengl::glfw::Viewer viewer;
     viewer.data().set_mesh(V_o, F_o);
-    viewer.data().set_edges(C,BE,sea_green);
-    viewer.data().set_points(C,sea_green);
-    viewer.data().show_lines = false;
-    viewer.data().show_overlay_depth = false;
-    viewer.data().line_width = 1;
-    viewer.data().point_size = 8;
-    viewer.data().double_sided = true;
-    viewer.core().is_animating = false;
+    viewer.append_mesh();
+    viewer.load_mesh_from_file("patient.obj");
+    viewer.append_mesh();
+    viewer.data().set_mesh(V_o, F_o);
+
+    int v1=viewer.data_list[0].id;
+    int v1_patient=viewer.data_list[1].id;
+    int v2=viewer.data_list[2].id;
+    viewer.data(v1).set_edges(C,BE,sea_green);
+    viewer.data(v1).set_points(C,sea_green);
+    viewer.data(v1).show_lines = false;
+    viewer.data(v1).show_overlay_depth = false;
+    viewer.data(v1).line_width = 1;
+    viewer.data(v1).point_size = 8;
+    viewer.data(v1).double_sided = true;
+
+    viewer.data(v1_patient).show_lines = true;
+    viewer.data(v1_patient).show_overlay_depth = false;
+    viewer.data(v1_patient).show_faces = false;
+
+    viewer.data(v2).show_lines = false;
+    viewer.data(v2).show_overlay_depth = false;
+    viewer.data(v2).double_sided = true;
+
+    int v1_view, v2_view;
+    viewer.callback_init = [&](igl::opengl::glfw::Viewer &)
+    {
+      viewer.core().viewport = Eigen::Vector4f(0, 0, 640, 800);
+      v1_view = viewer.core_list[0].id;
+      v2_view = viewer.append_core(Eigen::Vector4f(640, 0, 640, 800));
+      viewer.core(v2_view).background_color=Eigen::Vector4f(0.1,0.1,0.1,1);
+      viewer.core(v1_view).camera_eye=Eigen::Vector3f(0,0,-2);
+      viewer.core(v2_view).camera_eye=Eigen::Vector3f(0,0,-3);
+      viewer.core(v1_view).camera_up=Eigen::Vector3f(0,-1,0);
+      viewer.core(v2_view).camera_up=Eigen::Vector3f(0,-1,0);
+
+      viewer.data(v1).set_visible(false, v2_view);
+      viewer.data(v1_patient).set_visible(false, v2_view);
+      viewer.data(v2).set_visible(false, v1_view);
+      return false;
+    };
+
+    viewer.callback_post_resize = [&](igl::opengl::glfw::Viewer &v, int w, int h) {
+      v.core( v1_view).viewport = Eigen::Vector4f(0, 0, w * 3 / 4, h);
+      v.core(v2_view).viewport = Eigen::Vector4f(w *3 / 4, 0, w/4, h);
+      return true;
+    };
+
+    viewer.core(v1_view).is_animating = false;
+
     for(int i=0;i<BE.rows();i++){
         Vector3d pos = (C.row(BE(i,0))+C.row(BE(i,1))).transpose()*0.5 + Vector3d(1,0,0);
         string label = to_string(i);
-        viewer.data().add_label(pos,label);
+        viewer.data(0).add_label(pos,label);
     }
-    viewer.data().show_custom_labels = true;
+    viewer.data(0).show_custom_labels = true;
     bool calib(false), doseCal(false);
 
     viewer.callback_key_down = [&](igl::opengl::glfw::Viewer &,unsigned char key, int)->bool
@@ -389,24 +431,25 @@ int main(int argc, char** argv){
                 cout<<"There is no calibration info!!"<<endl;
                 return true;
             }
-            viewer.data().set_vertices(V_calib);
-            viewer.data().compute_normals();
-            viewer.data().set_edges(C_calib,BE,sea_green);
-            viewer.data().set_points(C_calib,sea_green);
-            viewer.data().show_custom_labels = false;
+            viewer.data(v1).set_vertices(V_calib);
+            viewer.data(v1).compute_normals();
+            viewer.data(v1).set_edges(C_calib,BE,sea_green);
+            viewer.data(v1).set_points(C_calib,sea_green);
+            viewer.data(v1).show_custom_labels = false;
             calib = true;
             return true;
         case ',': //use mrcp
-            viewer.data().set_vertices(V_o);
-            viewer.data().compute_normals();
-            viewer.data().set_edges(C,BE,sea_green);
-            viewer.data().set_points(C,sea_green);
-            viewer.data().show_custom_labels = true;
+            viewer.data(v1).set_vertices(V_o);
+            viewer.data(v1).compute_normals();
+            viewer.data(v1).set_edges(C,BE,sea_green);
+            viewer.data(v1).set_points(C,sea_green);
+            if(!viewer.core().is_animating)
+                viewer.data(v1).show_custom_labels = true;
             calib = false;
             return true;
         case ' ': //animate
-            viewer.data().show_custom_labels = false;
-            viewer.core().is_animating = !viewer.core().is_animating;
+            viewer.data(v1).show_custom_labels = false;
+            viewer.core(v1_view).is_animating = !viewer.core(v1_view).is_animating;
             return true;
         case '/': //calculate dose
             doseCal = !doseCal;
@@ -429,15 +472,15 @@ int main(int argc, char** argv){
     int ijk[3];
     mutex m;
     thread receiverTH = thread([&](){
+        string listenerIP; int listenerPort;
+        cout<<"Listener IP: "; cin>>listenerIP;
+        cout<<"Listener port: "; cin>>listenerPort;
+        ClientSocket client_socket(listenerIP, listenerPort);
+        cout<<"Send init info to listener.."<<flush;
+        client_socket << "vis";
+        client_socket.RecvIntBuffer(ijk, 3); client_socket <<"chk";
+        cout<<"World grid : "<<ijk[0]<<" * "<<ijk[1]<<" * "<<ijk[2]<<endl;
         while(true){
-            string listenerIP; int listenerPort;
-            cout<<"Listener IP: "; cin>>listenerIP;
-            cout<<"Listener port: "; cin>>listenerPort;
-            ClientSocket client_socket(listenerIP, listenerPort);
-            cout<<"Send init info to listener.."<<flush;
-            client_socket << "vis";
-            client_socket.RecvIntBuffer(ijk, 3); client_socket <<"chk";
-            cout<<"World grid : "<<ijk[0]<<" * "<<ijk[1]<<" * "<<ijk[2]<<endl;
             cout<<"RECV: waiting data..."<<endl;
             int numOfData; client_socket.RecvIntBuffer(&numOfData,1); client_socket << "chk";
             cout<<"RECV: recving " <<numOfData<<" data..."<<endl;
@@ -461,7 +504,7 @@ int main(int argc, char** argv){
     viewer.core().animation_max_fps = 10;
     viewer.callback_pre_draw = [&](igl::opengl::glfw::Viewer &)->bool
     {
-        if(viewer.core().is_animating){
+        if(viewer.core(v1_view).is_animating){
             timer.start();
             MatrixXd V_disp, C_disp(poseJoints.size(),3), C_new(C);
             if(calib) {V_disp = V_calib;}
@@ -492,7 +535,7 @@ int main(int argc, char** argv){
                         C_disp(i,1)=body.skeleton.joints[poseJoints[i]].position.xyz.y*0.1;
                         C_disp(i,2)=body.skeleton.joints[poseJoints[i]].position.xyz.z*0.1;
                     }
-                    viewer.data().set_points(C_disp,blue);
+                    viewer.data(v1).set_points(C_disp,blue);
 
                     vector<Vector3d> vT;
                     RotationList vQ;
@@ -509,11 +552,11 @@ int main(int argc, char** argv){
                         vT.push_back(a.translation());
                         C_new.row(BE(i,1)) = a*Vector3d(C_new.row(BE(i,1)));
                     }
-                    viewer.data().set_edges(C_new, BE, sea_green);
+                    viewer.data(v1).set_edges(C_new, BE, sea_green);
                     MatrixXd U;
                     myDqs(V_disp,cleanWeights,vQ,vT,U);
-                    viewer.data().set_vertices(U);
-                    viewer.data().compute_normals();
+                    viewer.data(v1).set_vertices(U);
+                    viewer.data(v1).compute_normals();
 
                     if(doseCal){
                         MatrixXd color=MatrixXd::Ones(V_o.rows(),3);
@@ -534,7 +577,7 @@ int main(int argc, char** argv){
                             color.col(1) = values;
                             color.col(2) = values;
                         }
-                        viewer.data().set_colors(color);
+                        viewer.data(v1).set_colors(color);
                         timer.stop();
                         cout<<"Frame #"<<frameNo<<" ("<<fabs(stamp)<<"s) : "<<timer.getElapsedTimeInSec()<<"s"<<endl;
                     }
@@ -548,7 +591,13 @@ int main(int argc, char** argv){
     startT = time(NULL);
     timeStamp.start();
 
-    thread viewerTH = thread([&](){viewer.launch();});
+
+//    viewer.append_core(Vector4d())
+//    viewer.append_mesh();
+//    viewer.data(2).set_mesh(V_o, F_o);
+//    viewer.data(2).set_visible(true,);
+
+    thread viewerTH = thread([&](){viewer.launch(true, false, "real-time (version1)");});
 
     viewerTH.join();
     receiverTH.join();

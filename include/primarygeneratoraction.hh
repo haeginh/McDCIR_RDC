@@ -41,6 +41,7 @@
 #include "Randomize.hh"
 #include "G4VPhysicalVolume.hh"
 #include "G4GeometryManager.hh"
+#include <vector>
 
 class PrimaryMessenger;
 
@@ -66,6 +67,16 @@ class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction
         G4ThreeVector dir = rot*(detMinDir+(detXdir+detZdir)*0.5);
         return isocenter + dir.unit()*(detY+7.5*cm);
     }
+    void SetSourceGen(std::vector<G4double> _randCDF,std::vector<G4double> _energySamples){
+        randCDF = _randCDF; energySamples = _energySamples;
+    }
+    G4double SampleAnEnergySG(){
+        G4double rand = G4UniformRand();
+        for(size_t i=0;i<randCDF.size();i++){
+            if(randCDF[i]<rand) continue;
+            return energySamples[i];
+        }
+    }
 
   private:
     G4ParticleGun*       fParticleGun;
@@ -79,6 +90,11 @@ class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction
     G4double detY;
     G4ThreeVector detMinDir, detXdir, detZdir;
     G4ThreeVector sourcePos, isocenter;
+
+    //source Gen
+    G4bool useSpec;
+    std::vector<G4double> randCDF;
+    std::vector<G4double> energySamples;
 };
 
 #endif

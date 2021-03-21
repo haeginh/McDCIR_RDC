@@ -32,6 +32,7 @@
 #include "G4UIcmdWith3VectorAndUnit.hh"
 #include "G4UIcmdWithADoubleAndUnit.hh"
 #include "G4UIcmdWithoutParameter.hh"
+#include "G4UIcmdWithAString.hh"
 
 #include "primarymessenger.hh"
 #include "G4GeometryManager.hh"
@@ -46,12 +47,15 @@ PrimaryMessenger::PrimaryMessenger(PrimaryGeneratorAction* _primary)
 
     fTransCmd = new G4UIcmdWith3VectorAndUnit("/beam/isoC", this);
     fTransCmd->SetDefaultUnit("cm");
+
+    fSpecCmd = new G4UIcmdWithAString("/beam/spec", this);
 }
 
 PrimaryMessenger::~PrimaryMessenger() {
     delete fBeamDir;
     delete fRotCmd;
     delete fTransCmd;
+    delete fSpecCmd;
 }
 
 void PrimaryMessenger::SetNewValue(G4UIcommand* command, G4String newValue)
@@ -66,6 +70,24 @@ void PrimaryMessenger::SetNewValue(G4UIcommand* command, G4String newValue)
     }
     else if(command == fTransCmd){
         fPrimary->SetSourceTrans(fTransCmd->GetNew3VectorValue(newValue));
+    }
+    else if(command == fSpecCmd){
+        std::ifstream ifs(newValue);
+        G4double e, pdf;
+        std::vector<std::pair<G4double, G4double>> sourceGen;
+        while(ifs>>e>>pdf){
+            sourceGen.push_back(std::make_pair(pdf, e));
+        }
+        std::sort(sourceGen.begin(),sourceGen.end(),std::greater<>());
+        std::vector<G4double> randCDF, energySamples;
+        for(auto iter:sourceGen){
+            if(randCDF.empty()) randCDF.push_back(iter.first);
+            else randCDF.push_back(iter.first+randCDF.back());
+            energySamples.push_back(iter.second*keV);
+        }
+        G4double sum = randCDF.back();
+        for(G4double &rands:randCDF) rands/=sum;
+        fPrimary->SetSourceGen(randCDF, energySamples);
     }
 }
 

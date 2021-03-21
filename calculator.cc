@@ -55,7 +55,7 @@ int main ( int argc, char** argv)
     try{
         // Create the socket
         ServerSocket server(port);
-        G4cout << "Listening...."<<G4endl;
+        G4cout << "Listening..."<<G4endl;
 
         try{
             ServerSocket vis;

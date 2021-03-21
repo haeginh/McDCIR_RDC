@@ -37,7 +37,17 @@
 
 RunAction::RunAction()
  : G4UserRunAction()
-{}
+{
+    const G4double milligray = 1.e-3*gray;
+    const G4double microgray = 1.e-6*gray;
+    const G4double nanogray  = 1.e-9*gray;
+    const G4double picogray  = 1.e-12*gray;
+
+    new G4UnitDefinition("milligray", "milliGy" , "Dose", milligray);
+    new G4UnitDefinition("microgray", "microGy" , "Dose", microgray);
+    new G4UnitDefinition("nanogray" , "nanoGy"  , "Dose", nanogray);
+    new G4UnitDefinition("picogray" , "picoGy"  , "Dose", picogray);
+}
 
 RunAction::~RunAction()
 {}
@@ -52,10 +62,12 @@ G4Run* RunAction::GenerateRun()
 void RunAction::BeginOfRunAction(const G4Run* run)
 {
   G4cout << "### Run " << run->GetRunID() << " start." << G4endl;
-  G4int numOfEvent=run->GetNumberOfEventToBeProcessed();
-  G4RunManager::GetRunManager()->SetPrintProgress(int(numOfEvent*0.1));
+  nps=run->GetNumberOfEventToBeProcessed();
+  G4RunManager::GetRunManager()->SetPrintProgress(int(nps*0.1));
 }
 
 void RunAction::EndOfRunAction(const G4Run* )
 {
+    if(!IsMaster()) return;
+    G4cout<<"dose of DAP meter: "<<G4BestUnit(fRun->GetDap()/nps,"Dose")<<G4endl;
 }

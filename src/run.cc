@@ -27,12 +27,14 @@
 #include "run.hh"
 
 Run::Run()
-:G4Run()
+:G4Run(), dap(0)
 {
     fCollID_skin
     = G4SDManager::GetSDMpointer()->GetCollectionID("meshSD/doseS");
     fCollID_lens
     = G4SDManager::GetSDMpointer()->GetCollectionID("meshSD/doseE");
+    fCollID_dap
+    = G4SDManager::GetSDMpointer()->GetCollectionID("dap/dose");
 }
 
 Run::~Run()
@@ -54,6 +56,10 @@ void Run::RecordEvent(const G4Event* event)
         doseMap[itr.first].first += *itr.second;
         doseMap[itr.first].second += *doseMapE[itr.first];
     }
+    auto dapMap =
+            *static_cast<G4THitsMap<G4double>*>(HCE->GetHC(fCollID_dap))->GetMap();
+    if(dapMap.find(1000)!=dapMap.end()) dap += *dapMap[1000];
+
 }
 
 void Run::Merge(const G4Run* run)
@@ -66,6 +72,6 @@ void Run::Merge(const G4Run* run)
         doseMap[itr.first].first  += itr.second.first;
         doseMap[itr.first].second += itr.second.second;
     }
-
+    dap += localRun->dap;
     G4Run::Merge(run);
 }

@@ -110,6 +110,7 @@ private:
     ModelImport*    tetData;
     DetMessenger*   fMessenger;
 
+
 //    G4double worldHalfZ;
 };
 
