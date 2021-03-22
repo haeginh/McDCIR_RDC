@@ -42,7 +42,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include
                     ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/)
 add_executable(RemoteCal RemoteCal.cc ${sources} ${headers})
 add_executable(Calculator calculator.cc ${sources} ${headers} ${g4sources} ${g4headers})
-add_executable(Tracker tracker.cc ${sources} ${headers})
+add_executable(Calculator2 calculator_v2.cc ${sources} ${headers} ${g4sources} ${g4headers})
 
 # Dependencies of this library
 target_link_libraries(RemoteCal PRIVATE
@@ -56,5 +56,5 @@ target_link_libraries(RemoteCal PRIVATE
     ${Geant4_LIBRARIES}
     )
 target_link_libraries(Calculator ${Geant4_LIBRARIES})
-
+target_link_libraries(Listener ${Geant4_LIBRARIES})
 

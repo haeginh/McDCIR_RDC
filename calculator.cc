@@ -1,4 +1,4 @@
-#include "ServerSocket.h"
+#include "ClientSocket.h"
 #include "SocketException.h"
 #include "ModelImport.hh"
 #include <iostream>
@@ -52,18 +52,16 @@ int main ( int argc, char** argv)
 
     runManager->Initialize();
 
-    try{
-        // Create the socket
-        ServerSocket server(port);
-        G4cout << "Listening..."<<G4endl;
-
         try{
-            ServerSocket vis;
-            server.accept ( vis );
+
+            string listenerIP("localhost"); int listenerPort(30303);
+//            cout<<"Listener IP: "; cin>>listenerIP;
+//            cout<<"Listener port: "; cin>>listenerPort;
+            ClientSocket vis(listenerIP, listenerPort);
 
             G4String data;
-            vis>>data;
-            if(data.substr(0,4)=="vis")
+            vis<<"v1_cal"; vis>>data;
+            if(data.substr(0,3)=="chk")
                 G4cout<<"Visualizer successfully connected!"<<G4endl;
             else
                 G4cout<<"WARNING>> Wrong signal: "<<data<<G4endl;
@@ -72,27 +70,32 @@ int main ( int argc, char** argv)
             parallel->GetIJK(ijkData[0], ijkData[1], ijkData[2]);
             vis.SendIntBuffer(ijkData, 3);
 
+            bool isFirst(true);
             while (true){
                 G4bool cont(true);
-                while(cont){ //command (U-define: /beam/rot x y z)
-                    G4cout<<"command>>"<<std::flush; char buff[100];
-                    G4cin.getline(buff, sizeof(buff));
-                    G4String command=buff;
-                    if(command.back()!='\\') cont = false;
-                    else command = command.substr(0, command.length()-1);
-                    stringstream ss(command); G4String start; ss>>start;
-                    if(start=="patient"){
-                        G4ThreeVector pos, rot;
-                        ss>>pos>>rot;
-                        det->SetPatient(pos, rot);
-                    }else if(command=="tracker"){
-                        G4cout<<"Tracker rotation in vector: "<<std::flush;
-                        char trackerBuff[100]; G4cin.getline(trackerBuff, sizeof(trackerBuff));
-                        command = trackerBuff;
-                        UImanager->ApplyCommand("/beam/rot "+command);
-                        UImanager->ApplyCommand("/det/rot "+command);
-                    }else UImanager->ApplyCommand(command);
-                }
+                if(isFirst){
+                    UImanager->ApplyCommand("/beam/spec 80kVp.txt");
+                    isFirst = false;
+                }else
+                    while(cont){ //command (U-define: /beam/rot x y z)
+                        G4cout<<"command>>"<<std::flush; char buff[100];
+                        G4cin.getline(buff, sizeof(buff));
+                        G4String command=buff;
+                        if(command.back()!='\\') cont = false;
+                        else command = command.substr(0, command.length()-1);
+                        stringstream ss(command); G4String start; ss>>start;
+                        if(start=="patient"){
+                            G4ThreeVector pos, rot;
+                            ss>>pos>>rot;
+                            det->SetPatient(pos, rot);
+                        }else if(command=="tracker"){
+                            G4cout<<"Tracker rotation in vector: "<<std::flush;
+                            char trackerBuff[100]; G4cin.getline(trackerBuff, sizeof(trackerBuff));
+                            command = trackerBuff;
+                            UImanager->ApplyCommand("/beam/rot "+command);
+                            UImanager->ApplyCommand("/det/rot "+command);
+                        }else UImanager->ApplyCommand(command);
+                    }
                 G4Timer timer; timer.Start();
                 runManager->BeamOn(100000);
                 timer.Stop(); G4cout<<"Run time: "<<timer.GetRealElapsed()<<"s"<<G4endl;
@@ -127,11 +130,11 @@ int main ( int argc, char** argv)
         {
             std::cout << "Exception was caught:" << e.description() << "\n";
         }
-    }
-    catch ( SocketException& e )
-    {
-        std::cout << "Exception was caught:" << e.description() << "\n";
-    }
+//    }
+//    catch ( SocketException& e )
+//    {
+//        std::cout << "Exception was caught:" << e.description() << "\n";
+//    }
 
     //   delete runManager;
     return 0;

@@ -1,4 +1,4 @@
-#include "ClientSocket.h"
+#include "ServerSocket.h"
 #include "SocketException.h"
 
 #include <iostream>
@@ -46,6 +46,7 @@ int main(int argc, char** argv){
     string prefix = argv[1];
 
     //main variables
+    MatrixXd V_ply; MatrixXi F_ply; bool plyReadChk(false); MatrixXd jt;//main mesh
     MatrixXd C, V_o, W_o, W_j, V;
     MatrixXi BE, T_o, F_o, T, F;
     RowVector3d sea_green(70./255.,252./255.,167./255.);
@@ -156,6 +157,102 @@ int main(int argc, char** argv){
         return EXIT_SUCCESS;
     }
 
+    //dose map
+    map<int, pair<double, double>> doseMap; //<skinD, lensD>
+    int ijk[3];
+    mutex m, m2;
+    thread receiverTH = thread([&](){
+        ServerSocket server(30303);
+        cout << "[TCP/IP] Listening..."<<endl;
+
+        //threads
+        thread* v1_cal;
+        vector<thread*> v2_cals;
+        int v2_calNum(3);
+
+        //data for version 2
+        MatrixXd V_v2, W_v2, Wj_v2;
+        MatrixXi T_v2;
+        bool tetDone(false);
+        while(true){
+            if(v1_cal && v2_cals.size()==v2_calNum) break;
+            if(plyReadChk && !tetDone){
+                MatrixXi F_tmp;
+                igl::copyleft::tetgen::tetrahedralize(V_ply, F_ply, "pYq", V_v2, T_v2, F_tmp);
+                map<int, map<int, double>> baryCoord2 = GenerateBarycentricCoord(V_o,T_o,V_v2);
+                SparseMatrix<double> bary2 = GenerateBarySparse(baryCoord2,V_o.rows());
+                W_v2 = bary2 * W_o; Wj_v2 = bary2*W_j;
+                tetDone = true;
+            }
+            ServerSocket* _sock = new ServerSocket;
+            server.accept ( *_sock );
+            std::string _data("");
+            (*_sock) >> _data;
+            if(_data.substr(0,6)=="v1_cal"){
+                cout<<"[TCP/IP] v1_cal connected.."<<flush; (*_sock) << "chk";
+                v1_cal = new thread([&](ServerSocket* sock){
+                        sock->RecvIntBuffer(ijk, 3); (*sock) <<"chk";
+                        cout<<"World grid : "<<ijk[0]<<" * "<<ijk[1]<<" * "<<ijk[2]<<endl;
+                        while(true){
+                            cout<<"[v1_cal] waiting data..."<<endl;
+                            int numOfData; sock->RecvIntBuffer(&numOfData,1); (*sock) << "chk";
+                            cout<<"[v1_cal] recving " <<numOfData<<" data..."<<endl;
+                            int numOfPack = floor(numOfData / 180)+1;
+                            double buff[180], buff2[180]; int buffInt[180];
+                            m.lock();
+                            doseMap.clear();
+                            for(int i=0, n=0;i<numOfPack;i++){
+                                sock->RecvIntBuffer(buffInt, 180); (*sock)<<"chk";
+                                sock->RecvDoubleBuffer(buff, 180); (*sock)<<"chk";
+                                sock->RecvDoubleBuffer(buff2, 180);(*sock)<<"chk";
+                                for(int j=0;j<180 && n<numOfData;j++, n++){
+                                    doseMap[buffInt[j]] = make_pair(buff[j], buff2[j]);
+                                }
+                            }
+                            m.unlock();
+                       }
+              }, _sock);
+            }
+            else if(_data.substr(0,6)=="v2_cal"){
+                 int _id = v2_cals.size();
+                 cout<<"[TCP/IP] v2_cal #"<<_id<<" connected.."<<flush; _sock->SendIntBuffer(&_id,1);
+                 v2_cals.push_back(new thread([&](ServerSocket* sock, int id){
+                    m2.lock();
+                    while(!tetDone){sleep(1);}
+                    cout<<"[v2_cal"<<id<<"] Send init info.."<<flush;
+                    (*sock) << "init "+to_string(V_v2.rows())+" "+to_string(T_v2.rows())+" "+to_string(F_ply.rows()) ;
+                    string chk;(*sock)>>chk;
+                    for(int i=0;i<V_v2.rows();i++){
+                        Vector3d v=V_v2.row(i);
+                        VectorXd w=W_v2.row(i);
+                        VectorXd wj=Wj_v2.row(i);
+                        VectorXd packet(49); packet << v, w, wj;
+                        sock->SendDoubleBuffer(packet.data(),49);
+                        (*sock)>>chk;
+                    }
+                    for(int i=0;i<T_v2.rows();i++){
+                        VectorXi t=T_v2.row(i);
+                        sock->SendIntBuffer(t.data(),4);
+                        (*sock)>>chk;
+                    }
+                    for(int i=0;i<F_ply.rows();i++){
+                        Vector3i f=F_ply.row(i);
+                        sock->SendIntBuffer(f.data(),3);
+                        (*sock)>>chk;
+                    }
+                    cout<<"done"<<endl; m2.unlock();
+                    m2.lock();
+                    while(jt.rows()==0){sleep(1);}
+                    cout<<"[v2_cal"<<id<<"] Send calib info.."<<flush;
+                    sock->SendDoubleBuffer(jt.data(), jt.size());
+                    m2.unlock();
+                 }, _sock, _id));
+            }
+            else delete _sock;
+        }
+        v1_cal->join();
+    });
+
     //read phantom files
     cout<<"Read "+prefix+"_o.mesh"<<endl;
     igl::readMESH(prefix+"_o.mesh", V_o, T_o, F_o);
@@ -166,9 +263,8 @@ int main(int argc, char** argv){
     igl::normalize_row_sums(W_j,W_j);
 
     if(string(argv[2])!="-rst") PrintUsage();
-    MatrixXd V_ply; MatrixXi F_ply;
     cout<<"Set for "<<string(argv[3])<<endl;
-    igl::readPLY(string(argv[3]),V_ply,F_ply);
+    plyReadChk = igl::readPLY(string(argv[3]),V_ply,F_ply);
     map<int, map<int, double>> baryCoord = GenerateBarycentricCoord(V_o,T_o,V_ply);
     SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V_o.rows());
     V_o = V_ply; F_o = F_ply; W_o = bary*W_o; W_j = bary*W_j;
@@ -360,7 +456,7 @@ int main(int argc, char** argv){
         cout<<jointTrans.rows()<<"*"<<jointTrans.cols()<<endl;
         V_calib = V_o+W_j*jointTrans.block(0,0,C.rows()-1,3);
     }
-    MatrixXd jt = jointTrans.block(0,0,C.rows()-1,3);
+    jt = jointTrans.block(0,0,C.rows()-1,3);
 
     // igl viewer
     igl::opengl::glfw::Viewer viewer;
@@ -467,39 +563,6 @@ int main(int argc, char** argv){
     //frame data
     int frameNo(0); //0: final sig, <0: calib, >0 calibX, start from 1
 
-    //dose map
-    map<int, pair<double, double>> doseMap; //<skinD, lensD>
-    int ijk[3];
-    mutex m;
-    thread receiverTH = thread([&](){
-        string listenerIP; int listenerPort;
-        cout<<"Listener IP: "; cin>>listenerIP;
-        cout<<"Listener port: "; cin>>listenerPort;
-        ClientSocket client_socket(listenerIP, listenerPort);
-        cout<<"Send init info to listener.."<<flush;
-        client_socket << "vis";
-        client_socket.RecvIntBuffer(ijk, 3); client_socket <<"chk";
-        cout<<"World grid : "<<ijk[0]<<" * "<<ijk[1]<<" * "<<ijk[2]<<endl;
-        while(true){
-            cout<<"RECV: waiting data..."<<endl;
-            int numOfData; client_socket.RecvIntBuffer(&numOfData,1); client_socket << "chk";
-            cout<<"RECV: recving " <<numOfData<<" data..."<<endl;
-            int numOfPack = floor(numOfData / 180)+1;
-            double buff[180], buff2[180]; int buffInt[180];
-            m.lock();
-            doseMap.clear();
-            for(int i=0, n=0;i<numOfPack;i++){
-                client_socket.RecvIntBuffer(buffInt, 180); client_socket<<"chk";
-                client_socket.RecvDoubleBuffer(buff, 180); client_socket<<"chk";
-                client_socket.RecvDoubleBuffer(buff2, 180);client_socket<<"chk";
-                for(int j=0;j<180 && n<numOfData;j++, n++){
-                    doseMap[buffInt[j]] = make_pair(buff[j], buff2[j]);
-                }
-            }
-            m.unlock();
-        }
-    });
-
     //animator
     viewer.core().animation_max_fps = 10;
     viewer.callback_pre_draw = [&](igl::opengl::glfw::Viewer &)->bool
@@ -561,8 +624,8 @@ int main(int argc, char** argv){
                     if(doseCal){
                         MatrixXd color=MatrixXd::Ones(V_o.rows(),3);
                         if(doseMap.size()>0){
-                            U.row(0) = U.row(0).array() + 150;
-                            U.row(1) = U.row(1).array() + 150;
+                            U.col(0) = U.col(0).array() + 150;
+                            U.col(1) = U.col(1).array() + 150;
                             U *= 0.2;
                             VectorXd values = ArrayXd::Zero(V_o.rows());
                             m.lock();
