@@ -70,7 +70,7 @@ public:
     void SetPatient(G4ThreeVector _rot, G4ThreeVector trans){
         G4double angle = _rot.mag();
         G4RotationMatrix rot; rot.setAxis(_rot/angle); rot.setTheta(angle*degree);
-        transform = G4Transform3D(rot, trans);//-G4ThreeVector(0,0,worldHalfZ));
+        transform = G4Transform3D(rot, trans-G4ThreeVector(0,0,worldHalfZ));
 
         if(container_phys){
             G4GeometryManager::GetInstance()->OpenGeometry();
@@ -81,7 +81,7 @@ public:
     }
 
     void SetDetector(G4RotationMatrix rot, G4ThreeVector trans){
-        det_transform = G4Transform3D(rot, trans);//-G4ThreeVector(0,0,worldHalfZ));
+        det_transform = G4Transform3D(rot, trans-G4ThreeVector(0,0,worldHalfZ));
 
         if(det_phys){
             G4GeometryManager::GetInstance()->OpenGeometry();
@@ -110,8 +110,7 @@ private:
     ModelImport*    tetData;
     DetMessenger*   fMessenger;
 
-
-//    G4double worldHalfZ;
+    G4double worldHalfZ;
 };
 
 #endif

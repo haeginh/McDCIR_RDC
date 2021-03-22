@@ -4,7 +4,7 @@
 
 ModelImport::ModelImport()
 {
-    ReadPhantomFile("patient");
+    ReadPhantomFile("patient2");
     matMap[1] = G4NistManager::Instance()->FindOrBuildMaterial("G4_TISSUE_SOFT_ICRP");
     matMap[2] = G4NistManager::Instance()->FindOrBuildMaterial("G4_LUNG_ICRP");
 }
@@ -14,7 +14,8 @@ void ModelImport::ReadPhantomFile(G4String filename){
     std::vector<G4ThreeVector> nodeVec;
     std::ifstream ifsNode(filename+".node");
     G4int numOfNodes; G4String dump; G4double x, y, z;
-    G4ThreeVector max, min;
+    G4ThreeVector max(-DBL_MAX,-DBL_MAX,-DBL_MAX);
+    G4ThreeVector min(DBL_MAX,DBL_MAX,DBL_MAX);
     ifsNode>>numOfNodes>>dump>>dump>>dump;
     for(G4int i=0;i<numOfNodes;i++){
         ifsNode>>dump>>x>>y>>z;

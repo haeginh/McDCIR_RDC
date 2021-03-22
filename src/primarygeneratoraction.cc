@@ -38,7 +38,7 @@
 #include "G4PhysicalVolumeStore.hh"
 
 PrimaryGeneratorAction::PrimaryGeneratorAction()
-    :worldHalfZ(2*m), useSpec(false) // supposed to be get from det.
+    :worldHalfZ(1.5*m), useSpec(false) // supposed to be get from det.
 
 {
     fParticleGun = new G4ParticleGun(1);

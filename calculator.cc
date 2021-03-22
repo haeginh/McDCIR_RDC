@@ -93,12 +93,14 @@ int main ( int argc, char** argv)
                         UImanager->ApplyCommand("/det/rot "+command);
                     }else UImanager->ApplyCommand(command);
                 }
-                runManager->BeamOn(1000000);
+                G4Timer timer; timer.Start();
+                runManager->BeamOn(100000);
+                timer.Stop(); G4cout<<"Run time: "<<timer.GetRealElapsed()<<"s"<<G4endl;
+                timer.Start();
                 const RunAction* runAction
                         = static_cast<const RunAction*>(runManager->GetUserRunAction());
                 const std::map<G4int, std::pair<G4double, G4double>>* doseVec = runAction->GetDoseMap();
                 double buff[180], buff2[180]; int buffInt[180];
-                G4Timer timer; timer.Start();
                 G4cout<<"Send "<<doseVec->size()<< " dose data..."<<std::flush;
                 G4int numOfData = doseVec->size();
                 G4int numOfPack = floor(numOfData / 180)+1;

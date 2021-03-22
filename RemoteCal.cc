@@ -561,12 +561,13 @@ int main(int argc, char** argv){
                     if(doseCal){
                         MatrixXd color=MatrixXd::Ones(V_o.rows(),3);
                         if(doseMap.size()>0){
-                            U = U.array()+200;
+                            U.row(0) = U.row(0).array() + 150;
+                            U.row(1) = U.row(1).array() + 150;
                             U *= 0.2;
                             VectorXd values = ArrayXd::Zero(V_o.rows());
                             m.lock();
                             for(int i=0;i<U.rows();i++){
-                                int idx = floor(U(i,0))*ijk[2]*ijk[1]+floor(U(i,1))*ijk[1]+floor(U(i,2));
+                                int idx = floor(U(i,0))*ijk[2]*ijk[1]+floor(U(i,1))*ijk[2]+floor(U(i,2));
                                 auto iter = doseMap.find(idx);
                                 if(iter==doseMap.end()) continue;
                                 values(i) = iter->second.first;

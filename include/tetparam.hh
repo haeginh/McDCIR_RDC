@@ -55,9 +55,9 @@ class TetParam : public G4VPVParameterisation
     virtual void ComputeTransformation(
                    const G4int,G4VPhysicalVolume*) const;
 
-    virtual G4Material* ComputeMaterial(const G4int copyNo,
-                                        G4VPhysicalVolume* phy,
-                                        const G4VTouchable*);
+//    virtual G4Material* ComputeMaterial(const G4int copyNo,
+//                                        G4VPhysicalVolume* phy,
+//                                        const G4VTouchable*);
 
   private:
     ModelImport*                       tetData;

@@ -30,9 +30,9 @@
 
 
 DetectorConstruction::DetectorConstruction(ModelImport* _tetData)
-:worldPhysical(0), container_logic(0), tetData(_tetData)
+:worldPhysical(0), container_logic(0), tetData(_tetData), worldHalfZ(1.5*m)
 {
-    det_transform = G4Transform3D(G4RotationMatrix(), G4ThreeVector(0,-42.8,60)*cm);
+    det_transform = G4Transform3D(G4RotationMatrix(), G4ThreeVector(0,-42.8,60)*cm-G4ThreeVector(0,0,worldHalfZ));
     fMessenger = new DetMessenger(this);
 }
 
@@ -52,7 +52,8 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
     det_phys = new G4PVPlacement(det_transform,
                                  new G4LogicalVolume(det, G4NistManager::Instance()->FindOrBuildMaterial("G4_W"),"det_log"),
                                  "det_phy", worldPhysical->GetLogicalVolume(), false, 0, false);
-    new G4PVPlacement(0, G4ThreeVector(0,50,60)*cm,new G4LogicalVolume(new G4Box("dap",5*cm,0.001*cm,5*cm ),G4NistManager::Instance()->FindOrBuildMaterial("G4_AIR"),"dap")
+    new G4PVPlacement(0, G4ThreeVector(0,50,60)*cm-G4ThreeVector(0,0,worldHalfZ),
+                      new G4LogicalVolume(new G4Box("dap",5*cm,0.001*cm,5*cm ),G4NistManager::Instance()->FindOrBuildMaterial("G4_AIR"),"dap")
                       ,"dap",worldPhysical->GetLogicalVolume(),false,1000,false);
 
     return worldPhysical;
@@ -62,8 +63,7 @@ void DetectorConstruction::SetupWorldGeometry()
 {
     // Define the world box (size: 10*10*10 m3)
     //
-    G4double worldHalfZ = 2*m;
-    G4double worldXY = 4 * m;
+    G4double worldXY = 3 * m;
     G4Material* air = G4NistManager::Instance()->FindOrBuildMaterial("G4_AIR");
 
     G4VSolid* worldSolid
@@ -83,7 +83,7 @@ void DetectorConstruction::SetupWorldGeometry()
 
     container_logic = new G4LogicalVolume(container_sol, air, "phantomLogical");
 
-    container_phys = new G4PVPlacement(0, tetData->GetCenter(), container_logic, "PhantomPhysical",
+    container_phys = new G4PVPlacement(0, tetData->GetCenter()-G4ThreeVector(0,0,worldHalfZ), container_logic, "PhantomPhysical",
                                        worldLogical, false, 0);
 //    container_logic->SetOptimisation(TRUE);
 //    container_logic->SetSmartless( 0.5 ); // for optimization (default=2)

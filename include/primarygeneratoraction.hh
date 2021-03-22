@@ -56,7 +56,7 @@ class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction
 
     void SetSource(G4RotationMatrix _rot){
         rot = _rot;
-        fParticleGun->SetParticlePosition(rot*source + isocenter);
+        fParticleGun->SetParticlePosition(rot*source + isocenter-G4ThreeVector(0,0,worldHalfZ));
     }
     void SetSourceTrans(G4ThreeVector _trans) {isocenter = _trans;}
     G4ThreeVector SampleADirection(){
@@ -84,7 +84,6 @@ class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction
     G4double cosTheta;
     G4RotationMatrix rot;
     G4ThreeVector source;
-    G4double tranZ;
     G4double worldHalfZ;
 
     G4double detY;
