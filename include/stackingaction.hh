@@ -23,31 +23,37 @@
 // * acceptance of all terms of the Geant4 Software license.          *
 // ********************************************************************
 //
-// \author Haegin Han
+/// \file electromagnetic/TestEm5/include/StackingAction.hh
+/// \brief Definition of the StackingAction class
 //
+//
+//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
+//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
-#include "actioninitialization.hh"
-#include "primarygeneratoraction.hh"
-#include "runaction.hh"
-#include "stackingaction.hh"
+#ifndef StackingAction_h
+#define StackingAction_h 1
 
-ActionInitialization::ActionInitialization()
- : G4VUserActionInitialization()
-{}
+#include "G4UserStackingAction.hh"
+#include "globals.hh"
 
-ActionInitialization::~ActionInitialization()
-{}
+class EventAction;
+class StackingMessenger;
 
-void ActionInitialization::BuildForMaster() const
+//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
+
+class StackingAction : public G4UserStackingAction
 {
-    SetUserAction(new RunAction());
-}
+  public:
+    StackingAction();
+   ~StackingAction();
 
-void ActionInitialization::Build() const
-{
-    // initialise UserAction classes
-    SetUserAction(new PrimaryGeneratorAction());
-    SetUserAction(new RunAction());
-//    SetUserAction(new StackingAction());
-}
+    virtual G4ClassificationOfNewTrack ClassifyNewTrack(const G4Track*);
+
+  private:
+    G4int totalEnergyDepositID;
+};
+
+//....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
+
+#endif
 

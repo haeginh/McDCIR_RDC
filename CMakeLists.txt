@@ -34,15 +34,19 @@ option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
 option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
 find_package(LIBIGL REQUIRED QUIET)
 
+## trase
+#find_package(trase REQUIRED)
+
 file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cpp)
 file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.h)
 file(GLOB g4sources ${PROJECT_SOURCE_DIR}/src/*.cc)
 file(GLOB g4headers ${PROJECT_SOURCE_DIR}/include/*.hh)
 include_directories(${PROJECT_SOURCE_DIR}/include
-                    ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/)
+                    ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/
+                    ~/codes/trase/src/
+                    )
 add_executable(RemoteCal RemoteCal.cc ${sources} ${headers})
-add_executable(Calculator calculator.cc ${sources} ${headers} ${g4sources} ${g4headers})
-add_executable(Calculator2 calculator_v2.cc ${sources} ${headers} ${g4sources} ${g4headers})
+add_executable(MapCalculator calculator.cc ${sources} ${headers} ${g4sources} ${g4headers})
 
 # Dependencies of this library
 target_link_libraries(RemoteCal PRIVATE
@@ -53,8 +57,8 @@ target_link_libraries(RemoteCal PRIVATE
     igl::core
     igl::opengl_glfw
     igl::tetgen
+#    trase
     ${Geant4_LIBRARIES}
     )
-target_link_libraries(Calculator ${Geant4_LIBRARIES})
-target_link_libraries(Listener ${Geant4_LIBRARIES})
+target_link_libraries(MapCalculator ${Geant4_LIBRARIES})
 

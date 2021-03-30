@@ -97,7 +97,7 @@ int main ( int argc, char** argv)
                         }else UImanager->ApplyCommand(command);
                     }
                 G4Timer timer; timer.Start();
-                runManager->BeamOn(100000);
+                runManager->BeamOn(1000000);
                 timer.Stop(); G4cout<<"Run time: "<<timer.GetRealElapsed()<<"s"<<G4endl;
                 timer.Start();
                 const RunAction* runAction
