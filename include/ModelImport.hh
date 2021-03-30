@@ -6,6 +6,7 @@
 #include <Eigen/Geometry>
 #include "functions.h"
 #include "ClientSocket.h"
+#include <set>
 
 class ModelImport
 {
@@ -26,6 +27,7 @@ public:
     }
     G4int GetNonTargetNum(){return nonTargetNum;}
     void GenerateOffset();
+    std::set<G4int> GetEyeFaces(){return eyeFaces;}
 private:
     void ReadMatFile(G4String filename);
 
@@ -47,6 +49,25 @@ private:
     std::vector<G4ThreeVector> U_layer0,U_layer1;
     std::map<int, int> u2o;
     G4int nonTargetNum;
+
+    //eye
+    std::set<G4int> eyeFaces;
+
+    //degen
+private:
+    void ChkDegenAndSetVertices(G4ThreeVector a, G4ThreeVector b, G4ThreeVector c, G4ThreeVector d, G4Tet* tet){
+        G4double vol6;
+        if (ChkDegenTet2(a, b, c, d, vol6)) {
+            G4cout << "  degenerated tet!! --> " <<flush;
+            double move;
+            move = FixDegenTet3(a, b, c, d, vol6);
+            G4cout << "fixed (moved "<<move<<" cm)" <<G4endl;
+        }
+        tet->SetVertices(a,b,c,d);
+    }
+    G4double FixDegenTet3(G4ThreeVector& anchor, G4ThreeVector& p2, G4ThreeVector& p3, G4ThreeVector& p4, G4double &vol6);
+    G4bool ChkDegenTet2(G4ThreeVector p0, G4ThreeVector p1, G4ThreeVector p2, G4ThreeVector p3, G4double& vol6);
+
 };
 
 #endif // MODELIMPORT_HH

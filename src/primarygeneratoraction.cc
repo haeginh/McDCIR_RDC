@@ -37,9 +37,9 @@ PrimaryGeneratorAction::PrimaryGeneratorAction()
     fParticleGun = new G4ParticleGun(1);
     fMessenger   = new PrimaryMessenger(this);
 
-    source = G4ThreeVector(0,0,-30)*cm;
-    cosTheta = cos(30*deg);
-    fParticleGun->SetParticlePosition(rot * source);
+//    source = G4ThreeVector(0,0,-30)*cm;
+//    cosTheta = cos(30*deg);
+//    fParticleGun->SetParticlePosition(rot * source);
 }
 
 PrimaryGeneratorAction::~PrimaryGeneratorAction()
@@ -50,7 +50,13 @@ PrimaryGeneratorAction::~PrimaryGeneratorAction()
 
 void PrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
 {
-    fParticleGun->SetParticleMomentumDirection(SampleADirection());
+//    fParticleGun->SetParticleMomentumDirection(SampleADirection());
+    G4int i=anEvent->GetEventID();
+    fParticleGun->SetParticleDefinition(particleMap[particles[i]]);
+    fParticleGun->SetParticleEnergy(energies[i]);
+    fParticleGun->SetParticlePosition(positions[i]);
+    fParticleGun->SetParticleMomentumDirection(directions[i]);
+//    fMessenger->SetParticleGun(anEvent->GetEventID(),fParticleGun);
     fParticleGun->GeneratePrimaryVertex(anEvent);
 }
 

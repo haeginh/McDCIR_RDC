@@ -22,40 +22,22 @@ else()
   find_package(Geant4 REQUIRED)
 endif()
 
-#k4a
-FIND_PACKAGE(k4a REQUIRED)
-FIND_PACKAGE(k4abt REQUIRED)
-
 # libigl
 add_subdirectory(extern)
 add_subdirectory(helper)
-option(LIBIGL_WITH_OPENGL            "Use OpenGL"         ON)
-option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
-option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
+#option(LIBIGL_WITH_OPENGL            "Use OpenGL"         ON)
+#option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
+#option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
 find_package(LIBIGL REQUIRED QUIET)
 
 file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cpp)
 file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.h)
 file(GLOB g4sources ${PROJECT_SOURCE_DIR}/src/*.cc)
 file(GLOB g4headers ${PROJECT_SOURCE_DIR}/include/*.hh)
-include_directories(${PROJECT_SOURCE_DIR}/include
-                    ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/)
-add_executable(RemoteCal RemoteCal.cc ${sources} ${headers})
+include_directories(${PROJECT_SOURCE_DIR}/include)
 add_executable(Calculator calculator.cc ${sources} ${headers} ${g4sources} ${g4headers})
-add_executable(Listener listener.cc ${sources} ${headers})
 
 # Dependencies of this library
-target_link_libraries(RemoteCal PRIVATE
-    k4a
-    k4arecord
-    k4abt
-    window_controller_3d::window_controller_3d
-    igl::core
-    igl::opengl_glfw
-    igl::tetgen
-    ${Geant4_LIBRARIES}
-    )
 target_link_libraries(Calculator ${Geant4_LIBRARIES})
-target_link_libraries(Listener ${Geant4_LIBRARIES})
 
 

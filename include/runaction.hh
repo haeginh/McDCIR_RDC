@@ -54,6 +54,8 @@ private:
     std::map<int, double> massMap;
     G4Accumulable<G4int>    fGoodEvents;
     std::vector<G4Accumulable<G4double>*> fSumDose;
+    G4double totalMass, eyeMass;
+    std::set<G4int> eyeFaces;
 };
 
 #endif

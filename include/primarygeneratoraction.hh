@@ -39,7 +39,7 @@
 #include "primarymessenger.hh"
 #include "G4RotationMatrix.hh"
 #include "G4RandomDirection.hh"
-
+#include "G4ParticleTable.hh"
 class PrimaryMessenger;
 
 class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction
@@ -51,26 +51,52 @@ class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction
   public:
     virtual void   GeneratePrimaries(G4Event* anEvent);
 
-    void SetAngle(G4double angle){
-        cosTheta = cos(angle);
+    void ReadPhaseSpace(G4String file){
+        std::ifstream ifs(file, std::ios::in | std::ios::binary);
+        G4int num;
+        ifs.read((char*) &num, sizeof(G4int));
+        G4cout<<"Read data for "<<num<<" particles"<<G4endl;
+        particles.clear(); particles.resize(num);
+        energies.clear(); energies.resize(num);
+        positions.clear(); positions.resize(num);
+        directions.clear(); directions.resize(num);
+        ifs.read((char*) &particles[0], num*sizeof(G4int));
+        ifs.read((char*) &energies[0], num*sizeof(G4double));
+        ifs.read((char*) &positions[0], num*sizeof(G4ThreeVector));
+        ifs.read((char*) &directions[0], num*sizeof(G4ThreeVector));
+        ifs.close();
+
+        particleMap.clear();
+        std::vector<int> sorted(particles);
+        std::sort(sorted.begin(),sorted.end());
+        sorted.erase(std::unique(sorted.begin(),sorted.end()),sorted.end());
+        for(G4int i:sorted) particleMap[i]=G4ParticleTable::GetParticleTable()->FindParticle(i);
     }
-    void SetDefaultSource(G4ThreeVector pos){
-        source = pos;
-    }
-    void SetSource(G4RotationMatrix _rot, G4ThreeVector trans){
-        rot = _rot;
-        fParticleGun->SetParticlePosition(rot*source + trans);
-    }
-    G4ThreeVector SampleADirection(){
-        return rot*G4RandomDirection(cosTheta);
-    }
+//    void SetAngle(G4double angle){
+//        cosTheta = cos(angle);
+//    }
+//    void SetDefaultSource(G4ThreeVector pos){
+//        source = pos;
+//    }
+//    void SetSource(G4RotationMatrix _rot, G4ThreeVector trans){
+//        rot = _rot;
+//        fParticleGun->SetParticlePosition(rot*source + trans);
+//    }
+//    G4ThreeVector SampleADirection(){
+//        return rot*G4RandomDirection(cosTheta);
+//    }
 
   private:
     G4ParticleGun*       fParticleGun;
     PrimaryMessenger*    fMessenger;
     G4double cosTheta;
-    G4RotationMatrix rot;
-    G4ThreeVector source;
+
+    std::vector<G4int> particles;
+    std::map<G4int, G4ParticleDefinition*> particleMap;
+    std::vector<G4double> energies;
+    std::vector<G4ThreeVector> positions, directions;
+//    G4RotationMatrix rot;
+//    G4ThreeVector source;
 };
 
 #endif

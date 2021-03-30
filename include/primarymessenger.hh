@@ -37,10 +37,11 @@
 #include "G4RotationMatrix.hh"
 
 class G4UIdirectory;
-class G4UIcmdWith3Vector;
-class G4UIcmdWith3VectorAndUnit;
-class G4UIcmdWithADoubleAndUnit;
-class G4UIcmdWithoutParameter;
+//class G4UIcmdWith3Vector;
+//class G4UIcmdWith3VectorAndUnit;
+//class G4UIcmdWithADoubleAndUnit;
+//class G4UIcmdWithoutParameter;
+class G4UIcmdWithAString;
 class PrimaryGeneratorAction;
 
 class PrimaryMessenger: public G4UImessenger
@@ -51,17 +52,29 @@ public:
 
     virtual void SetNewValue(G4UIcommand*, G4String);
 
+//    void SetParticleGun(G4int eventID, G4ParticleGun* gun){
+//        gun->SetParticleDefinition(particleMap[particles[eventID]]);
+//        gun->SetParticleEnergy(energies[eventID]);
+//        gun->SetParticlePosition(positions[eventID]);
+//        gun->SetParticleMomentumDirection(directions[eventID]);
+//    }
+
+
 private:
     PrimaryGeneratorAction* fPrimary;
     G4UIdirectory*          fBeamDir;
-    G4UIcmdWith3Vector*     fRotCmd;
-    G4UIcmdWith3VectorAndUnit* fSourceCmd;
-    G4UIcmdWithADoubleAndUnit* fAngleCmd;
-    G4UIcmdWith3VectorAndUnit* fTransCmd;
-    G4UIcmdWithoutParameter*   fCloseCmd;
+    G4UIcmdWithAString*     fPhaseSpace;
 
-    G4RotationMatrix rot;
-    G4ThreeVector trans;
+
+//    G4uicmdwithas
+//    G4UIcmdWith3Vector*     fRotCmd;
+//    G4UIcmdWith3VectorAndUnit* fSourceCmd;
+//    G4UIcmdWithADoubleAndUnit* fAngleCmd;
+//    G4UIcmdWith3VectorAndUnit* fTransCmd;
+//    G4UIcmdWithoutParameter*   fCloseCmd;
+
+//    G4RotationMatrix rot;
+//    G4ThreeVector trans;
 };
 
 #endif

@@ -20,10 +20,8 @@ include/detectorconstruction.hh
 include/tetparam.hh
 src/detectorconstruction.cc
 CMakeLists.txt
-RemoteCal.cc
 calculator.cc
 calculator.cpp
-listener.cc
 listener.cpp
 src/ModelImport.cc
 include/ServerSocket.h
@@ -31,5 +29,4 @@ include/Socket.h
 include/SocketException.h
 include/functions.h
 include/ClientSocket.h
-include/bodytracking.hh
 RemoteCal.cc

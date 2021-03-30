@@ -58,6 +58,9 @@ RunAction::RunAction(ModelImport* _tetmodel)
       fSumDose.push_back(new G4Accumulable<double>(0));
       accumulableManager->RegisterAccumulable(*fSumDose[i]);
   }
+
+  if(!isMaster) return;
+  eyeFaces = tetmodel->GetEyeFaces();
 }
 
 RunAction::~RunAction()
@@ -72,14 +75,21 @@ void RunAction::BeginOfRunAction(const G4Run* run)
   // reset accumulables to their initial values
   G4AccumulableManager* accumulableManager = G4AccumulableManager::Instance();
   accumulableManager->Reset();
+  G4RunManager::GetRunManager()->SetPrintProgress(run->GetNumberOfEventToBeProcessed()*0.1);
 
   if (!IsMaster()) return;
-  massMap.clear();
+  massMap.clear(); totalMass=0;
   G4double divide3 = 1./3.;
   G4Material* tissue = G4NistManager::Instance()->FindOrBuildMaterial("G4_ADIPOSE_TISSUE_ICRP");
   for(G4int i=tetmodel->GetNonTargetNum();i<tetmodel->GetNumOfTet();i++){
+     G4double mass = tetmodel->GetTetrahedron(i)->GetCubicVolume() * tissue->GetDensity();
      massMap[floor((i-tetmodel->GetNonTargetNum())*divide3)]
-             += tetmodel->GetTetrahedron(i)->GetCubicVolume() * tissue->GetDensity();
+             += mass;
+     totalMass+=mass;
+  }
+  eyeMass=0;
+  for(G4double i:eyeFaces){
+        eyeMass+=massMap[i];
   }
 //  //inform the runManager to save random number seed
 //  G4RunManager::GetRunManager()->SetRandomNumberStore(false);
@@ -103,12 +113,16 @@ void RunAction::EndOfRunAction(const G4Run* run)
      << G4endl
      << "  The run was " << nofEvents << " events "
      << "/ Nb of 'good' events: " << fGoodEvents.GetValue()  << G4endl;
-    G4double sumDose(0);
+    G4double sumDose(0), lensDose(0);
+    for(G4int i:eyeFaces) lensDose+=fSumDose[i]->GetValue();
     for(size_t i=0;i<fSumDose.size();i++){
-        (*fSumDose[i]) *= 1./massMap[i];
         sumDose += fSumDose[i]->GetValue();
-    }G4cout
-       << "  Total skin dose : " << G4BestUnit(sumDose,"Dose")
+        (*fSumDose[i]) *= 1./massMap[i];
+    }
+
+    G4cout
+       << "  Total skin dose : " << G4BestUnit(sumDose/totalMass/nofEvents,"Dose")
+       << "  Lens dose : " << G4BestUnit(lensDose/eyeMass/nofEvents,"Dose")
        << G4endl
        << "---------------------------------------------------------------" << G4endl
        << G4endl;

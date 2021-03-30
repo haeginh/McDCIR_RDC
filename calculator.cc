@@ -36,17 +36,10 @@ int main ( int argc, char** argv)
     G4UImanager* UImanager = G4UImanager::GetUIpointer();
 
     try{
-        G4String data;
         ClientSocket* client_socket;
-        while(true){
-            data.clear();
-            client_socket = new ClientSocket ( "localhost", 30303 );
-            (*client_socket)<<"Idle";
-            (*client_socket)>>data;
-            if(data.substr(0,4)!="wait") break;
-            delete client_socket;
-        }
-        G4int calID = atoi(data.c_str());
+        client_socket = new ClientSocket ("localhost", 30303 );
+        G4int calID;
+        (*client_socket)<<"v2_cal"; client_socket->RecvIntBuffer(&calID,1);
         cout<<"Activated as Cal #"<<calID<<endl;
 
         ModelImport* modelImport = new ModelImport(client_socket);
@@ -63,16 +56,22 @@ int main ( int argc, char** argv)
         }else{
            // UImanager->ApplyCommand("/tracking/verbose 2");
             runManager->Initialize();
-            UImanager->ApplyCommand("/gun/particle gamma");
-            UImanager->ApplyCommand("/gun/energy 50 keV");
+            G4String phaseSpace = "80kVp_1E8.bin";
+            G4int num;
+            std::ifstream ifs(phaseSpace, std::ios::in | std::ios::binary);
+            ifs.read((char*)&num, sizeof(G4int)); ifs.close();
+            G4cout<<"nps per frame: "<<num <<G4endl;
+            UImanager->ApplyCommand("/beam/phase "+phaseSpace);
+            runManager->BeamOn(1);
+//            UImanager->ApplyCommand("/gun/particle gamma");
+//            UImanager->ApplyCommand("/gun/energy 50 keV");
             const RunAction* runAction
               = static_cast<const RunAction*>(runManager->GetUserRunAction());
             G4int numOfPack = floor(modelImport->GetNumOfFace() / 180)+1;
             while(true){
                 array<double, 155> pack;
                 client_socket->RecvDoubleBuffer(pack.data(),155);
-
-                G4cout<<"calculate frame #"<<(int)pack[0]<<G4endl;
+                G4cout<<"Frame signal: "<<pack[0]<<G4endl;
                 RotationList vQ;
                 vector<Vector3d> vT;
                 for(int i=0;i<22;i++){
@@ -83,7 +82,7 @@ int main ( int argc, char** argv)
                 if(pack[0]<0) calib = true;
                 det->SetUpNewFrame(vQ,vT, calib);
                 runManager->GeometryHasBeenModified();
-                runManager->BeamOn(10000);
+                runManager->BeamOn(num*0.01);
                 const std::vector<G4Accumulable<G4double>*>* doseVec = runAction->GetDoseVec();
                 double buff[180]; string dump;
                 G4Timer timer; timer.Start();
