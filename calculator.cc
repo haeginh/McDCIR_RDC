@@ -37,7 +37,7 @@ int main ( int argc, char** argv)
 
     try{
         ClientSocket* client_socket;
-        client_socket = new ClientSocket ("localhost", 30303 );
+        client_socket = new ClientSocket ("166.104.155.142", 30303 );
         G4int calID;
         (*client_socket)<<"v2_cal"; client_socket->RecvIntBuffer(&calID,1);
         cout<<"Activated as Cal #"<<calID<<endl;

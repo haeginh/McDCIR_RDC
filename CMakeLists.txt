@@ -23,8 +23,6 @@ else()
 endif()
 
 # libigl
-add_subdirectory(extern)
-add_subdirectory(helper)
 #option(LIBIGL_WITH_OPENGL            "Use OpenGL"         ON)
 #option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
 #option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
@@ -34,7 +32,9 @@ file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cpp)
 file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.h)
 file(GLOB g4sources ${PROJECT_SOURCE_DIR}/src/*.cc)
 file(GLOB g4headers ${PROJECT_SOURCE_DIR}/include/*.hh)
-include_directories(${PROJECT_SOURCE_DIR}/include)
+include_directories(${PROJECT_SOURCE_DIR}/include
+                    ${PROJECT_SOURCE_DIR}/libigl/include
+                    ${PROJECT_SOURCE_DIR}/libigl/external/eigen)
 add_executable(Calculator calculator.cc ${sources} ${headers} ${g4sources} ${g4headers})
 
 # Dependencies of this library
