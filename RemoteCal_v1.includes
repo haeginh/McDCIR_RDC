@@ -8,3 +8,5 @@ src/include
 .
 ~/codes/trase/include
 ~/codes/trase/src
+~/codes/libigl/external/
+./chilkat-9.5.0-x86_64-linux-gcc/include

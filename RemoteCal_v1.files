@@ -1,3 +1,4 @@
+include/colorbar.hh
 include/detmessenger.hh
 include/stackingaction.hh
 src/detmessenger.cc

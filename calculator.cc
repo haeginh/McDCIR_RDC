@@ -24,11 +24,18 @@ using namespace std;
 int main ( int argc, char** argv)
 {
     int port = 30303;
+
+    // Choose the Random engine
+    //
+    G4Random::setTheEngine(new CLHEP::RanecuEngine);
+    G4Random::setTheSeed(time(0));
+
     auto* runManager =
             G4RunManagerFactory::CreateRunManager(G4RunManagerType::Default);
     G4UIExecutive* ui = 0;
     if(argc==2)  runManager->SetNumberOfThreads(atoi(argv[1]));
     else         ui = new G4UIExecutive(argc, argv);
+
 
     G4VisManager* visManager = new G4VisExecutive("Quiet");
     visManager->Initialize();
