@@ -52,10 +52,10 @@ PrimaryGeneratorAction::PrimaryGeneratorAction()
     fParticleGun->SetParticleDefinition(gamma);
     fParticleGun->SetParticleEnergy(50*keV);
 
-    detY = -35.3*cm;
-    detMinDir = G4ThreeVector(-30.61*cm*0.5,detY,-39.54*cm*0.5)-source;
-    detXdir = G4ThreeVector(30.61*cm, 0, 0);
-    detZdir = G4ThreeVector(0, 0, 39.54*cm);
+    detY = (81-110)*cm; // SID: 110 cm
+    detMinDir = G4ThreeVector(-30*cm*0.5,detY,-38*cm*0.5)-source;
+    detXdir = G4ThreeVector(30*cm, 0, 0);
+    detZdir = G4ThreeVector(0, 0, 38*cm);
 }
 
 PrimaryGeneratorAction::~PrimaryGeneratorAction()

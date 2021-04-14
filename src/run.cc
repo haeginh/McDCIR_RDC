@@ -27,14 +27,16 @@
 #include "run.hh"
 
 Run::Run()
-:G4Run(), dap(0)
+:G4Run()//, dap(0)
 {
     fCollID_skin
     = G4SDManager::GetSDMpointer()->GetCollectionID("meshSD/doseS");
     fCollID_lens
     = G4SDManager::GetSDMpointer()->GetCollectionID("meshSD/doseE");
-    fCollID_dap
-    = G4SDManager::GetSDMpointer()->GetCollectionID("dap/dose");
+//    fCollID_dap
+//    = G4SDManager::GetSDMpointer()->GetCollectionID("dap/dose");
+    doseMapS.resize(60*60*60,0);
+    doseMapL.resize(60*60*60,0);
 }
 
 Run::~Run()
@@ -47,18 +49,18 @@ void Run::RecordEvent(const G4Event* event)
     G4HCofThisEvent* HCE = event->GetHCofThisEvent();
     if(!HCE) return;
 
-    auto doseMapS =
+    auto _doseMapS =
             *static_cast<G4THitsMap<G4double>*>(HCE->GetHC(fCollID_skin))->GetMap();
-    auto doseMapE =
+    auto _doseMapL =
             *static_cast<G4THitsMap<G4double>*>(HCE->GetHC(fCollID_lens))->GetMap();
 
-    for(auto itr:doseMapS){
-        doseMap[itr.first].first += *itr.second;
-        doseMap[itr.first].second += *doseMapE[itr.first];
+    for(auto itr:_doseMapS){
+        doseMapS[itr.first]+= *itr.second;
+        doseMapL[itr.first]+= *_doseMapL[itr.first];
     }
-    auto dapMap =
-            *static_cast<G4THitsMap<G4double>*>(HCE->GetHC(fCollID_dap))->GetMap();
-    if(dapMap.find(1000)!=dapMap.end()) dap += *dapMap[1000];
+//    auto dapMap =
+//            *static_cast<G4THitsMap<G4double>*>(HCE->GetHC(fCollID_dap))->GetMap();
+//    if(dapMap.find(1000)!=dapMap.end()) dap += *dapMap[1000];
 
 }
 
@@ -66,12 +68,13 @@ void Run::Merge(const G4Run* run)
 {
     const Run* localRun = static_cast<const Run*>(run);
     // merge the data from each thread
-    auto localMap = localRun->doseMap;
+    auto localMapS = localRun->doseMapS;
+    auto localMapL = localRun->doseMapL;
 
-    for(auto itr : localMap){
-        doseMap[itr.first].first  += itr.second.first;
-        doseMap[itr.first].second += itr.second.second;
+    for(G4int i=0;i<60*60*60;i++){
+        doseMapS[i]  += localMapS[i];
+        doseMapL[i]  += localMapL[i];
     }
-    dap += localRun->dap;
+//    dap += localRun->dap;
     G4Run::Merge(run);
 }

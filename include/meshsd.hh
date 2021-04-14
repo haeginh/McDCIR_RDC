@@ -59,6 +59,7 @@ class MeshSD : public G4VSensitiveDetector
     std::vector<G4double> energyVec;
     std::vector<G4double> skinDvec, lensDvec;
     G4ParticleDefinition* gamma;
+    std::map<G4int, G4bool> blockedVox;
 };
 
 #endif

@@ -4,7 +4,7 @@
 
 ModelImport::ModelImport()
 {
-    ReadPhantomFile("patient2");
+    ReadPhantomFile("patient3");
     matMap[1] = G4NistManager::Instance()->FindOrBuildMaterial("G4_TISSUE_SOFT_ICRP");
     matMap[2] = G4NistManager::Instance()->FindOrBuildMaterial("G4_LUNG_ICRP");
 }

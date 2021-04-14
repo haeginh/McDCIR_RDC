@@ -34,7 +34,7 @@ option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
 option(LIBIGL_WITH_OPENGL_GLFW_IMGUI "Use imgui"           ON)
 option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
 find_package(LIBIGL REQUIRED QUIET)
-link_directories(/home/hurel/codes/libigl/lib/)
+link_directories(/home/hurel/codes/libigl/v2.2.0/lib/)
 
 ## trase
 #find_package(trase REQUIRED)
@@ -46,13 +46,13 @@ file(GLOB g4headers ${PROJECT_SOURCE_DIR}/include/*.hh)
 include_directories(${PROJECT_SOURCE_DIR}/include
                     ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/
 #                    ~/codes/trase/src/
-                    ~/codes/libigl/external/
-                    ~/codes/libigl/external/libigl-imgui/
-                    ~/codes/libigl/external/imgui/examples/
-                    ~/codes/libigl/external/imgui/
-                    ~/codes/libigl/external/glfw/include
-                    ~/codes/libigl/external/glad/include
-                    ${PROJECT_SOURCE_DIR}/chilkat-9.5.0-x86_64-linux-gcc/include
+                    ~/codes/libigl/v2.2.0/external/
+                    ~/codes/libigl/v2.2.0/include/
+                    ~/codes/libigl/v2.2.0/external/libigl-imgui/
+                    ~/codes/libigl/v2.2.0/external/imgui/examples/
+                    ~/codes/libigl/v2.2.0/external/imgui/
+                    ~/codes/libigl/v2.2.0/external/glfw/include
+                    ~/codes/libigl/v2.2.0/external/glad/include
                     )
 
 add_executable(RemoteCal RemoteCal.cc ${sources} ${headers})
@@ -64,7 +64,7 @@ target_link_libraries(RemoteCal
     igl::opengl
 #    igl::opengl_glfw
 #    /usr/lib/libglfw3.a
-    /home/hurel/codes/libigl/lib/libglfw3.a
+    /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
     igl::opengl_glfw_imgui
     igl::tetgen
     k4a
@@ -74,7 +74,7 @@ target_link_libraries(RemoteCal
 #    glfw
 #    trase
     ${Geant4_LIBRARIES}
-    /home/hurel/codes/libigl/lib/libglfw3.a
+    /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
     )
 target_link_libraries(MapCalculator ${Geant4_LIBRARIES})
 

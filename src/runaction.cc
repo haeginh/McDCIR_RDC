@@ -69,5 +69,15 @@ void RunAction::BeginOfRunAction(const G4Run* run)
 void RunAction::EndOfRunAction(const G4Run* )
 {
     if(!IsMaster()) return;
-    G4cout<<"dose of DAP meter: "<<G4BestUnit(fRun->GetDap()/nps,"Dose")<<G4endl;
+    auto doseMapS=fRun->GetDoseMapS();
+    auto doseMapL=fRun->GetDoseMapL();
+    std::vector<G4double> resultMap(doseMapS->size());
+    std::ofstream ofs("./doseMaps/"+std::to_string(fRun->GetRunID())+".map", std::ios::binary);
+    std::transform(doseMapS->begin(), doseMapS->end(), resultMap.begin(), [&](G4double d)->G4double{return d/(G4double)nps*1.e12;});
+    ofs.write((char*) (&resultMap[0]), 60*60*60*sizeof(G4double));
+    std::transform(doseMapL->begin(), doseMapL->end(), resultMap.begin(), [&](G4double d)->G4double{return d/(G4double)nps*1.e12;});
+    ofs.write((char*) (&resultMap[0]), 60*60*60*sizeof(G4double));
+    ofs.close();
+    //dose map unit: (/cm2)
+//    G4cout<<"dose of DAP meter: "<<G4BestUnit(fRun->GetDap()/nps,"Dose")<<G4endl;
 }

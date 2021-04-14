@@ -40,8 +40,8 @@ public:
         init_colormap();
         num_steps = _num_steps;
     }
-    void draw_colorbar(float xmin, float xmax,
-    const Eigen::Vector4f & background_color) const;
+    void draw_colorbar(
+    const Eigen::Vector4f & background_color, char* rMax, char* aMax) const;
 protected:
     void init_colormap();
 
@@ -60,8 +60,8 @@ void ColorbarPlugin::init_colormap() {
 }
 
 // Draws the actual colorbar with min/max values
-void ColorbarPlugin::draw_colorbar(float xmin, float xmax,
-    const Eigen::Vector4f & background_color) const
+void ColorbarPlugin::draw_colorbar(
+    const Eigen::Vector4f & background_color, char* rMax, char* aMax) const
 {
     ImVec4 color(1,1,1,1);
     auto rgb = background_color;
@@ -71,34 +71,40 @@ void ColorbarPlugin::draw_colorbar(float xmin, float xmax,
     }
     float w = 20;
     float h = 200;
-    ImGui::Columns(3,0,false);
+    ImGui::Columns(3,0);
+    ImGui::SetColumnWidth(0,ImGui::GetWindowWidth()*0.4);
+    ImGui::SetColumnWidth(1,ImGui::GetWindowWidth()*0.2);
+    ImGui::SetColumnWidth(2,ImGui::GetWindowWidth()*0.4);
 //    ImGui::BeginGroup();
 //    ImGui::BeginGroup();
-    ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
-    static char test[10]("test");
-    ImGui::InputText("",test, ImGuiInputTextFlags_ReadOnly);
+    ImGui::Text("[pGy/h]");
+    ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.3f);
+    static char rMin[3]("0");
+    ImGui::InputText("",rMax, ImGuiInputTextFlags_ReadOnly);
 //    ImGui::TextColored(color, "%.3g", xmin);
     ImGui::Dummy(ImVec2(0, h - 2.2 * ImGui::GetItemRectSize().y));
 //    ImGui::InputText("",test, ImGuiInputTextFlags_ReadOnly);
-    ImGui::InputText("",test, ImGuiInputTextFlags_ReadOnly);
+    ImGui::InputText("",rMin, ImGuiInputTextFlags_ReadOnly);
     ImGui::PopItemWidth();
 //    ImGui::EndGroup();
 //    ImGui::SameLine();
     ImGui::NextColumn();
-    ImGui::BeginGroup();
-    ImGui::BeginGroup();
-    ImGui::Dummy(ImVec2((ImGui::GetWindowWidth()*0.3f-w)*0.18f, 0));
-    ImGui::EndGroup();
-    ImGui::SameLine();
+//    ImGui::BeginGroup();
+//    ImGui::BeginGroup();
+    ImGui::Dummy(ImVec2(0, ImGui::GetFontSize()));
+//    ImGui::EndGroup();
+//    ImGui::SameLine();
     ImGui::Image(reinterpret_cast<ImTextureID>(colormaps_), ImVec2(w, h));
-    ImGui::EndGroup();
+//    ImGui::EndGroup();
     ImGui::NextColumn();
-    ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
-    ImGui::InputText("",test, ImGuiInputTextFlags_ReadOnly);
+    ImGui::Text("[pGy]");
+    ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.3f);
+    static char aMin[10]("1E-13(0)");
+    ImGui::InputText("",aMax, ImGuiInputTextFlags_ReadOnly);
 //    ImGui::TextColored(color, "%.3g", xmin);
     ImGui::Dummy(ImVec2(0, h - 2.2 * ImGui::GetItemRectSize().y));
 //    ImGui::InputText("",test, ImGuiInputTextFlags_ReadOnly);
-    ImGui::InputText("",test, ImGuiInputTextFlags_ReadOnly);
+    ImGui::InputText("",aMin, ImGuiInputTextFlags_ReadOnly);
 
     ImGui::PopItemWidth();
    // ImGui::EndGroup();

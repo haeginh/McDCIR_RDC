@@ -45,12 +45,8 @@ class RunAction : public G4UserRunAction
     virtual void BeginOfRunAction(const G4Run*);
     virtual void   EndOfRunAction(const G4Run*);
 
-    const std::map<G4int, std::pair<G4double, G4double>>* GetDoseMap() const
-    {return fRun->GetDoseMap();}
-
 private:
     Run* fRun;
-    std::map<G4int, std::pair<G4double, G4double>> doseMap;
     G4int nps;
 };
 

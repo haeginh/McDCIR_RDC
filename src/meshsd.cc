@@ -42,12 +42,9 @@ MeshSD::MeshSD(const G4String& name, G4int i, G4int j, G4int k, G4double cellVol
   collectionName.insert("doseS");
   collectionName.insert("doseE");
 
-  energyVec = {0,0.01,0.015,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.1,0.15,
-               0.2,0.3,0.4,0.5,0.511,0.6,0.662,0.8,1};
-  skinDvec = {0,2.62,1.29,0.789,0.425,0.302,0.258,0.249,0.257,0.276,0.333,
-              0.524,0.732,1.04,1.26,1.44,1.46,1.61,1.70,1.91,2.18};
-  lensDvec = {0,0.296,0.555,0.503,0.335,0.255,0.228,0.228,0.244,0.268,0.330,
-              0.526,0.754,1.16,1.61,2.03,2.15,2.45,2.75,3.20,3.92};
+  energyVec = {0,0.002,0.005,0.01,0.015,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.1,0.15};
+  skinDvec  = {0,2.96637,22.6288,7.18402,3.18922,1.85468,0.810165,0.488154,0.370343,0.345776,0.341135,0.367115,0.426512,0.682618};
+  lensDvec  = {0,0.276,0.689,1.38,1.98,1.52,0.833,0.563,0.460,0.437,0.446,0.468,0.555,0.842};
   G4double coeff = 1E-12*(joule/kg)*cm2/cellVol;
   for(size_t i=0;i<energyVec.size();i++){
       energyVec[i] *= MeV;
@@ -56,6 +53,24 @@ MeshSD::MeshSD(const G4String& name, G4int i, G4int j, G4int k, G4double cellVol
   }
   gamma
     = G4ParticleTable::GetParticleTable()->FindParticle("gamma");
+
+  G4ThreeVector start(-1.5*m+2.5*cm,-1.5*m+2.5*cm,0+2.5*cm);
+  G4double unit = 5*cm;
+  //manual
+  for(G4int i=0;i<60;i++){
+      for(G4int j=0;j<60;j++){
+          for(G4int k=0;k<60;k++){
+               G4int idx = i*nk*nj+j*nk+k;
+               G4ThreeVector pos = start + unit*G4ThreeVector(i,j,k);
+               if(pos.getZ()>90*cm) {blockedVox[idx]=false; continue;}
+               if(pos.getY()<15*cm) {blockedVox[idx]=false; continue;}
+               if(pos.getX()<-18*cm) {blockedVox[idx]=false; continue;}
+               if(pos.getX()>47*cm) {blockedVox[idx]=false; continue;}
+               blockedVox[idx] = true;
+          }
+      }
+  }
+
 }
 
 MeshSD::~MeshSD()
@@ -76,6 +91,13 @@ void MeshSD::Initialize(G4HCofThisEvent* hce)
 G4bool MeshSD::ProcessHits(G4Step* step, G4TouchableHistory*)
 {
   if(step->GetTrack()->GetParticleDefinition()!=gamma) return false;
+
+  G4int k = step->GetPreStepPoint()->GetTouchable()->GetCopyNumber(0);
+  G4int j = step->GetPreStepPoint()->GetTouchable()->GetCopyNumber(1);
+  G4int i = step->GetPreStepPoint()->GetTouchable()->GetCopyNumber(2);
+  G4int idx = i*nk*nj+j*nk+k;
+  if(blockedVox[idx]) return false;
+
   G4double length = step->GetStepLength();
   if ( length == 0. ) return FALSE;
   G4double energy = step->GetPreStepPoint()->GetKineticEnergy();
@@ -87,10 +109,6 @@ G4bool MeshSD::ProcessHits(G4Step* step, G4TouchableHistory*)
   lensD *= length;
 
   // Add values
-  G4int k = step->GetPreStepPoint()->GetTouchable()->GetCopyNumber(0);
-  G4int j = step->GetPreStepPoint()->GetTouchable()->GetCopyNumber(1);
-  G4int i = step->GetPreStepPoint()->GetTouchable()->GetCopyNumber(2);
-  G4int idx = i*nk*nj+j*nk+k;
   fHitsMapS->add(idx, skinD);
   fHitsMapE->add(idx, lensD);
 

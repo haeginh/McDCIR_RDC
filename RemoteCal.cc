@@ -451,102 +451,62 @@ int main(int argc, char** argv){
     igl::normalize_row_sums(W_incidentF,W_incidentF);
     cout<<"done"<<endl;
 
-    menu.callback_draw_viewer_menu = [&](){
-        if (ImGui::CollapsingHeader("Information", ImGuiTreeNodeFlags_None))
-        {
-          ImGui::Text("Author : Haegin Han");
-          ImGui::Text("IP/port: 166.104.155.29/30303");
-        }
-        static string ipAddress("localhost");
-        static string userName("hurel");
-        static string directory("~/RemoteCal_cal/");
-        if (ImGui::CollapsingHeader("Initialization", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-          ImGui::Text("[Accumul. dose cal.]");
-          ImGui::InputText("IP", ipAddress, ImGuiInputTextFlags_AutoSelectAll);
-          ImGui::InputText("user name", userName, ImGuiInputTextFlags_AutoSelectAll);
-          ImGui::InputText("dir",directory, ImGuiInputTextFlags_AutoSelectAll);
-          static int processNo(3), threadNo(3);
-          ImGui::InputInt("process #", &processNo);
-          ImGui::InputInt("thread #", &threadNo);
-          static char status[64] = "before init";
-          ImGui::InputText("status",status,ImGuiInputTextFlags_ReadOnly);
-          if(ImGui::Button("initialize!", ImVec2(-1,0))){
-              cout<<ipAddress<<": "<<directory<<endl;
+    //read map list
+    ifstream ifsList("./doseMaps/list.txt");
+    int mapID,mapkVp,mapRot; double mapDAP;
+    typedef tuple<int, int> MAPIDX;
+    map<MAPIDX, int> mapList;
+    map<int, double> mapDAPs;
+    while(ifsList>>mapID>>mapkVp>>mapRot>>mapDAP){
+        mapList[MAPIDX(mapkVp, mapRot)] = mapID;
+        mapDAPs[mapID] = mapDAP;
+    }
+    //read default map
+    vector<double> doseMapS0, doseMapL0;
+    int ijk[3] = {60,60,60};
+    doseMapS0.resize(ijk[0]*ijk[1]*ijk[2]);
+    doseMapL0.resize(ijk[0]*ijk[1]*ijk[2]);
+    Vector3d isoCenter = Vector3d(0,0,60);
+    Vector3d isoRelat=Vector3d(-150,-150,0)-Vector3d(0,0,60); //isocenter when doseMap generated.
+    Vector3d gridStart = isoRelat+isoCenter;
+    ifstream ifsMap("./doseMaps/0.map", ios::binary);
+    ifsMap.read((char*) &doseMapS0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
+    ifsMap.read((char*) &doseMapL0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
+    ifsMap.close();
+    transform(doseMapS0.begin(),doseMapS0.end(),doseMapS0.begin(),[&](double n)->double{return n/mapDAPs[0];});
+    transform(doseMapL0.begin(),doseMapL0.end(),doseMapL0.begin(),[&](double n)->double{return n/mapDAPs[0];});
+    double maxSkin0 = *max_element(doseMapS0.begin(),doseMapS0.end()); double maxSkin(maxSkin0);
 
-              system(("scp model.mesh "+userName+"@"+ipAddress+":"+directory).c_str());
-              system(("scp model_W.dmat "+userName+"@"+ipAddress+":"+directory).c_str());
-              system(("scp model_Wj.dmat "+userName+"@"+ipAddress+":"+directory).c_str());
+    vector<double> doseMapS(doseMapS0), doseMapL(doseMapL0);
+    static char rMaxChar[100]("");
+    sprintf(rMaxChar,"%.2E",maxSkin*0.05*1e12);
+    static char aMaxChar[100]("1");
 
-              cout<<"starting calculators..."<<endl;
-              for(int i=0;i<processNo;i++){
-                  system(("ssh "+userName+"@"+ipAddress+" "+directory+"run.sh "+to_string(threadNo)+" >log"+to_string(i)+" &").c_str());
-              }
-              cout<<"done"<<endl;
-              strcpy(status,"initialized!");
-          }
-        }
-        if (ImGui::CollapsingHeader("Beam Conditions", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            static string kVp("80");
-            static string dap("0.1");
-            if(ImGui::InputText("kVp", kVp, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CharsDecimal)) cout<<"new condition: "<<kVp<<" kVp"<<endl;
-            if(ImGui::InputText("Gycm2/s (DAP)", dap, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CharsDecimal)) cout<<"new condition: "<<dap<<" Gycm2/s"<<endl;
-            int cArmRot[2] = {0,0};
-            ImGui::InputInt2("ang./rot. [deg.]",cArmRot);
-            enum LArmRot {right, up, left}; //patient viewpoint
-            static LArmRot lArmRot = left;
-            ImGui::Combo("L-arm Rot.", (int*)(&lArmRot), "-90 deg\0  0 deg\0 90 deg\0\0");
-            float detNum[2] = {100, 22};
-            ImGui::InputFloat2("SID/FD [cm]", detNum,"%.1f");
-        }
-        if (ImGui::CollapsingHeader("C-arm Table"), ImGuiTreeNodeFlags_DefaultOpen)
-        {
-            float bedAxis[2] = {0,0};
-            ImGui::InputFloat2("long./lat. [cm]", bedAxis);
-            static int bedRot = 0;
-            ImGui::InputInt("Rotation [deg]", &bedRot);
-        }
-    };
-    auto colorMap = igl::COLOR_MAP_TYPE_PARULA;
-    static char expTime[10]("0"); double expTimeD(0);
-    static char frameNum[10]("0");
-    static char calNum[10]("0");
-    float boarder(300.f);
-    menu.callback_draw_custom_window = [&](){
-        ImGui::SetNextWindowPos(ImVec2(boarder - 180.f*menu.menu_scaling(),0.0f),ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSizeConstraints(ImVec2(180.f*menu.menu_scaling(), -1.0f), ImVec2(180.f*menu.menu_scaling(), -1.0f));
-        ImGui::Begin(
-            "Current Satus", nullptr,
-            ImGuiWindowFlags_NoSavedSettings
-        );
-        ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
-        ImGui::InputText("Exposure time [s]", expTime, ImGuiInputTextFlags_ReadOnly);
-        ImGui::InputText("Total Frame No.", frameNum, ImGuiInputTextFlags_ReadOnly);
-        ImGui::InputText("Calculated Frame#", calNum, ImGuiInputTextFlags_ReadOnly);
-        ImGui::InputText("Peak Skin Dose [pGy]", calNum, ImGuiInputTextFlags_ReadOnly);
-        ImGui::InputText("Avg. Skin Dose [pGy]", calNum, ImGuiInputTextFlags_ReadOnly);
-        ImGui::InputText("Lens Dose Rate [pGy/s]", calNum, ImGuiInputTextFlags_ReadOnly);
-        ImGui::InputText("Acc. Lens Dose [pGy]", calNum, ImGuiInputTextFlags_ReadOnly);
-        ImGui::PopItemWidth();
-        ColorbarPlugin cbar(colorMap);
-        Eigen::Vector4f bgcolor(0, 0, 0.04, 1);
-        cbar.draw_colorbar(1,0,bgcolor);
-        ImGui::End();
-    };
     // igl viewer
     igl::opengl::glfw::Viewer viewer;
     viewer.plugins.push_back(&menu);
     viewer.data().set_mesh(V_ply, F_ply);
     viewer.append_mesh();
-    viewer.load_mesh_from_file("patient2.obj");
+    viewer.load_mesh_from_file("patient3.obj");
     viewer.append_mesh();
     viewer.data().set_mesh(V_ply, F_ply);
 
     int v1=viewer.data_list[0].id;
     int v1_patient=viewer.data_list[1].id;
     int v2=viewer.data_list[2].id;
+    Vector3d patientMove;
+    MatrixXd V_patient = viewer.data(v1_patient).V;
+    vector<vector<double>> recordedData;
+    vector<MatrixXd> jointData;
+    bool recording(false); bool loading(false);
+    static char rec[100] = "not recording..";
+
+    auto colorMap = igl::COLOR_MAP_TYPE_PARULA;
+    static char expTime[100]("0"); double expTimeD(0);
+    static char frameNum[100]("0");
+    static char calNum[100]("0");
+    float boarder(300.f);
+
     viewer.data(v1).set_edges(C,BE,sea_green);
     viewer.data(v1).set_points(C,sea_green);
     viewer.data(v1).show_lines = false;
@@ -554,7 +514,6 @@ int main(int argc, char** argv){
     viewer.data(v1).line_width = 1;
     viewer.data(v1).point_size = 8;
     viewer.data(v1).double_sided = true;
-
     viewer.data(v1_patient).show_lines = true;
     viewer.data(v1_patient).show_overlay_depth = false;
     viewer.data(v1_patient).show_faces = false;
@@ -589,6 +548,147 @@ int main(int argc, char** argv){
       v.core(v2_view).viewport = Eigen::Vector4f(w *3 / 4, 0, w/4, h);
       return true;
     };
+
+    menu.callback_draw_viewer_menu = [&](){
+        if (ImGui::CollapsingHeader("Information", ImGuiTreeNodeFlags_None))
+        {
+          ImGui::Text("Author : Haegin Han");
+          ImGui::Text("IP/port: 166.104.155.29/30303");
+        }
+        static string ipAddress("localhost");
+        static string userName("hurel");
+        static string directory("~/RemoteCal_cal/");
+        if (ImGui::CollapsingHeader("Initialization", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+          ImGui::Text("[Accumul. dose cal.]");
+          ImGui::InputText("IP", ipAddress, ImGuiInputTextFlags_AutoSelectAll);
+          ImGui::InputText("user name", userName, ImGuiInputTextFlags_AutoSelectAll);
+          ImGui::InputText("dir",directory, ImGuiInputTextFlags_AutoSelectAll);
+          static int processNo(3), threadNo(3);
+          ImGui::InputInt("process #", &processNo);
+          ImGui::InputInt("thread #", &threadNo);
+          static char status[100] = "before init";
+          ImGui::InputText("status",status,ImGuiInputTextFlags_ReadOnly);
+          if(ImGui::Button("initialize!", ImVec2(-1,0))){
+              cout<<ipAddress<<": "<<directory<<endl;
+
+              system(("scp model.mesh "+userName+"@"+ipAddress+":"+directory).c_str());
+              system(("scp model_W.dmat "+userName+"@"+ipAddress+":"+directory).c_str());
+              system(("scp model_Wj.dmat "+userName+"@"+ipAddress+":"+directory).c_str());
+
+              cout<<"starting calculators..."<<endl;
+              for(int i=0;i<processNo;i++){
+                  system(("ssh "+userName+"@"+ipAddress+" "+directory+"run.sh "+to_string(threadNo)+" >log"+to_string(i)+" &").c_str());
+              }
+              cout<<"done"<<endl;
+              strcpy(status,"initialized!");
+          }
+        }
+        if (ImGui::CollapsingHeader("Beam Conditions", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            static string kVp("80");
+            static string dap("0.1"); double dapVal = atof(dap.c_str());
+            transform(doseMapS0.begin(),doseMapS0.end(),doseMapS.begin(),[&](double n)->double{return n*dapVal;});
+            transform(doseMapL0.begin(),doseMapL0.end(),doseMapL.begin(),[&](double n)->double{return n*dapVal;});
+            maxSkin = maxSkin0*dapVal;
+
+            if(ImGui::InputText("kVp", kVp, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CharsDecimal)) cout<<"new condition: "<<kVp<<" kVp"<<endl;
+            if(ImGui::InputText("Gycm2/s (DAP)", dap, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CharsDecimal)){
+                cout<<"new condition: "<<dap<<" Gycm2/s"<<endl;
+                dapVal = atof(dap.c_str());
+                transform(doseMapS0.begin(),doseMapS0.end(),doseMapS.begin(),[&](double n)->double{return n*dapVal;});
+                transform(doseMapL0.begin(),doseMapL0.end(),doseMapL.begin(),[&](double n)->double{return n*dapVal;});
+                maxSkin = maxSkin0*dapVal;
+            }
+            int cArmRot[2] = {0,0};
+            ImGui::InputInt2("ang./rot. [deg.]",cArmRot);
+            enum LArmRot {right, up, left}; //patient viewpoint
+            static LArmRot lArmRot = left;
+            ImGui::Combo("L-arm Rot.", (int*)(&lArmRot), "-90 deg\0  0 deg\0 90 deg\0\0");
+            float detNum[2] = {100, 22};
+            ImGui::InputFloat2("SID/FD [cm]", detNum,"%.1f");
+        }
+        if (ImGui::CollapsingHeader("Patient Trans. (temp.)"), ImGuiTreeNodeFlags_DefaultOpen)
+        {
+            ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.75f);
+            static float patientTrans[3] = {0,0,0};
+            if(ImGui::InputFloat3("[cm]", patientTrans, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue)){
+                patientMove = Vector3d(patientTrans[0],patientTrans[1],patientTrans[2]);
+                viewer.data(v1_patient).set_vertices(V_patient.rowwise()+patientMove.transpose());
+            }
+            ImGui::PopItemWidth();
+        }
+        if (ImGui::CollapsingHeader("Record (temp.)"), ImGuiTreeNodeFlags_DefaultOpen)
+        {
+            float w = ImGui::GetContentRegionAvailWidth();
+            float p = ImGui::GetStyle().FramePadding.x;
+            if(ImGui::Button("record!", ImVec2((w-p)/2.,0))){
+                if(loading) cout<<"wrong status!"<<endl;
+                else{
+                    recording = true;
+                    strcpy(rec,"recording..");
+                }
+            }
+            if(ImGui::Button("stop!", ImVec2((w-p)/2.,0))){
+                recording = false;
+                string fName;
+                cout<<"fileName: "<<flush; cin>>fName;
+                ofstream ofs("./records/"+fName+".dat");
+                for(size_t n=0;n<recordedData.size();n++){
+                    for(int i=0;i<155;i++) ofs<<recordedData[n][i]<<"\t";
+                    ofs<<endl;
+                    for(int i=0;i<24;i++) ofs<<jointData[n](i,0)<<"\t"<<jointData[n](i,1)<<"\t"<<jointData[n](i,2)<<"\t";
+                    ofs<<endl;
+                }ofs.close();
+                igl::writeDMAT("./records/"+fName + ".jt",jointTrans);
+                cout<<"exported ./records/"+fName+".dat,jt ("<<recordedData.size()<<" frames)"<<endl;
+                recordedData.clear(); jointData.clear();
+                strcpy(rec,"not recording..");
+            }
+            if(ImGui::Button("load", ImVec2((w-p)/2.,0))){
+                if(recording) cout<<"wrong status!"<<endl;
+                else{
+                    viewer.core(v1_view).is_animating = true;
+                    strcpy(rec,"loading..");
+                    loading = true;
+                }
+            }
+            ImGui::InputText("rec. stat.",rec,ImGuiInputTextFlags_ReadOnly);
+        }
+        if (ImGui::CollapsingHeader("C-arm Table"), ImGuiTreeNodeFlags_DefaultOpen)
+        {
+            float bedAxis[2] = {0,0};
+            ImGui::InputFloat2("long./lat. [cm]", bedAxis);
+            static int bedRot = 0;
+            ImGui::InputInt("Rotation [deg]", &bedRot);
+        }
+    };
+
+    menu.callback_draw_custom_window = [&](){
+        ImGui::SetNextWindowPos(ImVec2(boarder - 180.f*menu.menu_scaling(),0.0f),ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSizeConstraints(ImVec2(180.f*menu.menu_scaling(), -1.0f), ImVec2(180.f*menu.menu_scaling(), -1.0f));
+        ImGui::Begin(
+            "Current Satus", nullptr,
+            ImGuiWindowFlags_NoSavedSettings
+        );
+        ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
+        ImGui::InputText("Exposure time [s]", expTime, ImGuiInputTextFlags_ReadOnly);
+        ImGui::InputText("Total Frame No.", frameNum, ImGuiInputTextFlags_ReadOnly);
+        ImGui::InputText("Calculated Frame#", calNum, ImGuiInputTextFlags_ReadOnly);
+        ImGui::InputText("Peak Skin Dose [pGy]", calNum, ImGuiInputTextFlags_ReadOnly);
+        ImGui::InputText("Avg. Skin Dose [pGy]", calNum, ImGuiInputTextFlags_ReadOnly);
+        ImGui::InputText("Lens Dose Rate [pGy/h]", calNum, ImGuiInputTextFlags_ReadOnly);
+        ImGui::InputText("Acc. Lens Dose [pGy]", calNum, ImGuiInputTextFlags_ReadOnly);
+        ImGui::PopItemWidth();
+        ImGui::Separator();
+        ColorbarPlugin cbar(colorMap);
+        Eigen::Vector4f bgcolor(0, 0, 0.04, 1);
+        cbar.draw_colorbar(bgcolor,rMaxChar,aMaxChar);
+        ImGui::End();
+    };
+
+
 
 //    viewer.core(v1_view).is_animating = false;
 
@@ -656,8 +756,6 @@ int main(int argc, char** argv){
         return true;
     };
 
-    map<int, pair<double, double>> doseMap; //<skinD, lensD>
-    int ijk[3];
     //accum
     vector<array<double, 155>> poseData;
     vector<int> frameIDs;
@@ -666,171 +764,280 @@ int main(int argc, char** argv){
     int v2_calculators(0);
     //frame data
     int frameNo(0);
+    MatrixXd jt1; //loaded joint data
 
-    thread receiverTH = thread([&](){
+    thread receiverTH =
+            thread([&](){
         ServerSocket server(30303);
         cout << "[TCP/IP] Listening..."<<endl;
 
         //threads
-        thread* v1_cal;
         vector<thread*> v2_cals;
         int v2_calNum(100);
-
-        //data for version 2
-//        MatrixXd V_v2, W_v2, Wj_v2;
-//        MatrixXi T_v2;
-//        MatrixXi F_tmp;
-//        igl::copyleft::tetgen::tetrahedralize(V_ply, F_ply, "pYq", V_v2, T_v2, F_tmp);
-//        VectorXd F_area;
-//        igl::doublearea(V_ply,F_ply,F_area);
-//        F_area.cwiseSqrt();
-//        MatrixXd W_incidentF=MatrixXd::Zero(V_ply.rows(),F_ply.rows());
-//        for(int i=0;i<F_ply.rows();i++){
-//            for(int j=0;j<3;j++)
-//                W_incidentF(F_ply(i,j),i) =  F_area(i);
-//        }
-//        igl::normalize_row_sums(W_incidentF,W_incidentF);
-
-//        map<int, map<int, double>> baryCoord2 = GenerateBarycentricCoord(V_o,T_o,V_v2);
-//        SparseMatrix<double> bary2 = GenerateBarySparse(baryCoord2,V_o.rows());
-//        W_v2 = bary2 * W_o; Wj_v2 = bary2*W_j;
         int numOfPack = floor(F_ply.rows()/180)+1;
+        int loadCalNum(0);
         while(true){
-            if(v1_cal && v2_cals.size()==v2_calNum) break;
+            if(v2_cals.size()==v2_calNum) break;
             ServerSocket* _sock = new ServerSocket;
             server.accept ( *_sock );
             std::string _data("");
             (*_sock) >> _data;
-            if(_data.substr(0,6)=="v1_cal"){
-                cout<<"[TCP/IP] v1_cal connected.."<<flush; (*_sock) << "chk";
-                v1_cal = new thread([&](ServerSocket* sock){
-                        sock->RecvIntBuffer(ijk, 3); (*sock) <<"chk";
-                        cout<<"World grid : "<<ijk[0]<<" * "<<ijk[1]<<" * "<<ijk[2]<<endl;
-                        while(true){
-                            cout<<"[v1_cal] waiting data..."<<endl;
-                            int numOfData; sock->RecvIntBuffer(&numOfData,1); (*sock) << "chk";
-                            cout<<"[v1_cal] recving " <<numOfData<<" data..."<<endl;
-                            int numOfPack = floor(numOfData / 180)+1;
-                            double buff[180], buff2[180]; int buffInt[180];
-                            m.lock();
-                            doseMap.clear();
-                            for(int i=0, n=0;i<numOfPack;i++){
-                                sock->RecvIntBuffer(buffInt, 180); (*sock)<<"chk";
-                                sock->RecvDoubleBuffer(buff, 180); (*sock)<<"chk";
-                                sock->RecvDoubleBuffer(buff2, 180);(*sock)<<"chk";
-                                for(int j=0;j<180 && n<numOfData;j++, n++){
-                                    doseMap[buffInt[j]] = make_pair(buff[j], buff2[j]);
-                                }
-                            }
-                            m.unlock();
-                       }
-              }, _sock);
-            }
-            else if(_data.substr(0,6)=="v2_cal"){
-                 int _id = v2_cals.size();
-                 cout<<"[TCP/IP] v2_cal #"<<_id<<" connected!"<<endl; _sock->SendIntBuffer(&_id,1);
-                 v2_cals.push_back(new thread([&](ServerSocket* sock, int id){
-                    //m2.lock();
-                    cout<<"[v2_cal"<<id<<"] Send eye info.."<<flush;
-                    (*sock) << "init "+to_string(eye2ply.size()) ;
-                    string dump; (*sock) >> dump;
-                    sock->SendIntBuffer(&eye2ply[0],180);
-                    cout<<"done"<<endl;
-                    cout<<"[v2_cal"<<id<<"] Send calib info.."<<flush;
-                    sock->SendDoubleBuffer(jt.data(), jt.size());cout<<"done"<<endl;
-                    //m2.unlock();
+            if(_data.substr(0,6)=="v2_cal"){
+                int _id = v2_cals.size();
+                cout<<"[TCP/IP] v2_cal #"<<_id<<" connected!"<<endl; _sock->SendIntBuffer(&_id,1);
+                v2_cals.push_back
+                        (new thread([&](ServerSocket* sock, int id){
+                             //m2.lock();
+                             cout<<"[v2_cal"<<id<<"] Send eye info.."<<flush;
+                             (*sock) << "init "+to_string(eye2ply.size()) ;
+                             string dump; (*sock) >> dump;
+                             sock->SendIntBuffer(&eye2ply[0],180);
+                             cout<<"done"<<endl;
+                             cout<<"[v2_cal"<<id<<"] Send calib info.."<<flush;
+                             sock->SendDoubleBuffer(jt.data(), jt.size());cout<<"done"<<endl;
+                             //m2.unlock();
 
-            while(true){
-            pthread_mutex_lock(&sync_mutex);
-            pthread_cond_wait(&sync_cond, &sync_mutex);
-            pthread_mutex_unlock(&sync_mutex);
-            cout<<"[v2_cal"<<id<<"]Activate!"<<endl;
-            igl::Timer timerTH;
-            while(viewer.core(v1_view).is_animating && doseCal){
-                m2.lock();
-                if(poseData.size()==0){
-                        m2.unlock();
-                        sleep(1);
-                        continue;
-                    }
-                    timerTH.start();
-                    array<double, 155> aPose = poseData.back();
-                    int frameID = frameIDs.back();
-                    cout<<"[v2_cal"<<id<<"] Calculate frame #"<<frameID
-                        <<"! (stacked: "<<poseData.size()-1<<")"<<endl;
-                    frameIDs.pop_back();
-                    poseData.pop_back(); m2.unlock();
-                    sock->SendDoubleBuffer(aPose.data(),155);
+                             while(true){
+                                 pthread_mutex_lock(&sync_mutex);
+                                 pthread_cond_wait(&sync_cond, &sync_mutex);
+                                 pthread_mutex_unlock(&sync_mutex);
+                                 cout<<"[v2_cal"<<id<<"]Activate!"<<endl;
+                                 igl::Timer timerTH;
+                                 if(loading){
+                                     array<double, 155> signalPack;
+                                     signalPack[0] = 0; signalPack[1] = 1;
+                                     sock->SendDoubleBuffer(signalPack.data(),155); (*sock) >>dump;
+                                     MatrixXd jt2 = jt1.block(0,0,C.rows()-1,3);
+                                     sock->SendDoubleBuffer(jt2.data(), jt2.size()); (*sock) >>dump;
+                                     cout<<"[v2_cal"<<id<<"] Sent joint data"<<endl;
+                                     while(true){
+                                         m2.lock();
+                                         if(loadCalNum==(int)recordedData.size()){
+                                             m2.unlock();
+                                             signalPack[1] = -1;
+                                             sock->SendDoubleBuffer(signalPack.data(),155); (*sock) >>dump;
+                                             cout<<"free v2_cal"<<id<<endl;
+                                             recordedData.clear();
+                                             strcpy(rec,"idle");
+                                             break;
+                                         }
+                                         int frameID = loadCalNum++;
+                                         m2.unlock();
+                                         timerTH.start();
+                                         vector<double> aPose = recordedData[frameID];
+                                         sock->SendDoubleBuffer(&aPose[0],155);
+                                         cout<<"[v2_cal"<<id<<"] Calculate frame #"<<frameID<<endl;
+                                         double buff[180];
+                                         VectorXd dose(F_ply.rows());
+                                         for(int i=0, n=0;i<numOfPack;i++){
+                                             sock->RecvDoubleBuffer(buff,180);
+                                             for(int j=0;j<180 && n<F_ply.rows();j++, n++)
+                                             dose[n] = buff[j];
+                                             if(n<F_ply.rows())(*sock)<<"chk";
+                                         }
+                                         m2_dose.lock();
+                                         sprintf(calNum,"%d",frameID+1);
+                                         doseData+= dose*fabs(aPose[0]);
+                                         m2_dose.unlock();
+                                         viewer.data(v2).set_data(W_incidentF*doseData,colorMap);
+                                         timerTH.stop();
+                                         cout<<"[v2_cal"<<id<<"] Done.."<<timerTH.getElapsedTimeInSec()<<"s"<<endl;
+                                     }
+                                     continue;
+                                 }
+                                 while(viewer.core(v1_view).is_animating && doseCal){
+                                     m2.lock();
+                                     if(poseData.size()==0){
+                                         m2.unlock();
+                                         sleep(1);
+                                         continue;
+                                     }
+                                     timerTH.start();
+                                     array<double, 155> aPose = poseData.back();
+                                     int frameID = frameIDs.back();
+                                     cout<<"[v2_cal"<<id<<"] Calculate frame #"<<frameID
+                                     <<"! (stacked: "<<poseData.size()-1<<")"<<endl;
+                                     frameIDs.pop_back();
+                                     poseData.pop_back(); m2.unlock();
+                                     sock->SendDoubleBuffer(aPose.data(),155);
 
-                    double buff[180];
-                    VectorXd dose(F_ply.rows());
-                    for(int i=0, n=0;i<numOfPack;i++){
-                        sock->RecvDoubleBuffer(buff,180);
-                        for(int j=0;j<180 && n<F_ply.rows();j++, n++)
-                            dose[n] = buff[j];
-                        if(n<F_ply.rows())(*sock)<<"chk";
-                    }
-                    m2_dose.lock();
-                    strcpy(calNum,to_string(frameNo-frameIDs.size()+1).c_str());
-                    doseData+= dose*fabs(aPose[0]);
-                    m2_dose.unlock();
-                    viewer.data(v2).set_data(W_incidentF*doseData, colorMap);
-                    timerTH.stop();
-                    cout<<"[v2_cal"<<id<<"] Done.."<<timerTH.getElapsedTimeInSec()<<"s"<<endl;
-            }
-                //residual
-                while(true){
-                    m2.lock();
-                    if(poseData.size()==0){
-                            m2.unlock();
-                            break;
-                        }
-                    array<double, 155> aPose = poseData.back();
-                    int frameID = frameIDs.back();
-                    cout<<"[v2_cal"<<id<<"] Calculate res. frame #"
-                        <<frameID<<"! (stacked: "<<poseData.size()-1<<")"<<endl;
-                    timerTH.start();
-                    frameIDs.pop_back();
-                    poseData.pop_back(); m2.unlock();
-                    sock->SendDoubleBuffer(aPose.data(),155);
+                                     double buff[180];
+                                     VectorXd dose(F_ply.rows());
+                                     for(int i=0, n=0;i<numOfPack;i++){
+                                         sock->RecvDoubleBuffer(buff,180);
+                                         for(int j=0;j<180 && n<F_ply.rows();j++, n++)
+                                         dose[n] = buff[j];
+                                         if(n<F_ply.rows())(*sock)<<"chk";
+                                     }
+                                     m2_dose.lock();
+                                     sprintf(calNum,"%d",frameNo-(int)frameIDs.size()+1);
+                                     doseData+= dose*fabs(aPose[0]);
+                                     m2_dose.unlock();
+                                     viewer.data(v2).set_data(W_incidentF*doseData,colorMap);
+                                     timerTH.stop();
+                                     cout<<"[v2_cal"<<id<<"] Done.."<<timerTH.getElapsedTimeInSec()<<"s"<<endl;
+                                 }
+                                 //residual
+                                 while(true){
+                                     m2.lock();
+                                     if(poseData.size()==0){
+                                         m2.unlock();
+                                         break;
+                                     }
+                                     array<double, 155> aPose = poseData.back();
+                                     int frameID = frameIDs.back();
+                                     cout<<"[v2_cal"<<id<<"] Calculate res. frame #"
+                                     <<frameID<<"! (stacked: "<<poseData.size()-1<<")"<<endl;
+                                     timerTH.start();
+                                     frameIDs.pop_back();
+                                     poseData.pop_back(); m2.unlock();
+                                     sock->SendDoubleBuffer(aPose.data(),155);
 
-                    double buff[180];
-                    VectorXd dose = VectorXd::Zero(F_ply.rows());
-                    for(int i=0, n=0;i<numOfPack;i++){
-                        sock->RecvDoubleBuffer(buff,180);
-                        for(int j=0;j<180 && n<F_ply.rows();j++, n++)
-                            dose[n] = buff[j];
-                        if(n<F_ply.rows())(*sock)<<"chk";
-                    }
-                    m2_dose.lock();
-                    strcpy(calNum,to_string(frameNo-frameIDs.size()+1).c_str());
-                    doseData+= dose*fabs(aPose[0]);
-                    m2_dose.unlock();
-                    viewer.data(v2).set_data(((W_incidentF*doseData).array()+1e-20).log10(), colorMap);
-                    timerTH.stop();
-                    cout<<"[v2_cal"<<id<<"] Done.."<<timerTH.getElapsedTimeInSec()<<"s"<<endl;
+                                     double buff[180];
+                                     VectorXd dose = VectorXd::Zero(F_ply.rows());
+                                     for(int i=0, n=0;i<numOfPack;i++){
+                                         sock->RecvDoubleBuffer(buff,180);
+                                         for(int j=0;j<180 && n<F_ply.rows();j++, n++)
+                                         dose[n] = buff[j];
+                                         if(n<F_ply.rows())(*sock)<<"chk";
+                                     }
+                                     m2_dose.lock();
+                                     sprintf(calNum,"%d",frameNo-(int)frameIDs.size()+1);
+                                     doseData+= dose*fabs(aPose[0]);
+                                     m2_dose.unlock();
+                                     viewer.data(v2).set_data(((W_incidentF*doseData).array()+1e-20).log10(), colorMap);
+                                     timerTH.stop();
+                                     cout<<"[v2_cal"<<id<<"] Done.."<<timerTH.getElapsedTimeInSec()<<"s"<<endl;
 
-                }
-            }
-                 }, _sock, _id));
-                 v2_calculators++;
+
+                                 }
+                             }
+                         }, _sock, _id));
+                v2_calculators++;
             }
             else delete _sock;
         }
-        v1_cal->join();
     });
 
     vector<int> poseJoints = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24, 8, 15, 21, 25, 28, 30};
     time_t startT;
     igl::Timer timeStamp;
 
-
     //animator
     ofstream ofs("eyeDose.txt");
-    //viewer.core().animation_max_fps = 3;
+    viewer.core().animation_max_fps = 5;
+    int loadNum(0);
     viewer.callback_pre_draw = [&](igl::opengl::glfw::Viewer &)->bool
     {
-        if(viewer.core(v1_view).is_animating){
+        if(viewer.core(v1_view).is_animating&&loading){
+            if(loadNum==0){
+                string fName;
+                cout<<"fileName: "<<flush; cin>>fName;
+
+                ifstream ifs("./records/"+fName+".dat");
+                string aLine;
+                recordedData.clear(); jointData.clear();
+                while(getline(ifs,aLine)){
+                    stringstream ss(aLine); double doub;
+                    vector<double> pack;
+                    for(int i=0;i<155;i++){
+                        ss>>doub; pack.push_back(doub);
+                    }
+                    recordedData.push_back(pack);
+                    getline(ifs,aLine);
+                    ss.str(aLine); double x, y, z;
+                    MatrixXd jd(24,3);
+                    for(int i=0;i<24;i++){
+                        ss>>x>>y>>z;
+                        jd(i,0) = x;jd(i,1) = y;jd(i,2) = z;
+                    }
+                    jointData.push_back(jd);
+                }ifs.close();
+
+                igl::readDMAT("./records/"+fName + ".jt",jt1);
+                V_calib = V_ply+W_j_ply*jt1.block(0,0,C.rows()-1,3);
+                C_calib = C + jt1;
+                cout<<"loaded ./records/"+fName+".dat,jt ("<<recordedData.size()<<" frames)"<<endl;
+                pthread_mutex_lock(&sync_mutex);
+                pthread_cond_broadcast(&sync_cond);
+                pthread_mutex_unlock(&sync_mutex);
+            }
+            vector<Vector3d> vT; vT.resize(BE.rows());
+            RotationList vQ; vQ.resize(BE.rows());
+            for(int i=0;i<BE.rows();i++){
+                vQ[i].w() = recordedData[loadNum][4*i+1]; vQ[i].x() = recordedData[loadNum][4*i+2]; vQ[i].y() = recordedData[loadNum][4*i+3]; vQ[i].z() = recordedData[loadNum][4*i+4];
+                vT[i](0) = recordedData[loadNum][3*i+89]; vT[i](1) = recordedData[loadNum][3*i+90]; vT[i](2) = recordedData[loadNum][3*i+91];
+            }
+
+            MatrixXd C_disp = jointData[loadNum];
+            viewer.data(v1).set_points(C_disp,blue);
+
+            MatrixXd V_disp(V_ply),C_new(C);
+
+            if(recordedData[loadNum][0]<0) {V_disp = V_calib; C_new=C_calib;}
+
+            C_new.row(0)=C_disp.row(0); //set root
+            for(int i=0;i<BE.rows();i++){
+                //vQ[i].normalize();
+                Affine3d a;
+                if(recordedData[loadNum][0]<0) a = Translation3d(Vector3d(C_new.row(BE(i,0)).transpose()))*vQ[i].matrix()*Translation3d(Vector3d(-C_calib.row(BE(i,0)).transpose()));
+                else      a = Translation3d(Vector3d(C_new.row(BE(i,0)).transpose()))*vQ[i].matrix()*Translation3d(Vector3d(-C.row(BE(i,0)).transpose()));
+                //vT.push_back(a.translation());
+                C_new.row(BE(i,1)) = a*Vector3d(C_new.row(BE(i,1)));
+            }
+            viewer.data(v1).set_edges(C_new, BE, sea_green);
+            MatrixXd U;
+            myDqs(V_disp,cleanWeights,vQ,vT,U);
+            viewer.data(v1).set_vertices(U);
+            viewer.data(v1).compute_normals();
+
+            MatrixXd normals = viewer.data(v1).V_normals;
+            MatrixXd vIso = U;
+            vIso.col(0) = vIso.col(0).array()-isoCenter(0);
+            vIso.col(1) = vIso.col(1).array()-isoCenter(1);
+            vIso.col(2) = vIso.col(2).array()-isoCenter(2);
+
+            U.rowwise() += (-patientMove - gridStart).transpose();
+            U *= 0.2; // 5cm grid
+            VectorXd values = ArrayXd::Zero(V_ply.rows());
+            for(int i=0;i<U.rows();i++){
+                double factor(1);
+                double dotProd = vIso.row(i).dot(normals.row(i))/vIso.row(i).norm();
+                if(dotProd>0.5) continue;
+                if(dotProd>0) factor = 0.5-dotProd;
+                int idx = floor(U(i,0))*ijk[2]*ijk[1]+floor(U(i,1))*ijk[2]+floor(U(i,2));
+                if(idx<60*60*60)
+                    values(i) = doseMapS[idx]*factor;
+                else
+                    cout<<"out!!"<<endl;
+            }
+            double eyedose(0);
+            for(int i:eye2ply){
+                int idx = floor(U(i,0))*ijk[2]*ijk[1]+floor(U(i,1))*ijk[2]+floor(U(i,2));
+                if(idx<60*60*60)
+                    eyedose += doseMapL[idx];
+            }
+            ofs<<eyedose<<endl;
+            double realMax = values.maxCoeff();
+            if(realMax>maxSkin*0.05) {
+                sprintf(rMaxChar,"%.2E",realMax*1.e12);
+                viewer.data(v1).set_data(values,colorMap);
+            }
+            else{
+                sprintf(rMaxChar,"%.2E",maxSkin*0.05*1.e12);
+                viewer.data(v1).set_data(values,0,maxSkin*0.05,colorMap);
+            }
+            cout<<"Loaded frame #"<<loadNum<<" : "<<recordedData[loadNum++][0]<<"s"<<endl;
+
+            if(loadNum==recordedData.size()){
+                loading = false; loadNum=0;
+                V_calib = V_ply+W_j_ply*jt;
+                C_calib = C + jointTrans;
+                viewer.core(v1_view).is_animating = false;
+                strcpy(rec,"waiting for residual...");
+            }
+        }
+        else if(viewer.core(v1_view).is_animating){
             //timer.start();
             double stamp = timeStamp.getElapsedTimeInSec();
             MatrixXd V_disp, C_disp(poseJoints.size(),3), C_new(C);
@@ -885,7 +1092,7 @@ int main(int argc, char** argv){
                     viewer.data(v1).set_vertices(U);
                     viewer.data(v1).compute_normals();
 
-                    if(doseCal){
+                    if(doseCal||recording){
                         array<double, 155> pack; //sig, vQ, vT
                         for(int i=0;i<BE.rows();i++){
                             pack[4*i+1] = vQ[i].w(); pack[4*i+2] = vQ[i].x(); pack[4*i+3] = vQ[i].y(); pack[4*i+4] = vQ[i].z();
@@ -895,21 +1102,29 @@ int main(int argc, char** argv){
                         else pack[0] = stamp-preStamp;
                         expTimeD+=pack[0];
                         if(calib) pack[0] = -pack[0];
-                        strcpy(frameNum,to_string(frameNo+1).c_str());
-                        strcpy(expTime,to_string(expTimeD).c_str());
+                        sprintf(frameNum, "%d", frameNo+1);
+                        sprintf(expTime, "%.1f", expTimeD);
 
+                        if(doseCal){
                         m2.lock();
                         poseData.push_back(pack);
                         frameIDs.push_back(frameNo);
                         m2.unlock();
+                        }
+                        if(recording){
+                            vector<double> packVec(pack.begin(), pack.end());
+                            recordedData.push_back(packVec);
+                            jointData.push_back(C_disp);
+                        }
 
-                        if(doseMap.size()>0){
                             MatrixXd normals = viewer.data(v1).V_normals;
                             MatrixXd vIso = U;
-                            vIso.col(2) = vIso.col(2).array()-60;
-                            U.col(0) = U.col(0).array() + 150;
-                            U.col(1) = U.col(1).array() + 150;
-                            U *= 0.2;
+                            vIso.col(0) = vIso.col(0).array()-isoCenter(0);
+                            vIso.col(1) = vIso.col(1).array()-isoCenter(1);
+                            vIso.col(2) = vIso.col(2).array()-isoCenter(2);
+
+                            U.rowwise() += (-patientMove - gridStart).transpose();
+                            U *= 0.2; // 5cm grid
                             VectorXd values = ArrayXd::Zero(V_ply.rows());
                             m.lock();
                             for(int i=0;i<U.rows();i++){
@@ -918,21 +1133,29 @@ int main(int argc, char** argv){
                                 if(dotProd>0.5) continue;
                                 if(dotProd>0) factor = 0.5-dotProd;
                                 int idx = floor(U(i,0))*ijk[2]*ijk[1]+floor(U(i,1))*ijk[2]+floor(U(i,2));
-                                auto iter = doseMap.find(idx);
-                                if(iter==doseMap.end()) continue;
-                                values(i) = iter->second.first*factor;
+                                //cout<<idx<<endl;
+                                if(idx<60*60*60)
+                                    values(i) = doseMapS[idx]*factor;
+                                else
+                                    cout<<"out!!"<<endl;
                             }
                             double eyedose(0);
                             for(int i:eye2ply){
                                 int idx = floor(U(i,0))*ijk[2]*ijk[1]+floor(U(i,1))*ijk[2]+floor(U(i,2));
-                                auto iter = doseMap.find(idx);
-                                if(iter==doseMap.end()) continue;
-                                eyedose+=doseMap[i].second;
+                                if(idx<60*60*60)
+                                    eyedose += doseMapL[idx];
                             }
                             m.unlock();
                             ofs<<eyedose<<endl;
-                            viewer.data(v1).set_data(values, colorMap);
-                        }
+                            double realMax = values.maxCoeff();
+                            if(realMax>maxSkin*0.05) {
+                                sprintf(rMaxChar, "%.1f",realMax*3600.e12);
+                                viewer.data(v1).set_data(values,colorMap);
+                            }
+                            else{
+                                sprintf(rMaxChar, "%.1f",maxSkin*0.05*3600.e12);
+                                viewer.data(v1).set_data(values,0,maxSkin*0.05,colorMap);
+                            }
                         //timer.stop();
                         cout<<"Frame #"<<frameNo++<<" ("<<stamp<<"s) : "<<pack[0]<<"s"<<endl;
                     }
