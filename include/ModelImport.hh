@@ -7,12 +7,19 @@
 #include "functions.h"
 #include "ClientSocket.h"
 #include <set>
-
+#include "G4SystemOfUnits.hh"
 class ModelImport
 {
 public:
     ModelImport(ClientSocket*);
     G4bool RecvInitData();
+    void ResetCalibData(MatrixXd calib_M){
+        V_calib = V+Wj*calib_M*cm;
+    }
+    void ResetCalibData(){
+        V_calib = V+Wj*calib_M0*cm;
+    }
+
     void PostureChange(const RotationList &vQ, const std::vector<Vector3d> &vT, bool calib);
 
     G4Tet* GetTetrahedron(G4int i) {return tetVec[i];}
@@ -35,7 +42,7 @@ private:
     //std::vector<G4ThreeVector>  U;
     std::vector<std::map<int, double>> W;
     Eigen::MatrixXi F, T;
-    MatrixXd V,V_calib, Wj, U;
+    MatrixXd V,V_calib, Wj, U, calib_M0;
     std::vector<G4Tet*> tetVec, tetVec_offset;
     Vector3d center, size;
 

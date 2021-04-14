@@ -33,8 +33,8 @@ file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.h)
 file(GLOB g4sources ${PROJECT_SOURCE_DIR}/src/*.cc)
 file(GLOB g4headers ${PROJECT_SOURCE_DIR}/include/*.hh)
 include_directories(${PROJECT_SOURCE_DIR}/include
-                    ${PROJECT_SOURCE_DIR}/libigl/include
-                    ${PROJECT_SOURCE_DIR}/libigl/external/eigen)
+                    ${LIBIGL_INCLUDE_DIR})
+#                    ${PROJECT_SOURCE_DIR}/libigl/external/eigen)
 add_executable(Calculator calculator.cc ${sources} ${headers} ${g4sources} ${g4headers})
 
 # Dependencies of this library

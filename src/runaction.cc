@@ -114,7 +114,9 @@ void RunAction::EndOfRunAction(const G4Run* run)
      << "  The run was " << nofEvents << " events "
      << "/ Nb of 'good' events: " << fGoodEvents.GetValue()  << G4endl;
     G4double sumDose(0), lensDose(0);
-    for(G4int i:eyeFaces) lensDose+=fSumDose[i]->GetValue();
+    for(G4int i:eyeFaces) {
+        lensDose+=fSumDose[i]->GetValue();
+    }
     for(size_t i=0;i<fSumDose.size();i++){
         sumDose += fSumDose[i]->GetValue();
         (*fSumDose[i]) *= 1./massMap[i];

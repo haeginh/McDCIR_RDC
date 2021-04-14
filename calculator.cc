@@ -26,7 +26,6 @@ int main ( int argc, char** argv)
     G4UIExecutive* ui = 0;
     if(argc==2)  runManager->SetNumberOfThreads(atoi(argv[1]));
     else         ui = new G4UIExecutive(argc, argv);
-
     G4VModularPhysicsList* physicsList = new FTFP_BERT;
     physicsList->RegisterPhysics(new G4StepLimiterPhysics());
     runManager->SetUserInitialization(physicsList);
@@ -56,7 +55,7 @@ int main ( int argc, char** argv)
         }else{
            // UImanager->ApplyCommand("/tracking/verbose 2");
             runManager->Initialize();
-            G4String phaseSpace = "80kVp_1E8.bin";
+            G4String phaseSpace = "/home/hurel/RemoteCal_cal/100kVp1E7_shield.bin";
             G4int num;
             std::ifstream ifs(phaseSpace, std::ios::in | std::ios::binary);
             ifs.read((char*)&num, sizeof(G4int)); ifs.close();
@@ -67,10 +66,27 @@ int main ( int argc, char** argv)
 //            UImanager->ApplyCommand("/gun/energy 50 keV");
             const RunAction* runAction
               = static_cast<const RunAction*>(runManager->GetUserRunAction());
-            G4int numOfPack = floor(modelImport->GetNumOfFace() / 180)+1;
+            G4int numOfPack = floor(modelImport->GetNumOfFace() / 180.)+1;
             while(true){
                 array<double, 155> pack;
                 client_socket->RecvDoubleBuffer(pack.data(),155);
+                if(pack[0]==0){
+                    if(pack[1]==1){
+                        G4cout<<"Receive recorded data"<<endl;
+                        (*client_socket)<<"chk";
+                        MatrixXd calib_M(24,3);
+                        client_socket->RecvDoubleBuffer(calib_M.data(),72);
+                        (*client_socket)<<"chk";
+                        modelImport->ResetCalibData(calib_M);
+                        continue;
+                    }
+                    else if(pack[1]==-1){
+                        (*client_socket)<<"chk";
+                        G4cout<<"Finishing calculating recorded data"<<endl;
+                        modelImport->ResetCalibData();
+                        continue;
+                    }
+                }
                 G4cout<<"Frame signal: "<<pack[0]<<G4endl;
                 RotationList vQ;
                 vector<Vector3d> vT;
@@ -82,7 +98,7 @@ int main ( int argc, char** argv)
                 if(pack[0]<0) calib = true;
                 det->SetUpNewFrame(vQ,vT, calib);
                 runManager->GeometryHasBeenModified();
-                runManager->BeamOn(num*0.01);
+                runManager->BeamOn(num*0.001);
                 const std::vector<G4Accumulable<G4double>*>* doseVec = runAction->GetDoseVec();
                 double buff[180]; string dump;
                 G4Timer timer; timer.Start();

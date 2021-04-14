@@ -1,5 +1,7 @@
 #include "ModelImport.hh"
 #include "igl/per_face_normals.h"
+#include "igl/readMESH.h"
+#include "igl/readDMAT.h"
 #include "G4Timer.hh"
 #include "G4SystemOfUnits.hh"
 #include "G4NistManager.hh"
@@ -7,98 +9,69 @@
 ModelImport::ModelImport(ClientSocket* _sock)
     :socket(_sock), nonTargetNum(0)
 {
-//    igl::readMESH(modelName+".mesh",V,T,F);
-//    igl::readDMAT(modelName+".dmat",W);
-    ReadMatFile("test");
-}
-
-G4bool ModelImport::RecvInitData(){
+    G4String directory("/home/hurel/RemoteCal_cal/");
     G4Timer timer; timer.Start();
-    G4String data; (*socket)>>data;
-    std::stringstream ss(data);
-    int vNum, tNum, fNum, eNum;
-    ss>>data>>vNum>>tNum>>fNum>>eNum;
-    if(data.substr(0,4)!="init") G4cout<<"Wrong signal: "<<data<<G4endl;
-    G4cout<<data<<G4endl;
-    G4cout<<"Get data for "<<vNum<<" vertices...";
-    V.resize(vNum,3); Wj.resize(vNum,24);
-    W.clear();
-    G4double epsilon(1e-5);
-    G4String chk("chk");
-    (*socket)<<chk;
-    for(int i=0;i<vNum;i++){
-        array<double, 49> packet;
-        socket->RecvDoubleBuffer(packet.data(),49);
-        for(int j=0;j<3;j++) V(i,j) = packet[j];
-
-        G4double sum(0);
-        std::map<int, double> W_map;
-        for(G4int j=3;j<25;j++){
-            if(packet.data()[j]<epsilon) continue;
-            W_map[j-3] = packet[j];
-            sum+=packet[j];
-        }
-
-        for(auto &iter:W_map)
-            iter.second/=sum;
-        W.push_back(W_map);
-
-        for(int j=25;j<49;j++)
-            Wj(i,j-25) = packet[j];
-        (*socket)<<chk;
-    }
+    G4cout<<"read model.mesh..."<<std::flush;
+    igl::readMESH(directory+"model.mesh",V,T,F);
     V *= cm;
     Vector3d min = V.colwise().minCoeff().transpose();
     Vector3d max = V.colwise().maxCoeff().transpose();
     center = (min+max)*0.5;
     size = max-min;
-
-    timer.Stop(); double vTime = timer.GetRealElapsed();
-    G4cout<<vTime<<G4endl;
-    igl::normalize_row_sums(Wj,Wj);
-    timer.Start();
-
-    cout<<"Get data for "<<tNum<<" tetrahedrons..."<<flush;
-    tetVec.clear();
-    T.resize(tNum,4);
-    for(int i=0;i<tNum;i++){
-        array<int, 4> t;
-        socket->RecvIntBuffer(t.data(),4);
+    for(G4int i=0;i<T.rows();i++){
         tetVec.push_back(new G4Tet("tet",
-                                   G4ThreeVector(V(t.data()[0],0),V(t.data()[0],1),V(t.data()[0],2)),
-                                   G4ThreeVector(V(t.data()[1],0),V(t.data()[1],1),V(t.data()[1],2)),
-                                   G4ThreeVector(V(t.data()[2],0),V(t.data()[2],1),V(t.data()[2],2)),
-                                   G4ThreeVector(V(t.data()[3],0),V(t.data()[3],1),V(t.data()[3],2))));
-        for(int j=0;j<4;j++) T(i,j) = t.data()[j];
-        (*socket)<<chk;
-    }timer.Stop(); double tTime = timer.GetRealElapsed();
-    G4cout<<tTime<<G4endl; timer.Start();
-
-    cout<<"Get data for "<<fNum<<" faces..."<<flush;
-    F.resize(fNum,3);
-
-    adjacentFaces.clear();
-    for(int i=0;i<fNum;i++){
-        array<int, 3> f;
-        socket->RecvIntBuffer(f.data(),3);
-        for(int j=0;j<3;j++){
-            F(i,j) = f.data()[j];
-            adjacentFaces[f.data()[j]].push_back(i);
-        }
-        (*socket)<<chk;
+                                   G4ThreeVector(V(T(i,0),0),V(T(i,0),1),V(T(i,0),2)),
+                                   G4ThreeVector(V(T(i,1),0),V(T(i,1),1),V(T(i,1),2)),
+                                   G4ThreeVector(V(T(i,2),0),V(T(i,2),1),V(T(i,2),2)),
+                                   G4ThreeVector(V(T(i,3),0),V(T(i,3),1),V(T(i,3),2))));
+    }
+    for(G4int i=0;i<F.rows();i++){
+        for(int j=0;j<3;j++)
+            adjacentFaces[F(i,j)].push_back(i);
     }
     int count(0);
     for(auto iter:adjacentFaces) u2o[iter.first] = count++;
-    timer.Stop(); double fTime = timer.GetRealElapsed();
-    G4cout<<fTime <<" (outerV: "<<adjacentFaces.size()<<")"<<G4endl;
+    timer.Stop(); G4cout<<timer.GetRealElapsed()<<" (outerV: "<<adjacentFaces.size()<<")"<<G4endl;
 
+    G4cout<<"read model_W(j).dmat..."<<std::flush; timer.Start();
+    MatrixXd W_mat;
+    igl::readDMAT(directory+"model_W.dmat",W_mat);
+    G4double epsilon(1e-5);
+    for(G4int i=0;i<W_mat.rows();i++){
+        G4double sum(0);
+        std::map<int, double> W_map;
+        for(G4int j=0;j<22;j++){
+            if(W_mat(i,j)<epsilon) continue;
+            W_map[j] = W_mat(i,j);
+            sum+=W_mat(i,j);
+        }
+
+        for(auto &iter:W_map)
+            iter.second/=sum;
+        W.push_back(W_map);
+    }
+    igl::readDMAT(directory+"model_Wj.dmat",Wj);
+    igl::normalize_row_sums(Wj,Wj);
+    timer.Stop(); G4cout<<timer.GetRealElapsed()<<G4endl;
+
+    ReadMatFile("test");
+}
+
+G4bool ModelImport::RecvInitData(){
+    G4String data; (*socket)>>data;
+    (*socket)<<"chk";
+    std::stringstream ss(data);
+    int eNum;
+    ss>>data>>eNum;
+    if(data.substr(0,4)!="init") G4cout<<"Wrong signal: "<<data<<G4endl;
     if(eNum>180) G4cout<<"Chk eye packet!!!!!!"<<G4endl;
     array<int, 180> eyeArray;
     socket->RecvIntBuffer(eyeArray.data(),180);
     eyeFaces.clear();
     for(int i=0;i<eNum;i++) eyeFaces.insert(eyeArray[i]);
-    G4cout<<"total: "<<vTime+fTime+tTime<<G4endl;
+    G4cout<<"received eye data!"<<G4endl;
 
+    G4Timer timer;
     cout<<"Generate Skin Layers..."<<flush; timer.Start();
     U=V;
     GenerateOffset();
@@ -138,6 +111,7 @@ G4bool ModelImport::RecvInitData(){
 
     MatrixXd calib_M(24,3);
     socket->RecvDoubleBuffer(calib_M.data(),72);
+    calib_M0=calib_M;
     G4cout<<"Recieved calib data"<<G4endl;
     V_calib = V+Wj*calib_M*cm;
     return true;
