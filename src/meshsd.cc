@@ -91,6 +91,7 @@ void MeshSD::Initialize(G4HCofThisEvent* hce)
 G4bool MeshSD::ProcessHits(G4Step* step, G4TouchableHistory*)
 {
   if(step->GetTrack()->GetParticleDefinition()!=gamma) return false;
+  if(step->GetPreStepPoint()->GetMaterial()->GetDensity()>0.6*g/cm3) return false;
 
   G4int k = step->GetPreStepPoint()->GetTouchable()->GetCopyNumber(0);
   G4int j = step->GetPreStepPoint()->GetTouchable()->GetCopyNumber(1);

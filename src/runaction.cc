@@ -73,9 +73,9 @@ void RunAction::EndOfRunAction(const G4Run* )
     auto doseMapL=fRun->GetDoseMapL();
     std::vector<G4double> resultMap(doseMapS->size());
     std::ofstream ofs("./doseMaps/"+std::to_string(fRun->GetRunID())+".map", std::ios::binary);
-    std::transform(doseMapS->begin(), doseMapS->end(), resultMap.begin(), [&](G4double d)->G4double{return d/(G4double)nps*1.e12;});
+    std::transform(doseMapS->begin(), doseMapS->end(), resultMap.begin(), [&](G4double d)->G4double{return d/(G4double)nps/gray;});
     ofs.write((char*) (&resultMap[0]), 60*60*60*sizeof(G4double));
-    std::transform(doseMapL->begin(), doseMapL->end(), resultMap.begin(), [&](G4double d)->G4double{return d/(G4double)nps*1.e12;});
+    std::transform(doseMapL->begin(), doseMapL->end(), resultMap.begin(), [&](G4double d)->G4double{return d/(G4double)nps/gray;});
     ofs.write((char*) (&resultMap[0]), 60*60*60*sizeof(G4double));
     ofs.close();
     //dose map unit: (/cm2)

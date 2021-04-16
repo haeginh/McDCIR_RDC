@@ -71,7 +71,7 @@ void ParallelMesh::Construct()
 
 void ParallelMesh::ConstructSD()
 {
-    SetSensitiveDetector(boxZ_log, new MeshSD("meshSD", ni, nj, nk, 1*cm3));
+    SetSensitiveDetector(boxZ_log, new MeshSD("meshSD", ni, nj, nk, 125*cm3));
 }
 
 
