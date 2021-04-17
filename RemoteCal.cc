@@ -1,19 +1,7 @@
-#include "ServerSocket.h"
-#include "SocketException.h"
-
 #include <iostream>
 #include <ctime>
-#include <thread>
-#include <pthread.h>
 #include <functions.h>
 #include <functional>
-#include <mutex>
-
-pthread_mutex_t sync_mutex;
-pthread_cond_t  sync_cond;
-
-pthread_mutex_t gmutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t  gcond  = PTHREAD_COND_INITIALIZER;
 
 #include "bodytracking.hh"
 #include "colorbar.hh"
@@ -39,18 +27,15 @@ pthread_cond_t  gcond  = PTHREAD_COND_INITIALIZER;
 #include <igl/dqs.h>
 #include <igl/unproject_onto_mesh.h>
 #include <igl/Timer.h>
+#include <igl/mat_max.h>
 
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
 #include <Eigen/SparseCore>
 
-//#include "trase.hpp"
-
 void PrintUsage(){
     cout<<"<Usage>"<<endl;
-    cout<<"pre-processing    -> ./MotionCapt [phantom_prefix(.mesh, .tgf)] [outer.ply]"<<endl;
-    cout<<"animating/doseCal -> ./MotionCapt [phantom_prefix(.mesh, .tgf, _o.dmat, _oj.dmat, _o.bary)] (-rst [rst.ply])"<<endl;
-    cout<<"                     (PLY file is for animating visualization)"<<endl;
+    cout<<"./MapCal [phantom prefix (ply, tgf)]"<<endl;
     exit(1);
 }
 
@@ -59,152 +44,92 @@ using namespace std;
 typedef Triplet<double> T;
 
 int main(int argc, char** argv){
-    if(argc!=3 && argc!=2 && argc!=4) PrintUsage();
-    string prefix = argv[1];
+    if(argc!=2) PrintUsage();
 
     //main variables
-    MatrixXd C, V_o, W_o, W_j, V;
-    MatrixXi BE, T_o, F_o, T, F;
+    MatrixXd C, V;
+    MatrixXi BE, T, F;
     RowVector3d sea_green(70./255.,252./255.,167./255.);
     RowVector3d blue(0.,0.,1.);
     RowVector3d red(1.,0.,0.);
-    igl::Timer timer;
+    RowVector3d white(1.,1.,1.);
 
+    //read files
+    string prefix = argv[1];
     cout<<"Read "+prefix+".tgf"<<endl;
     igl::readTGF(prefix+".tgf",C,BE);
+    igl::readPLY(prefix+".ply",V,F);
+    MatrixXd W(V.rows(),BE.rows());
+    MatrixXd Wj(V.rows(),C.rows()-1);
 
-    if(argc==3){
-        string argv2 = argv[2];
-        if(argv2.substr(argv2.size()-4,4)!=".ply") PrintUsage();
-        //perform BBW
-        cout<<"Perform BBW for "<<argv2<<endl;
-        timer.start();
-        MatrixXd V_PLY; MatrixXi F_PLY;
-        igl::readPLY(argv2,V_PLY,F_PLY);
+    //bbw
+    if((!igl::readDMAT(prefix+".W",W)) || (!igl::readDMAT(prefix+".Wj",Wj))){
         MatrixXd boneP = GenerateBonePoints(C,BE,1.);
-        MatrixXd V_oSurf(V_PLY.rows()+boneP.rows(),3);
-        V_oSurf<<V_PLY, boneP;
-        igl::copyleft::tetgen::tetrahedralize(V_oSurf, F_PLY, "pYq", V_o, T_o, F_o);
-        igl::readMESH(prefix+".mesh", V, T, F);
-        map<int, map<int, double>> baryCoord = GenerateBarycentricCoord(V_o, T_o, V);
-
-        cout<<"Extract eye nodes.."<<flush;
-        set<int> eyeL = {6600, 6601, 6700, 6701, 6702};
-        set<int> eyeR = {6800, 6801, 6900, 6901, 6902};
-        ifstream meshF(prefix+".mesh");
-        string dump;
-        while(getline(meshF, dump)) if(dump.substr(0,10)=="Tetrahedra") break;
-        int tetN, av, bv, cv, dv, idx; meshF>>tetN;
-        vector<int> eyeLV, eyeRV;
-        for(int i=0;i<tetN;i++){
-            meshF>>av>>bv>>cv>>dv>>idx;
-            if(eyeL.find(idx)!=eyeL.end()) {
-                eyeLV.push_back(av-1);eyeLV.push_back(bv-1);eyeLV.push_back(cv-1);eyeLV.push_back(dv-1);
-            }else if(eyeR.find(idx)!=eyeR.end()) {
-                eyeRV.push_back(av-1);eyeRV.push_back(bv-1);eyeRV.push_back(cv-1);eyeRV.push_back(dv-1);
-            }
-        }meshF.close();
-        sort(eyeLV.begin(),eyeLV.end());sort(eyeRV.begin(),eyeRV.end());
-        eyeLV.erase(unique(eyeLV.begin(),eyeLV.end()),eyeLV.end());
-        eyeRV.erase(unique(eyeRV.begin(),eyeRV.end()),eyeRV.end());
-        cout<<"R: "<<eyeRV.size()<<"/ L: "<<eyeLV.size()<<flush;
-        vector<int> eyeLV2, eyeRV2;
-        for(int i:eyeLV) for(auto iter:baryCoord[i]) eyeLV2.push_back(iter.first);
-        for(int i:eyeRV) for(auto iter:baryCoord[i]) eyeRV2.push_back(iter.first);
-        sort(eyeLV2.begin(),eyeLV2.end());sort(eyeRV2.begin(),eyeRV2.end());
-        eyeLV2.erase(unique(eyeLV2.begin(),eyeLV2.end()),eyeLV2.end());
-        eyeRV2.erase(unique(eyeRV2.begin(),eyeRV2.end()),eyeRV2.end());
-        cout<<" -> R: "<<eyeRV2.size()<<"/ L: "<<eyeLV2.size()<<endl;
+        MatrixXd V1(V.rows()+boneP.rows(),3);
+        V1<<V, boneP;
+        MatrixXd VT, WT_j, WT;
+        MatrixXi TT, FT;
+        cout<<"<Tetrahedralization>"<<endl;
+        igl::copyleft::tetgen::tetrahedralize(V1, F, "pYq", VT, TT, FT);
 
         cout<<"<Calculate Joint Weights>"<<endl;
-        if(!CalculateScalingWeights(C, V_o, T_o, W_j, eyeLV2, eyeRV2))  return EXIT_FAILURE;
-        igl::normalize_row_sums(W_j,W_j);
+        MatrixXd C1 = C.block(0,0,C.rows()-1,3);
+        if(!CalculateScalingWeights(C1, VT, TT, WT_j))  return EXIT_FAILURE;
+        igl::normalize_row_sums(WT_j,WT_j);
 
+        cout<<"<Calculate Bone Weights>"<<endl;
         MatrixXd bc; VectorXi b;
-        igl::boundary_conditions(V_o,T_o,C,VectorXi(),BE,MatrixXi(),b,bc);
+        igl::boundary_conditions(VT,TT,C,VectorXi(),BE,MatrixXi(),b,bc);
         cout<<bc.rows()<<" "<<bc.cols()<<endl;
         igl::BBWData bbw_data;
-        //bbw_data.active_set_params.max_iter = 10;
+        bbw_data.active_set_params.max_iter = 10;
         bbw_data.verbosity = 2;
-        cout<<"<Calculate Bone Weights>"<<endl;
-        if(!igl::bbw(V_o,T_o,b,bc,bbw_data,W_o))  return EXIT_FAILURE;
-        igl::normalize_row_sums(W_o,W_o);
+        if(!igl::bbw(VT,TT,b,bc,bbw_data,WT))  return EXIT_FAILURE;
+        igl::normalize_row_sums(WT,WT);
 
-        //Print outputs
-        cout<<"Write "<<prefix+"_o.dmat"<<endl;
-        igl::writeDMAT(prefix+"_o.dmat",W_o);
-        cout<<"Write "<<prefix+"_oj.dmat"<<endl;
-        igl::writeDMAT(prefix+"_oj.dmat",W_j);
-        cout<<"Write "<<prefix+"_o.mesh"<<endl;
-        igl::writeMESH(prefix+"_o.mesh", V_o, T_o, F_o);
-        cout<<"Write "<<prefix+".bary"<<endl;
-        PrintBaryCoords(prefix+".bary",baryCoord);
-        timer.stop();
-        cout<<"total time: "<<timer.getElapsedTimeInSec()<<endl;
-        igl::opengl::glfw::Viewer viewer;
-        viewer.data().set_mesh(V_o, F_o);
-        viewer.data().set_edges(C,BE,sea_green);
-        viewer.data().show_lines = false;
-        viewer.data().show_overlay_depth = false;
-        viewer.data().line_width = 1;
-        viewer.data().point_size = 1;
-        MatrixXd W = W_o;
-        bool bone(true);
-        int selected = -1;
-
-        viewer.callback_key_down = [&](igl::opengl::glfw::Viewer &,unsigned char key, int)->bool
-        {
-            switch(key){
-            case ',':
-                selected = std::min(std::max(--selected,0),(int)W.cols()-1);
-                viewer.data().set_data(W.col(selected));
+        //matching between tetra & ply
+        cout<<"matching between tetra & ply.."<<flush;
+        auto grid = GenerateGrid(VT);
+        int count(0);
+        for(int i=0;i<V.rows();i++){
+            int x = floor(V(i,0)+0.5);
+            int y = floor(V(i,1)+0.5);
+            int z = floor(V(i,2)+0.5);
+            auto key = make_tuple(x,y,z);
+            for(int n:grid[key]){
+                if(fabs(V(n,0)-VT(i,0))>0.01) continue;
+                if(fabs(V(n,1)-VT(i,1))>0.01) continue;
+                if(fabs(V(n,2)-VT(i,2))>0.01) continue;
+                W.row(i) = WT.row(n);
+                Wj.row(i) = WT_j.row(n);
+                cout<<"\rmatching between tetra & ply.."<<++count<<"/"<<V.rows()<<flush;
                 break;
-            case '.':
-                selected = std::min(std::max(++selected,0),(int)W.cols()-1);
-                viewer.data().set_data(W.col(selected));
-                break;
-            case ' ':
-                if(bone) W = W_j;
-                else     W = W_o;
-                bone = !bone;
-                break;            }
-            return true;
-        };
-        viewer.launch();
-        return EXIT_SUCCESS;
+            }
+        }cout<<endl;
+        igl::writeDMAT(prefix+".W", W, false);
+        igl::writeDMAT(prefix+".Wj", Wj, false);
     }
 
-    //read phantom files
-    cout<<"Read "+prefix+"_o.mesh"<<endl;
-    igl::readMESH(prefix+"_o.mesh", V_o, T_o, F_o);
-    cout<<"Read "+prefix+"_o.dmat"<<endl;
-    igl::readDMAT(prefix+"_o.dmat", W_o);
-    cout<<"Read "+prefix+"_oj.dmat"<<endl;
-    igl::readDMAT(prefix+"_oj.dmat",W_j);
-    igl::normalize_row_sums(W_j,W_j);
+//    //hand part
+//    VectorXd dummy; VectorXi maxIdx;
+//    igl::mat_max(W, 2, dummy, maxIdx);
+//    set<int> handIdx;
+//    for(int i=0;i<maxIdx.rows();i++)
+//        if(maxIdx(i) == 6 || maxIdx(i) == 13) handIdx.insert(i);
+//    cout<<handIdx.size()<<" hand vertices were found"<<endl;
 
-    MatrixXd V_ply, W_ply, W_j_ply; MatrixXi F_ply;
-    if(string(argv[2])!="-rst") PrintUsage();
-    string skinF = argv[3];
-    cout<<"Set for "<<skinF<<endl;
-    igl::readPLY(string(argv[3]),V_ply,F_ply);
-    map<int, map<int, double>> baryCoord = GenerateBarycentricCoord(V_o,T_o,V_ply);
-    SparseMatrix<double> bary = GenerateBarySparse(baryCoord,V_o.rows());
-    //V_o = V_ply; F_o = F_ply; W_o = bary*W_o; W_j = bary*W_j;
-    W_ply = bary*W_o;
-    W_j_ply = bary*W_j;
     //eye part
     MatrixXd V_eye; MatrixXi F_eye;
-    igl::readPLY(skinF.substr(0,skinF.size()-4)+"_eye.ply",V_eye,F_eye);
-    map<tuple<int,int,int>,vector<int>> grid = GenerateGrid(V_ply);
+    if(!igl::readPLY(prefix+"_eye.ply",V_eye,F_eye)){cout<<"there is no "+prefix+"_eye.ply!!"<<endl;}
+    map<tuple<int,int,int>,vector<int>> grid = GenerateGrid(V);
     vector<int> eye2ply;
     for(int i=0;i<V_eye.rows();i++){
         double x = V_eye(i,0); double y = V_eye(i,1); double z = V_eye(i,2);
         auto ijk = make_tuple(floor(x+0.5),floor(y+0.5),floor(z+0.5));
         for(int n:grid[ijk]){
-            if(fabs(x-V_ply(n,0))>0.001) continue;
-            if(fabs(y-V_ply(n,1))>0.001) continue;
-            if(fabs(z-V_ply(n,2))>0.001) continue;
+            if(fabs(x-V(n,0))>0.001) continue;
+            if(fabs(y-V(n,1))>0.001) continue;
+            if(fabs(z-V(n,2))>0.001) continue;
             eye2ply.push_back(n);
             break;
         }
@@ -215,8 +140,8 @@ int main(int argc, char** argv){
         sort(face.begin(),face.end());
         eyeFaces.push_back(face);
     } vector<int> eyeFaceIDs;
-    for(int i=0;i<F_ply.rows();i++){
-        vector<int> face = {F_ply(i,0),F_ply(i,1),F_ply(i,2)};
+    for(int i=0;i<F.rows();i++){
+        vector<int> face = {F(i,0),F(i,1),F(i,2)};
         sort(face.begin(),face.end());
         if(find(eyeFaces.begin(),eyeFaces.end(),face)!=eyeFaces.end())
             eyeFaceIDs.push_back(i);
@@ -224,13 +149,13 @@ int main(int argc, char** argv){
 
     vector<map<int, double>> cleanWeights;
     double epsilon(1e-5);
-    for(int i=0;i<W_ply.rows();i++){
+    for(int i=0;i<W.rows();i++){
         double sum(0);
         map<int, double> vertexWeight;
-        for(int j=0;j<W_ply.cols();j++){
-            if(W_ply(i,j)<epsilon) continue;
-            vertexWeight[j] = W_ply(i,j);
-            sum += W_ply(i,j);
+        for(int j=0;j<W.cols();j++){
+            if(W(i,j)<epsilon) continue;
+            vertexWeight[j] = W(i,j);
+            sum += W(i,j);
         }
         for(auto &iter:vertexWeight) iter.second /= sum;
         cleanWeights.push_back(vertexWeight);
@@ -257,7 +182,7 @@ int main(int argc, char** argv){
     k4a_device_configuration_t deviceConfig = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
     deviceConfig.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
     deviceConfig.color_resolution = K4A_COLOR_RESOLUTION_OFF;
-    deviceConfig.camera_fps = K4A_FRAMES_PER_SECOND_5;
+    deviceConfig.camera_fps = K4A_FRAMES_PER_SECOND_30;
     VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
 
     // Get calibration information
@@ -405,9 +330,9 @@ int main(int argc, char** argv){
         jointTrans.row(headJ) = MatrixXd::Zero(1,3); jointTrans(headJ, 1) = (jointTrans(eyeLJ,1)+jointTrans(eyeRJ,1))*0.5;
         C_calib = C+jointTrans;
 
-        cout<<W_j_ply.rows()<<"*"<<W_j_ply.cols()<<endl;
+        cout<<Wj.rows()<<"*"<<Wj.cols()<<endl;
         cout<<jointTrans.rows()<<"*"<<jointTrans.cols()<<endl;
-        V_calib = V_ply+W_j_ply*jointTrans.block(0,0,C.rows()-1,3);
+        V_calib = V+Wj*jointTrans.block(0,0,C.rows()-1,3);
     }
     MatrixXd jt = jointTrans.block(0,0,C.rows()-1,3);
 
@@ -419,52 +344,31 @@ int main(int argc, char** argv){
         ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2(menu_width, -1.0f), ImVec2(menu_width, -1.0f));
         bool _viewer_menu_visible = true;
-        ImGui::Begin(
-            "RDC Module", &_viewer_menu_visible,
-            ImGuiWindowFlags_NoSavedSettings
-            | ImGuiWindowFlags_AlwaysAutoResize
-        );
+        ImGui::Begin("RDC Module", &_viewer_menu_visible, ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.5f);
         menu.callback_draw_viewer_menu();
         ImGui::PopItemWidth();
         ImGui::End();
     };
-    //data for version 2
-    MatrixXd V_v2, W_v2, Wj_v2;
-    MatrixXi T_v2;
-    MatrixXi F_tmp;
-    igl::copyleft::tetgen::tetrahedralize(V_ply, F_ply, "pYq", V_v2, T_v2, F_tmp);
-    igl::writeMESH("model.mesh",V_v2,T_v2,F_ply);
-    map<int, map<int, double>> baryCoord2 = GenerateBarycentricCoord(V_o,T_o,V_v2);
-    SparseMatrix<double> bary2 = GenerateBarySparse(baryCoord2,V_o.rows());
-    W_v2 = bary2 * W_o; Wj_v2 = bary2*W_j;
-    igl::writeDMAT("model_W.dmat",W_v2,false);
-    igl::writeDMAT("model_Wj.dmat",Wj_v2,false);
 
     cout<<"generating F_area, F_incident, F_area_eye matrix..."<<flush;
     VectorXd F_area;
-    MatrixXd W_incidentF=MatrixXd::Zero(V_ply.rows(),F_ply.rows());
-    igl::doublearea(V_ply,F_ply,F_area);
+    igl::doublearea(V,F,F_area);
     F_area.cwiseSqrt();
-    for(int i=0;i<F_ply.rows();i++){
+    VectorXd W_avgSkin = ArrayXd::Zero(V.rows());
+
+    for(int i=0;i<F.rows();i++){
         for(int j=0;j<3;j++)
-            W_incidentF(F_ply(i,j),i) =  F_area(i);
+            W_avgSkin(F(i,j)) +=  F_area(i);
     }
-    VectorXd W_avgSkin = W_incidentF.rowwise().sum();
+    W_avgSkin = W_avgSkin/W_avgSkin.sum();
+
     VectorXd W_Lens(eye2ply.size());
     for(size_t i=0;i<eye2ply.size();i++)
         W_Lens(i) = W_avgSkin(eye2ply[i]);
-    RowVectorXd F_area_lens = ArrayXd::Zero(F_ply.rows());
-    for(size_t i=0;i<eyeFaceIDs.size();i++){
-        F_area_lens(eyeFaceIDs[i]) = F_area(eyeFaceIDs[i]);
-        F_area(eyeFaceIDs[i]) = 0;
-    }
 
-    igl::normalize_row_sums(W_incidentF,W_incidentF);
     W_avgSkin = W_avgSkin.array()/W_avgSkin.sum();
     W_Lens    = W_Lens.array()/W_Lens.sum();
-    F_area    = F_area.array()/F_area.sum();
-    F_area_lens = F_area_lens.array()/F_area_lens.sum();
 
     cout<<"done"<<endl;
 
@@ -491,8 +395,6 @@ int main(int argc, char** argv){
     ifsMap.read((char*) &doseMapS0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
     ifsMap.read((char*) &doseMapL0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
     ifsMap.close();
-//    transform(doseMapS0.begin(),doseMapS0.end(),doseMapS0.begin(),[&](double n)->double{return n/DAPperNPS;});
-//    transform(doseMapL0.begin(),doseMapL0.end(),doseMapL0.begin(),[&](double n)->double{return n/DAPperNPS;});
     double maxSkin0 = *max_element(doseMapS0.begin(),doseMapS0.end());
 
     static char rMaxChar[100]("");
@@ -501,15 +403,29 @@ int main(int argc, char** argv){
     // igl viewer
     igl::opengl::glfw::Viewer viewer;
     viewer.plugins.push_back(&menu);
-    viewer.data().set_mesh(V_ply, F_ply);
+    viewer.data().set_mesh(V, F);
     viewer.append_mesh();
     viewer.load_mesh_from_file("patient3.obj");
     viewer.append_mesh();
-    viewer.data().set_mesh(V_ply, F_ply);
+    MatrixXd V_cArm; MatrixXi F_cArm;
+    igl::readPLY("c-arm.ply",V_cArm,F_cArm);
+    viewer.data().set_mesh(V_cArm,F_cArm);
+    viewer.append_mesh();
+    viewer.data().set_mesh(V, F);
 
     int v1=viewer.data_list[0].id;
     int v1_patient=viewer.data_list[1].id;
-    int v2=viewer.data_list[2].id;
+    int v1_cArm=viewer.data_list[2].id;
+    int v2=viewer.data_list[3].id;
+
+    if(calibFrame){
+        viewer.data(v1).set_mesh(V_calib, F);
+        viewer.data(v2).set_mesh(V_calib, F);
+        viewer.data(v1).set_edges(C_calib,BE,sea_green);
+        viewer.data(v1).set_points(C_calib,sea_green);
+        viewer.data(v1).show_custom_labels = false;
+    }
+
     Vector3d patientMove;
     MatrixXd V_patient = viewer.data(v1_patient).V;
     vector<vector<double>> recordedData;
@@ -518,9 +434,8 @@ int main(int argc, char** argv){
     static char rec[100] = "not recording..";
 
     auto colorMap = igl::COLOR_MAP_TYPE_PARULA;
-    static char expTime[100]("0"); double expTimeD(0);
-    static char frameNum[100]("0");
-    static char calNum[100]("0");
+    static char expTime[100]("0");  double expTimeD(0);
+    static char frameNum[100]("0"); int loadNum(0), frameNo(0);
     float boarder(300.f);
 
     viewer.data(v1).set_edges(C,BE,sea_green);
@@ -534,6 +449,8 @@ int main(int argc, char** argv){
     viewer.data(v1_patient).show_lines = true;
     viewer.data(v1_patient).show_overlay_depth = false;
     viewer.data(v1_patient).show_faces = false;
+    viewer.data(v1_cArm).set_colors(white);
+    viewer.data(v1_cArm).show_lines = false;
 
     viewer.data(v2).show_lines = false;
     viewer.data(v2).show_overlay_depth = false;
@@ -542,69 +459,63 @@ int main(int argc, char** argv){
     int v1_view, v2_view;
     viewer.callback_init = [&](igl::opengl::glfw::Viewer &)
     {
-      viewer.core().viewport = Eigen::Vector4f(0, 0, 640, 800);
-      v1_view = viewer.core_list[0].id;
-      v2_view = viewer.append_core(Eigen::Vector4f(640, 0, 640, 800));
-      viewer.core(v1_view).background_color=Eigen::Vector4f(109./255.,100./255.,102./255.,1);
-      viewer.core(v2_view).background_color=Eigen::Vector4f(163./255.,163./255.,163./255.,1);
-      viewer.core(v1_view).camera_eye=Eigen::Vector3f(0,0,-2);
-      viewer.core(v2_view).camera_eye=Eigen::Vector3f(0,0,-3);
-      viewer.core(v1_view).camera_up=Eigen::Vector3f(0,-1,0);
-      viewer.core(v2_view).camera_up=Eigen::Vector3f(0,-1,0);
+        viewer.core().viewport = Eigen::Vector4f(0, 0, 640, 800);
+        v1_view = viewer.core_list[0].id;
+        v2_view = viewer.append_core(Eigen::Vector4f(640, 0, 640, 800));
+        viewer.core(v1_view).background_color=Eigen::Vector4f(109./255.,100./255.,102./255.,1);
+        viewer.core(v2_view).background_color=Eigen::Vector4f(163./255.,163./255.,163./255.,1);
+        viewer.core(v1_view).camera_eye=Eigen::Vector3f(0,0,-2);
+        viewer.core(v2_view).camera_eye=Eigen::Vector3f(0,0,-3);
+        viewer.core(v1_view).camera_up=Eigen::Vector3f(0,-1,0);
+        viewer.core(v2_view).camera_up=Eigen::Vector3f(0,-1,0);
 
-      viewer.data(v1).set_visible(false, v2_view);
-      viewer.data(v1_patient).set_visible(false, v2_view);
-      viewer.data(v2).set_visible(false, v1_view);
+        viewer.data(v1).set_visible(false, v2_view);
+        viewer.data(v1_patient).set_visible(false, v2_view);
+        viewer.data(v1_cArm).set_visible(false, v2_view);
+        viewer.data(v2).set_visible(false, v1_view);
 
-      return false;
+        return false;
     };
 
     viewer.callback_post_resize = [&](igl::opengl::glfw::Viewer &v, int w, int h) {
-      boarder =  w * 3 / 4;
-      v.core( v1_view).viewport = Eigen::Vector4f(0, 0, w * 3 / 4, h);
-      v.core(v2_view).viewport = Eigen::Vector4f(w *3 / 4, 0, w/4, h);
-      return true;
+        boarder =  w * 3 / 4;
+        v.core( v1_view).viewport = Eigen::Vector4f(0, 0, w * 3 / 4, h);
+        v.core(v2_view).viewport = Eigen::Vector4f(w *3 / 4, 0, w/4, h);
+        return true;
     };
 
-    static float dap(0.1f);
+    static float dap(0.1f); // Gycm2/s
     double doseFactor = dap/DAPperNPS;
-    static bool mapAccChk(false);
+
+    //dose data
+    VectorXd accDoseMap = ArrayXd::Zero(V.rows());
+    double accLensMap(0.);
+    static char psdAcc[100], psdRate[100], avgAcc[100], avgRate[100], lensAcc[100], lensRate[100];
+
+    function<void()> ResetDose = [&](){
+        accDoseMap = ArrayXd::Zero(V.rows());
+        accLensMap = 0; frameNo = 0; expTimeD = 0;
+        strcpy(psdAcc,""); strcpy(psdRate,"");
+        strcpy(avgAcc,""); strcpy(avgRate,"");
+        strcpy(lensAcc,""); strcpy(lensRate,"");
+        strcpy(expTime,""); strcpy(frameNum,"");
+        strcpy(rec,"idle");
+        viewer.core(v1_view).is_animating = false;
+        viewer.data(v1).set_data(accDoseMap);
+        viewer.data(v2).set_data(accDoseMap);
+    };
+
+    //switches
+    static bool calib(true);
+    if(calibFrame==0) calib = false;
+    static bool doseCal(true);
+    double preStamp = -1;
 
     menu.callback_draw_viewer_menu = [&](){
         if (ImGui::CollapsingHeader("Information", ImGuiTreeNodeFlags_None))
         {
-          ImGui::Text("Author : Haegin Han");
-          ImGui::Text("IP/port: 166.104.155.29/30303");
-        }
-        static string ipAddress("localhost");
-        static string userName("hurel");
-        static string directory("~/RemoteCal_cal/");
-        if (ImGui::CollapsingHeader("Initialization", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-          ImGui::Text("[Accumul. dose cal.]");
-          ImGui::InputText("IP", ipAddress, ImGuiInputTextFlags_AutoSelectAll);
-          ImGui::InputText("user name", userName, ImGuiInputTextFlags_AutoSelectAll);
-          ImGui::InputText("dir",directory, ImGuiInputTextFlags_AutoSelectAll);
-          static int processNo(3), threadNo(3);
-          ImGui::InputInt("process #", &processNo);
-          ImGui::InputInt("thread #", &threadNo);
-          static char status[100] = "before init";
-          ImGui::InputText("status",status,ImGuiInputTextFlags_ReadOnly);
-          if(ImGui::Button("initialize!", ImVec2(-1,0))){
-              cout<<ipAddress<<": "<<directory<<endl;
-
-              system(("scp model.mesh "+userName+"@"+ipAddress+":"+directory).c_str());
-              system(("scp model_W.dmat "+userName+"@"+ipAddress+":"+directory).c_str());
-              system(("scp model_Wj.dmat "+userName+"@"+ipAddress+":"+directory).c_str());
-
-              cout<<"starting calculators..."<<endl;
-              for(int i=0;i<processNo;i++){
-                  system(("ssh "+userName+"@"+ipAddress+" "+directory+"run.sh "+to_string(threadNo)+" >log"+to_string(i)+" &").c_str());
-              }
-              cout<<"done"<<endl;
-              strcpy(status,"initialized!");
-          }
-          ImGui::Checkbox("Calculate with Map", &mapAccChk);
+            ImGui::Text("Author : Haegin Han");
+            ImGui::Text("IP/port: 166.104.155.29/30303");
         }
         if (ImGui::CollapsingHeader("Beam Conditions", ImGuiTreeNodeFlags_DefaultOpen))
         {
@@ -613,26 +524,33 @@ int main(int argc, char** argv){
             if(ImGui::InputFloat("Gycm2/s (DAP)", &dap, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CharsDecimal)){
                 cout<<"new condition: "<<dap<<" Gycm2/s"<<endl;
                 doseFactor = dap/DAPperNPS;
-                sprintf(rMaxChar,"%.1f",maxSkin0*0.1*3600.*doseFactor);
+                sprintf(rMaxChar,"%3.2f",maxSkin0*0.1*3600.e3*doseFactor);
                 //sprintf(rMaxChar,"%.2E",maxSkin0*accFactor*3600.e12);
             }
-            int cArmRot[2] = {0,0};
-            ImGui::InputInt2("ang./rot. [deg.]",cArmRot);
+            static int cArmRot[2] = {0,0};
+            if(ImGui::InputInt2("ang./rot. [deg.]",cArmRot, ImGuiInputTextFlags_EnterReturnsTrue)){
+
+            }
             enum LArmRot {right, up, left}; //patient viewpoint
             static LArmRot lArmRot = left;
             ImGui::Combo("L-arm Rot.", (int*)(&lArmRot), "-90 deg\0  0 deg\0 90 deg\0\0");
             float detNum[2] = {100, 22};
             ImGui::InputFloat2("SID/FD [cm]", detNum,"%.1f");
         }
-        if (ImGui::CollapsingHeader("Patient Trans. (temp.)"), ImGuiTreeNodeFlags_DefaultOpen)
+        if (ImGui::CollapsingHeader("C-arm Table"), ImGuiTreeNodeFlags_DefaultOpen)
         {
-            ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.75f);
             static float patientTrans[3] = {0,0,0};
+            ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.75f);
             if(ImGui::InputFloat3("[cm]", patientTrans, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue)){
                 patientMove = Vector3d(patientTrans[0],patientTrans[1],patientTrans[2]);
                 viewer.data(v1_patient).set_vertices(V_patient.rowwise()+patientMove.transpose());
             }
+
             ImGui::PopItemWidth();
+            float bedAxis[2] = {0,0};
+            ImGui::InputFloat2("long./lat. [cm]", bedAxis);
+            static int bedRot = 0;
+            ImGui::InputInt("Rotation [deg]", &bedRot);
         }
         if (ImGui::CollapsingHeader("Record (temp.)"), ImGuiTreeNodeFlags_DefaultOpen)
         {
@@ -666,42 +584,52 @@ int main(int argc, char** argv){
             if(ImGui::Button("load", ImVec2(w,0))){
                 if(recording) cout<<"wrong status!"<<endl;
                 else{
+                    ResetDose();
                     viewer.core(v1_view).is_animating = true;
                     strcpy(rec,"loading..");
                     recordedData.clear();
                     loading = true;
                 }
             }
-            ImGui::PushItemWidth(w);
-            ImGui::InputText("",rec,ImGuiInputTextFlags_ReadOnly);
-            ImGui::PopItemWidth();
         }
-        if (ImGui::CollapsingHeader("C-arm Table"), ImGuiTreeNodeFlags_DefaultOpen)
-        {
-            float bedAxis[2] = {0,0};
-            ImGui::InputFloat2("long./lat. [cm]", bedAxis);
-            static int bedRot = 0;
-            ImGui::InputInt("Rotation [deg]", &bedRot);
+        ImGui::Separator();
+        ImGui::PushItemWidth(ImGui::GetContentRegionAvailWidth());
+        ImGui::InputText("",rec,ImGuiInputTextFlags_ReadOnly);
+        ImGui::PopItemWidth();
+        if(ImGui::Button("ANIMATE/STOP", ImVec2(ImGui::GetContentRegionAvailWidth(),0))){
+            viewer.core(v1_view).is_animating = !viewer.core(v1_view).is_animating;
+            preStamp = -1;
+            if(viewer.core(v1_view).is_animating && !loading) strcpy(rec, "real-time animating");
+            else strcpy(rec, "idle");
         }
+        if(ImGui::Checkbox("Calculate dose", &doseCal))
+            preStamp = -1;
+        if(calibFrame)
+            if(ImGui::Checkbox("Use calibrated phantom", &calib)){
+                if(calib) viewer.data(v2).set_vertices(V_calib);
+                else      viewer.data(v2).set_vertices(V);
+            }
+        if(ImGui::Button("RESET DOSE", ImVec2(ImGui::GetContentRegionAvailWidth(),0)))  ResetDose();
     };
 
-    static char psdAcc[100], psdRate[100], avgAcc[100], avgRate[100], lensAcc[100], lensRate[100];
     menu.callback_draw_custom_window = [&](){
         ImGui::SetNextWindowPos(ImVec2(boarder - 180.f*menu.menu_scaling(),0.0f),ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2(180.f*menu.menu_scaling(), -1.0f), ImVec2(180.f*menu.menu_scaling(), -1.0f));
-        ImGui::Begin(
-            "Current Satus", nullptr,
-            ImGuiWindowFlags_NoSavedSettings
-        );
-        ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
+        ImGui::Begin("Current Satus", nullptr,ImGuiWindowFlags_NoSavedSettings);
         if (ImGui::CollapsingHeader("Status Summary", ImGuiTreeNodeFlags_DefaultOpen))
         {
+            ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
             ImGui::InputText("Exposure time [s]", expTime, ImGuiInputTextFlags_ReadOnly);
             ImGui::InputText("Total Frame No.", frameNum, ImGuiInputTextFlags_ReadOnly);
-            ImGui::InputText("Calculated Frame#", calNum, ImGuiInputTextFlags_ReadOnly);
+            ImGui::PopItemWidth();
+            ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.5f);
+            static int maxFPS(10);
+            viewer.core(v1).animation_max_fps = maxFPS;
+            if(ImGui::InputInt("mas fps", &maxFPS))
+                 viewer.core(v1).animation_max_fps = maxFPS;
+            ImGui::PopItemWidth();
         }
-        ImGui::PopItemWidth();
         ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
         float p = ImGui::GetStyle().FramePadding.x;
         ColorbarPlugin cbar(colorMap);
@@ -709,7 +637,7 @@ int main(int argc, char** argv){
         if (ImGui::CollapsingHeader("Dose Information", ImGuiTreeNodeFlags_DefaultOpen))
         {
             ImGui::BulletText("PSD (Peak skin dose)");
-            ImGui::InputText("Gy/h   " , psdRate, ImGuiInputTextFlags_ReadOnly); ImGui::SameLine(0,p);
+            ImGui::InputText("mGy/h   " , psdRate, ImGuiInputTextFlags_ReadOnly); ImGui::SameLine(0,p);
             ImGui::InputText("mGy", psdAcc, ImGuiInputTextFlags_ReadOnly);
             ImGui::BulletText("Average skin dose");
             ImGui::InputText("mGy/h", avgRate, ImGuiInputTextFlags_ReadOnly); ImGui::SameLine(0,p);
@@ -724,233 +652,32 @@ int main(int argc, char** argv){
         ImGui::End();
     };
 
-    bool calib(false),doseCal(false),showEye(false);
-    double preStamp = -1;
+    bool showEye(false);
+
 
     viewer.callback_key_down = [&](igl::opengl::glfw::Viewer &,unsigned char key, int)->bool
     {
         switch(key){
-        case '.': //scale to actor
-            if(!calibFrame){
-                cout<<"There is no calibration info!!"<<endl;
-                return true;
-            }
-            viewer.data(v1).set_vertices(V_calib);
-            viewer.data(v1).compute_normals();
-            viewer.data(v1).set_edges(C_calib,BE,sea_green);
-            viewer.data(v1).set_points(C_calib,sea_green);
-            viewer.data(v1).show_custom_labels = false;
-            calib = true;
-            return true;
-        case ',': //use mrcp
-            viewer.data(v1).set_vertices(V_ply);
-            viewer.data(v1).compute_normals();
-            viewer.data(v1).set_edges(C,BE,sea_green);
-            viewer.data(v1).set_points(C,sea_green);
-            if(!viewer.core().is_animating)
-                viewer.data(v1).show_custom_labels = true;
-            calib = false;
-            return true;
         case ' ': //animate
             viewer.data(v1).show_custom_labels = false;
             viewer.core(v1_view).is_animating = !viewer.core(v1_view).is_animating;
             if(viewer.core(v1_view).is_animating && doseCal){
-                pthread_mutex_lock(&sync_mutex);
-                pthread_cond_broadcast(&sync_cond);
-                pthread_mutex_unlock(&sync_mutex);
                 preStamp = -1;
             }
             return true;
-        case '/': //calculate dose
-            doseCal = !doseCal;
-            if(doseCal) cout<<"Start the dose calculation!>>>>>>>>>>>>>"<<endl;
-            else cout<<"<<<<<<<<<<<<<Stop the dose calculation!"<<endl;
-            if(viewer.core(v1_view).is_animating && doseCal){
-                pthread_mutex_lock(&sync_mutex);
-                pthread_cond_broadcast(&sync_cond);
-                pthread_mutex_unlock(&sync_mutex);
-                preStamp = -1;
-            }
-        case '=': //show eye vertices
-            showEye = !showEye;
-            if(showEye){
-                VectorXd eyeColor = VectorXd::Zero(V_ply.rows());
-                for(int i:eye2ply) eyeColor(i)=1;
-                viewer.data(v1).set_data(eyeColor, colorMap);
-            }
         }
         return true;
     };
-
-    //accum
-    vector<array<double, 155>> poseData;
-    vector<int> frameIDs;
-    VectorXd doseData=VectorXd::Zero(F_ply.rows());
-    mutex m2, m2_dose;
-    int v2_calculators(0);
-    //frame data
-    int frameNo(0);
-    MatrixXd jt1; //loaded joint data
-
-    thread receiverTH =
-            thread([&](){
-        ServerSocket server(30303);
-        cout << "[TCP/IP] Listening..."<<endl;
-        //dose cal func.
-        int numOfPack = floor(F_ply.rows()/180)+1;
-        function<void(ServerSocket*, vector<double>)> doseCalFunc
-                = [&,numOfPack](ServerSocket* _sock, vector<double> _aPose)
-        {
-            _sock->SendDoubleBuffer(&_aPose[0],155);
-            double buff[180];
-            VectorXd dose(F_ply.rows());
-            for(int i=0, n=0;i<numOfPack;i++){
-                _sock->RecvDoubleBuffer(buff,180);
-                for(int j=0;j<180 && n<F_ply.rows();j++, n++)
-                dose[n] = buff[j];
-                if(n<F_ply.rows())(*_sock)<<"chk";
-            }
-            m2_dose.lock();
-            doseData+= dose*fabs(_aPose[0]);
-
-            VectorXd verData = W_incidentF*doseData;
-            double psd = verData.maxCoeff()*doseFactor*1.e3;
-            VectorXd::Index maxRow;
-            double psdMax = verData.maxCoeff(&maxRow);
-            sprintf(psdAcc, "%3.2f", psdMax*doseFactor*1.e3);
-            sprintf(aMaxChar, "%3.2f", psdMax*doseFactor*1.e3);
-            sprintf(avgAcc, "%3.2f", (doseData.array()*F_area.array()).sum()*doseFactor*1.e3);
-            sprintf(lensAcc, "%3.2f", doseData*F_area_lens*doseFactor*1.e3);
-            viewer.data(v2).set_data(verData,colorMap);
-            viewer.data(v2).set_points(V_ply.row(maxRow),red);
-            m2_dose.unlock();
-        };
-
-        //threads
-        vector<thread*> v2_cals;
-        int v2_calNum(100);
-        int loadCalNum(0);
-        while(true){
-            if(v2_cals.size()==v2_calNum) break;
-            ServerSocket* _sock = new ServerSocket;
-            server.accept ( *_sock );
-            std::string _data("");
-            (*_sock) >> _data;
-            if(_data.substr(0,6)=="v2_cal"){
-                int _id = v2_cals.size();
-                cout<<"[TCP/IP] v2_cal #"<<_id<<" connected!"<<endl; _sock->SendIntBuffer(&_id,1);
-                v2_cals.push_back
-                        (new thread([&](ServerSocket* sock, int id){
-                             cout<<"[v2_cal"<<id<<"] Send eye info.."<<flush;
-                             (*sock) << "init "+to_string(eyeFaceIDs.size()) ;
-                             string dump; (*sock) >> dump;
-                             sock->SendIntBuffer(&eyeFaceIDs[0],180);
-                             cout<<"done"<<endl;
-                             cout<<"[v2_cal"<<id<<"] Send calib info.."<<flush;
-                             sock->SendDoubleBuffer(jt.data(), jt.size());cout<<"done"<<endl;
-                             igl::Timer timerTH;
-
-                             while(true){
-                                 pthread_mutex_lock(&sync_mutex);
-                                 pthread_cond_wait(&sync_cond, &sync_mutex);
-                                 pthread_mutex_unlock(&sync_mutex);
-                                 cout<<"[v2_cal"<<id<<"]Activate!"<<endl;
-                                 if(loading){
-                                     array<double, 155> signalPack;
-                                     signalPack[0] = 0; signalPack[1] = 1;
-                                     sock->SendDoubleBuffer(signalPack.data(),155); (*sock) >>dump;
-                                     MatrixXd jt2 = jt1.block(0,0,C.rows()-1,3);
-                                     sock->SendDoubleBuffer(jt2.data(), jt2.size()); (*sock) >>dump;
-                                     cout<<"[v2_cal"<<id<<"] Sent joint data"<<endl;
-                                     while(true){
-                                         m2.lock();
-                                         if(loadCalNum==(int)recordedData.size()){
-                                             m2.unlock();
-                                             signalPack[1] = -1; preStamp = -1;
-                                             sock->SendDoubleBuffer(signalPack.data(),155); (*sock) >>dump;
-                                             cout<<"free v2_cal"<<id<<endl;
-                                             strcpy(rec,"idle");
-                                             break;
-                                         }
-                                         int frameID = loadCalNum++;
-                                         m2.unlock();
-                                         cout<<"[v2_cal"<<id<<"] Calculate frame #"<<frameID<<endl;
-                                         vector<double> aPose = recordedData[frameID];
-                                         timerTH.start();
-                                         doseCalFunc(sock, aPose);
-                                         timer.stop();
-                                         sprintf(calNum,"%d",frameID+1);
-                                         cout<<"[v2_cal"<<id<<"] Done.."<<timerTH.getElapsedTimeInSec()<<"s"<<endl;
-                                     }
-                                     continue;
-                                 }
-                                 //current data
-                                 while(viewer.core(v1_view).is_animating && doseCal){
-                                     m2.lock();
-                                     if(poseData.size()==0){
-                                         m2.unlock();
-                                         sleep(1);
-                                         continue;
-                                     }
-                                     timerTH.start();
-                                     array<double, 155> aPose = poseData.back();
-                                     int frameID = frameIDs.back();
-                                     cout<<"[v2_cal"<<id<<"] Calculate frame #"<<frameID
-                                     <<"! (stacked: "<<poseData.size()-1<<")"<<endl;
-                                     frameIDs.pop_back();
-                                     poseData.pop_back(); m2.unlock();
-
-                                     vector<double> aPoseVec(aPose.begin(),aPose.end());
-                                     timerTH.start();
-                                     doseCalFunc(sock, aPoseVec);
-                                     timer.stop();
-
-                                     sprintf(calNum,"%d",frameNo-(int)frameIDs.size());
-                                     cout<<"[v2_cal"<<id<<"] Done.."<<timerTH.getElapsedTimeInSec()<<"s"<<endl;
-                                 }
-                                 //residual
-                                 while(true){
-                                     m2.lock();
-                                     if(poseData.size()==0){
-                                         m2.unlock();
-                                         break;
-                                     }
-                                     array<double, 155> aPose = poseData.back();
-                                     int frameID = frameIDs.back();
-                                     cout<<"[v2_cal"<<id<<"] Calculate res. frame #"
-                                     <<frameID<<"! (stacked: "<<poseData.size()-1<<")"<<endl;
-                                     timerTH.start();
-                                     frameIDs.pop_back();
-                                     poseData.pop_back(); m2.unlock();
-
-                                     vector<double> aPoseVec(aPose.begin(),aPose.end());
-                                     timerTH.start();
-                                     doseCalFunc(sock, aPoseVec);
-                                     timer.stop();
-
-                                     sprintf(calNum,"%d",frameNo-(int)frameIDs.size());
-                                     cout<<"[v2_cal"<<id<<"] Done.."<<timerTH.getElapsedTimeInSec()<<"s"<<endl;
-                                 }
-                             }
-                         }, _sock, _id));
-                v2_calculators++;
-            }
-            else delete _sock;
-        }
-    });
 
     vector<int> poseJoints = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24, 8, 15, 21, 25, 28, 30};
     time_t startT;
     igl::Timer timeStamp;
 
     //animator
-    viewer.core().animation_max_fps = 5;
-    int loadNum(0);
-    VectorXd accDoseMap = ArrayXd::Zero(V_ply.rows());
-    double accLensMap(0.);
+   // viewer.core().animation_max_fps = 10;
     function<void(RotationList, vector<Vector3d>, double)> doseMapFunc = [&](RotationList vQ, vector<Vector3d> vT, double timeS){
 
-        MatrixXd V_disp(V_ply);
+        MatrixXd V_disp(V);
         if(calib) V_disp = V_calib;
 
         MatrixXd U;
@@ -962,18 +689,17 @@ int main(int argc, char** argv){
 
         MatrixXd normals = viewer.data(v1).V_normals;
         MatrixXd vIso = U;
-        vIso.col(0) = vIso.col(0).array()-isoCenter(0);
-        vIso.col(1) = vIso.col(1).array()-isoCenter(1);
-        vIso.col(2) = vIso.col(2).array()-isoCenter(2);
-
+        vIso.rowwise() -= isoCenter.transpose();
         U.rowwise() += (-patientMove - gridStart).transpose();
         U *= 0.2; // 5cm grid
-        VectorXd values = ArrayXd::Zero(V_ply.rows());
+        VectorXd values = ArrayXd::Zero(V.rows());
         for(int i=0;i<U.rows();i++){
             double factor(1);
-            double dotProd = vIso.row(i).dot(normals.row(i))/vIso.row(i).norm();
-            if(dotProd>0.5) continue;
-            if(dotProd>0) factor = 0.5-dotProd;
+            if(vIso.row(i).squaredNorm()>900){ // do not consider cosine for 30cm-radius sphere from isocenter
+                double dotProd = vIso.row(i).dot(normals.row(i))/vIso.row(i).norm();
+                if(dotProd>0.5) continue;
+                if(dotProd>0) factor = 0.5-dotProd;
+            }
             int idx = floor(U(i,0))*ijk[2]*ijk[1]+floor(U(i,1))*ijk[2]+floor(U(i,2));
             if(idx<60*60*60)
                 values(i) = doseMapS0[idx]*factor;
@@ -982,22 +708,23 @@ int main(int argc, char** argv){
         }
         ArrayXd eyedose = ArrayXd::Zero(eye2ply.size());
         transform(eye2ply.begin(), eye2ply.end(), &eyedose(0), [&](int i)->double{
-                      int idx = floor(U(i,0))*ijk[2]*ijk[1]+floor(U(i,1))*ijk[2]+floor(U(i,2));
-                      if(idx<60*60*60)  return doseMapL0[idx];
-                      else              return 0;
-                  });
+            int idx = floor(U(i,0))*ijk[2]*ijk[1]+floor(U(i,1))*ijk[2]+floor(U(i,2));
+            if(idx<60*60*60)  return doseMapL0[idx];
+            else              return 0;
+        });
         viewer.data(v1).set_data(values,0,maxSkin0*0.1,colorMap);
-        sprintf(psdRate,"%3.2f",values.maxCoeff()*3600.*doseFactor);
-        sprintf(avgRate, "%.0f", (values.array()*W_avgSkin.array()).sum()*3600.e3*doseFactor);
+        sprintf(psdRate,"%3.2f",values.maxCoeff()*3600.e3*doseFactor);
+        sprintf(avgRate, "%3.2f", (values.array()*W_avgSkin.array()).sum()*3600.e3*doseFactor);
         double lensDose = (eyedose*W_Lens.array()).sum() * doseFactor;
-        sprintf(lensRate,"%.0f", lensDose*3600.e3);
-        if(mapAccChk){
+        sprintf(lensRate,"%3.2f", lensDose*3600.e3);
+        if(doseCal){
             accDoseMap += values*doseFactor*timeS;   //unit gray
             accLensMap += lensDose*timeS; //unit gray
             VectorXd::Index maxRow;
             double psdMax = accDoseMap.maxCoeff(&maxRow);
             viewer.data(v2).set_data(accDoseMap,0,psdMax,colorMap);
-            viewer.data(v2).set_points(V_ply.row(maxRow),red);
+            if(calib||loading) viewer.data(v2).set_points(V_calib.row(maxRow),red);
+            else               viewer.data(v2).set_points(V.row(maxRow),red);
             sprintf(psdAcc, "%3.2f", psdMax*1.e3);
             sprintf(aMaxChar, "%3.2f", psdMax*1.e3);
             sprintf(avgAcc, "%3.2f", (accDoseMap.array()*W_avgSkin.array()).sum()*1.e3);
@@ -1032,13 +759,12 @@ int main(int argc, char** argv){
                     jointData.push_back(jd);
                 }ifs.close();
 
+                MatrixXd jt1;
                 igl::readDMAT("./records/"+fName + ".jt",jt1);
-                V_calib = V_ply+W_j_ply*jt1.block(0,0,C.rows()-1,3);
+                V_calib = V+Wj*jt1.block(0,0,C.rows()-1,3);
                 C_calib = C + jt1;
+                viewer.data(v2).set_vertices(V_calib);
                 cout<<"loaded ./records/"+fName+".dat,jt ("<<recordedData.size()<<" frames)"<<endl;
-                pthread_mutex_lock(&sync_mutex);
-                pthread_cond_broadcast(&sync_cond);
-                pthread_mutex_unlock(&sync_mutex);
             }
             MatrixXd C_disp = jointData[loadNum];
             viewer.data(v1).set_points(C_disp,blue);
@@ -1059,7 +785,7 @@ int main(int argc, char** argv){
             for(int i=0;i<BE.rows();i++){
                 Affine3d a;
                 if(recordedData[loadNum][0]<0) a = Translation3d(Vector3d(C_new.row(BE(i,0)).transpose()))*vQ[i].matrix()*Translation3d(Vector3d(-C_calib.row(BE(i,0)).transpose()));
-                else      a = Translation3d(Vector3d(C_new.row(BE(i,0)).transpose()))*vQ[i].matrix()*Translation3d(Vector3d(-C.row(BE(i,0)).transpose()));
+                else                           a = Translation3d(Vector3d(C_new.row(BE(i,0)).transpose()))*vQ[i].matrix()*Translation3d(Vector3d(-C.row(BE(i,0)).transpose()));
                 C_new.row(BE(i,1)) = a*Vector3d(C_new.row(BE(i,1)));
             }
             viewer.data(v1).set_edges(C_new, BE, sea_green);
@@ -1071,9 +797,10 @@ int main(int argc, char** argv){
 
             if(loadNum==recordedData.size()){
                 loading = false; loadNum=0;
-                V_calib = V_ply+W_j_ply*jt;
+                V_calib = V+Wj*jt;
                 C_calib = C + jointTrans;
-                strcpy(rec,"waiting for residual...");
+                strcpy(rec,"idle");
+                viewer.core(v1_view).is_animating = false;
             }
         }
         else if(viewer.core(v1_view).is_animating){
@@ -1143,12 +870,6 @@ int main(int argc, char** argv){
                         sprintf(frameNum, "%d", frameNo+1);
                         sprintf(expTime, "%.1f", expTimeD);
 
-                        if(doseCal){
-                            m2.lock();
-                            poseData.push_back(pack);
-                            frameIDs.push_back(frameNo);
-                            m2.unlock();
-                        }
                         if(recording){
                             vector<double> packVec(pack.begin(), pack.end());
                             recordedData.push_back(packVec);
@@ -1170,7 +891,7 @@ int main(int argc, char** argv){
 
     viewer.launch(true, false, "DCIR System (RDC module)");
 
-   // receiverTH.join();
+    // receiverTH.join();
 
     //quit signal
     int sig = 0;
