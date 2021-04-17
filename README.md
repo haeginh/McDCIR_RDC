@@ -1,2 +1,3 @@
-# RemoteCal
-Real-time dose calculator by using TCP/IP socket
+# RDC module for DCIR system
+Real-time dose calculator for interventional radiologists.
+Based on dose map methodology.
