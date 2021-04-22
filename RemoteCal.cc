@@ -32,6 +32,7 @@
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
 #include <Eigen/SparseCore>
+# define PI 3.14159265358979323846
 
 void PrintUsage(){
     cout<<"<Usage>"<<endl;
@@ -387,11 +388,11 @@ int main(int argc, char** argv){
     int ijk[3] = {60,60,60};
     doseMapS0.resize(ijk[0]*ijk[1]*ijk[2]);
     doseMapL0.resize(ijk[0]*ijk[1]*ijk[2]);
-    Vector3d isoCenter = Vector3d(0,0,60);
-    Vector3d isoRelat=Vector3d(-150,-150,0)-Vector3d(0,0,60); //isocenter when doseMap generated.
-    Vector3d gridStart = isoRelat+isoCenter;
-    ifstream ifsMap("./doseMaps/0.map", ios::binary);
+    Vector3d isoCenter = Vector3d(0,0,60); // data_iso
+    Vector3d isoRelat  = Vector3d(-150,-150,0)-Vector3d(0,0,60); //isocenter when doseMap generated. (gridstartPos - map_iso)
+    Vector3d gridStart = isoRelat+isoCenter; // isocenter + isorelat
     double DAPperNPS = mapDAPs[0];
+    ifstream ifsMap("./doseMaps/0_conf.map", ios::binary);
     ifsMap.read((char*) &doseMapS0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
     ifsMap.read((char*) &doseMapL0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
     ifsMap.close();
@@ -426,7 +427,6 @@ int main(int argc, char** argv){
         viewer.data(v1).show_custom_labels = false;
     }
 
-    Vector3d patientMove;
     MatrixXd V_patient = viewer.data(v1_patient).V;
     vector<vector<double>> recordedData;
     vector<MatrixXd> jointData;
@@ -439,7 +439,7 @@ int main(int argc, char** argv){
     float boarder(300.f);
 
     viewer.data(v1).set_edges(C,BE,sea_green);
-    viewer.data(v1).set_points(C,sea_green);
+    //viewer.data(v1).set_points(C,sea_green);
     viewer.data(v1).show_lines = false;
     viewer.data(v1).show_overlay_depth = false;
     viewer.data(v1).line_width = 1;
@@ -464,6 +464,8 @@ int main(int argc, char** argv){
         v2_view = viewer.append_core(Eigen::Vector4f(640, 0, 640, 800));
         viewer.core(v1_view).background_color=Eigen::Vector4f(109./255.,100./255.,102./255.,1);
         viewer.core(v2_view).background_color=Eigen::Vector4f(163./255.,163./255.,163./255.,1);
+//        viewer.core(v1_view).background_color=Eigen::Vector4f(1.,1.,1.,1.);
+//        viewer.core(v2_view).background_color=Eigen::Vector4f(1.,1.,1.,1.);
         viewer.core(v1_view).camera_eye=Eigen::Vector3f(0,0,-2);
         viewer.core(v2_view).camera_eye=Eigen::Vector3f(0,0,-3);
         viewer.core(v1_view).camera_up=Eigen::Vector3f(0,-1,0);
@@ -509,13 +511,32 @@ int main(int argc, char** argv){
     static bool calib(true);
     if(calibFrame==0) calib = false;
     static bool doseCal(true);
-    double preStamp = -1;
+    double preStamp = -1; float p = ImGui::GetStyle().FramePadding.x;
+    Matrix3d rotMat = Matrix3d::Identity();
+    Matrix3d rotInv = Matrix3d::Identity();
+
+    function<void(double,double,double)> CalculateRot = [&](double yAxis, double xAxis, double zAxis){
+        yAxis *= PI/180.;xAxis *= PI/180.;zAxis *= PI/180.;
+        double c1=cos(yAxis); double c2=cos(xAxis); double c3=cos(zAxis);
+        double s1=sin(yAxis); double s2=sin(xAxis); double s3=sin(zAxis);
+        rotMat<< c1*c3+s1*s2*s3, c3*s1*s2-c1*s3, c2*s1, c2*s3, c2*c3, -s2, c1*s2*s3-c3*s1, c1*c3*s2+s1*s3, c1*c2;
+        rotInv = rotMat.inverse();
+    };
 
     menu.callback_draw_viewer_menu = [&](){
         if (ImGui::CollapsingHeader("Information", ImGuiTreeNodeFlags_None))
         {
             ImGui::Text("Author : Haegin Han");
-            ImGui::Text("IP/port: 166.104.155.29/30303");
+            ImGui::Text("Info : RDC modult of DCIR system");
+        }
+        if (ImGui::CollapsingHeader("Iso center position", ImGuiTreeNodeFlags_DefaultOpen)){
+            static float isoCenterInput[3] = {isoCenter(0),isoCenter(1),isoCenter(2)};
+            if(ImGui::InputFloat3("isocenter pos.", isoCenterInput, "%.1f", ImGuiInputTextFlags_EnterReturnsTrue)){
+                isoCenter = Vector3d(isoCenterInput[0],isoCenterInput[1],isoCenterInput[2]);
+                gridStart = isoCenter + isoRelat;
+                viewer.data(v1_patient).set_vertices(V_patient.rowwise()+(isoCenter-Vector3d(0,0,60)).transpose());
+                viewer.data(v1_cArm).set_vertices(V_cArm.rowwise()+(isoCenter-Vector3d(0,0,60)).transpose());
+            }
         }
         if (ImGui::CollapsingHeader("Beam Conditions", ImGuiTreeNodeFlags_DefaultOpen))
         {
@@ -525,25 +546,48 @@ int main(int argc, char** argv){
                 cout<<"new condition: "<<dap<<" Gycm2/s"<<endl;
                 doseFactor = dap/DAPperNPS;
                 sprintf(rMaxChar,"%3.2f",maxSkin0*0.1*3600.e3*doseFactor);
-                //sprintf(rMaxChar,"%.2E",maxSkin0*accFactor*3600.e12);
             }
             static int cArmRot[2] = {0,0};
+            static int lArmRot(0);
             if(ImGui::InputInt2("ang./rot. [deg.]",cArmRot, ImGuiInputTextFlags_EnterReturnsTrue)){
+                //L-arm(Y), rotation(X), angulation(Z)
+                CalculateRot(lArmRot,  cArmRot[1], cArmRot[0]);
+                viewer.data(v1_cArm).set_vertices(((rotMat*(V_cArm.rowwise()-Vector3d(0,0,60).transpose()).transpose()).colwise()+isoCenter).transpose());
+                if(cArmRot[0]==45){
+                    ifstream ifsMap("./doseMaps/1_conf.map", ios::binary);
+                    ifsMap.read((char*) &doseMapS0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
+                    ifsMap.read((char*) &doseMapL0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
+                    ifsMap.close();
+                    maxSkin0 = *max_element(doseMapS0.begin(),doseMapS0.end());
+                    CalculateRot(0,  0, 0);
+                }else{
+                    ifstream ifsMap("./doseMaps/0_conf.map", ios::binary);
+                    ifsMap.read((char*) &doseMapS0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
+                    ifsMap.read((char*) &doseMapL0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
+                    ifsMap.close();
+                    maxSkin0 = *max_element(doseMapS0.begin(),doseMapS0.end());
+                }
 
             }
             enum LArmRot {right, up, left}; //patient viewpoint
-            static LArmRot lArmRot = left;
-            ImGui::Combo("L-arm Rot.", (int*)(&lArmRot), "-90 deg\0  0 deg\0 90 deg\0\0");
+            static LArmRot lArmRotC = up;
+            if(ImGui::Combo("L-arm Rot.", (int*)(&lArmRotC), "-90 deg\0  0 deg\0 90 deg\0\0")){
+                if(lArmRotC==right)     lArmRot = -90;
+                else if(lArmRotC==up)   lArmRot = 0;
+                else if(lArmRotC==left) lArmRot = 90;
+                CalculateRot(lArmRot,  cArmRot[1], cArmRot[0]);
+                viewer.data(v1_cArm).set_vertices(((rotMat*(V_cArm.rowwise()-Vector3d(0,0,60).transpose()).transpose()).colwise()+isoCenter).transpose());
+            }
             float detNum[2] = {100, 22};
             ImGui::InputFloat2("SID/FD [cm]", detNum,"%.1f");
         }
         if (ImGui::CollapsingHeader("C-arm Table"), ImGuiTreeNodeFlags_DefaultOpen)
         {
-            static float patientTrans[3] = {0,0,0};
+            static float tablePos[3] = {0,0,0};
             ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.75f);
-            if(ImGui::InputFloat3("[cm]", patientTrans, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue)){
-                patientMove = Vector3d(patientTrans[0],patientTrans[1],patientTrans[2]);
-                viewer.data(v1_patient).set_vertices(V_patient.rowwise()+patientMove.transpose());
+            if(ImGui::InputFloat3("[cm]", tablePos, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue)){
+//                patientMove = Vector3d(patientTrans[0],patientTrans[1],patientTrans[2]);
+//                viewer.data(v1_patient).set_vertices(V_patient.rowwise()+patientMove.transpose());
             }
 
             ImGui::PopItemWidth();
@@ -551,6 +595,19 @@ int main(int argc, char** argv){
             ImGui::InputFloat2("long./lat. [cm]", bedAxis);
             static int bedRot = 0;
             ImGui::InputInt("Rotation [deg]", &bedRot);
+        }
+        if (ImGui::CollapsingHeader("Viewer option"), ImGuiTreeNodeFlags_DefaultOpen)
+        {
+            static bool cArmView(true);
+            if(ImGui::Checkbox("show C-arm",&cArmView)){
+                if(cArmView)  viewer.data(v1_cArm).set_visible(true, v1_view);
+                else          viewer.data(v1_cArm).set_visible(false, v1_view);
+            }
+            static bool patientView(true);
+            if(ImGui::Checkbox("show patient",&patientView)){
+                if(patientView)  viewer.data(v1_patient).set_visible(true, v1_view);
+                else          viewer.data(v1_patient).set_visible(false, v1_view);
+            }
         }
         if (ImGui::CollapsingHeader("Record (temp.)"), ImGuiTreeNodeFlags_DefaultOpen)
         {
@@ -604,7 +661,7 @@ int main(int argc, char** argv){
         }
         if(ImGui::Checkbox("Calculate dose", &doseCal))
             preStamp = -1;
-        if(calibFrame)
+        //if(calibFrame)
             if(ImGui::Checkbox("Use calibrated phantom", &calib)){
                 if(calib) viewer.data(v2).set_vertices(V_calib);
                 else      viewer.data(v2).set_vertices(V);
@@ -626,7 +683,7 @@ int main(int argc, char** argv){
             ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.5f);
             static int maxFPS(10);
             viewer.core(v1).animation_max_fps = maxFPS;
-            if(ImGui::InputInt("mas fps", &maxFPS))
+            if(ImGui::InputInt("max FPS", &maxFPS))
                  viewer.core(v1).animation_max_fps = maxFPS;
             ImGui::PopItemWidth();
         }
@@ -690,7 +747,9 @@ int main(int argc, char** argv){
         MatrixXd normals = viewer.data(v1).V_normals;
         MatrixXd vIso = U;
         vIso.rowwise() -= isoCenter.transpose();
-        U.rowwise() += (-patientMove - gridStart).transpose();
+
+        U = ((rotInv * (U.rowwise()-isoCenter.transpose()).transpose()).colwise()+isoCenter).transpose();
+        U.rowwise() += (- gridStart).transpose();
         U *= 0.2; // 5cm grid
         VectorXd values = ArrayXd::Zero(V.rows());
         for(int i=0;i<U.rows();i++){
@@ -732,6 +791,7 @@ int main(int argc, char** argv){
         }
     };
 
+    RotationList vQprev, vQprevprev;
     viewer.callback_pre_draw = [&](igl::opengl::glfw::Viewer &)->bool
     {
         if(viewer.core(v1_view).is_animating&&loading){
@@ -769,25 +829,29 @@ int main(int argc, char** argv){
             MatrixXd C_disp = jointData[loadNum];
             viewer.data(v1).set_points(C_disp,blue);
             MatrixXd C_new(C);
-            if(recordedData[loadNum][0]<0) {
-                C_new=C_calib; calib = true;
-            }
+//            if(recordedData[loadNum][0]<0) {
+//                C_new=C_calib; calib = true;
+//            }
+
+            if(calib)
+                C_new=C_calib;
+
+            C_new.row(0)=C_disp.row(0); //set root
 
             vector<double> aPose = recordedData[loadNum];
-            vector<Vector3d> vT; vT.resize(BE.rows());
+            vector<Vector3d> vT; //vT.resize(BE.rows());
             RotationList vQ; vQ.resize(BE.rows());
             for(int i=0;i<BE.rows();i++){
                 vQ[i].w() = aPose[4*i+1]; vQ[i].x() = aPose[4*i+2]; vQ[i].y() = aPose[4*i+3]; vQ[i].z() = aPose[4*i+4];
-                vT[i](0) = aPose[3*i+89]; vT[i](1) = aPose[3*i+90]; vT[i](2) = aPose[3*i+91];
-            }
-
-            C_new.row(0)=C_disp.row(0); //set root
-            for(int i=0;i<BE.rows();i++){
+                double t(0.1); if(i==15||i==16||i==19||i==20) t=0.1;
+                if(vQprev.size()) vQ[i] = vQ[i].slerp(t,vQprev[i]);
+                if(vQprevprev.size()) vQ[i] = vQ[i].slerp(t,vQprevprev[i]);
                 Affine3d a;
-                if(recordedData[loadNum][0]<0) a = Translation3d(Vector3d(C_new.row(BE(i,0)).transpose()))*vQ[i].matrix()*Translation3d(Vector3d(-C_calib.row(BE(i,0)).transpose()));
-                else                           a = Translation3d(Vector3d(C_new.row(BE(i,0)).transpose()))*vQ[i].matrix()*Translation3d(Vector3d(-C.row(BE(i,0)).transpose()));
+                if(calib)    a = Translation3d(Vector3d(C_new.row(BE(i,0)).transpose()))*vQ[i].matrix()*Translation3d(Vector3d(-C_calib.row(BE(i,0)).transpose()));
+                else         a = Translation3d(Vector3d(C_new.row(BE(i,0)).transpose()))*vQ[i].matrix()*Translation3d(Vector3d(-C.row(BE(i,0)).transpose()));
+                vT.push_back(a.translation());
                 C_new.row(BE(i,1)) = a*Vector3d(C_new.row(BE(i,1)));
-            }
+            }vQprevprev=vQprev; vQprev = vQ;
             viewer.data(v1).set_edges(C_new, BE, sea_green);
 
             doseMapFunc(vQ,vT,fabs(aPose[0]));
