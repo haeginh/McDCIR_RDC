@@ -412,7 +412,8 @@ int main(int argc, char** argv){
     igl::readPLY("c-arm.ply",V_cArm,F_cArm);
     viewer.data().set_mesh(V_cArm,F_cArm);
     viewer.append_mesh();
-    viewer.data().set_mesh(V, F);
+    MatrixXd V_cumul(V), V_calib_cumul(V_calib);
+    viewer.data().set_mesh(V_cumul, F);
 
     int v1=viewer.data_list[0].id;
     int v1_patient=viewer.data_list[1].id;
@@ -445,7 +446,7 @@ int main(int argc, char** argv){
     viewer.data(v1).line_width = 1;
     viewer.data(v1).point_size = 8;
     viewer.data(v2).point_size = 4;
-    viewer.data(v1).double_sided = true;
+    viewer.data(v1).double_sided = false;
     viewer.data(v1_patient).show_lines = true;
     viewer.data(v1_patient).show_overlay_depth = false;
     viewer.data(v1_patient).show_faces = false;
@@ -453,8 +454,8 @@ int main(int argc, char** argv){
     viewer.data(v1_cArm).show_lines = false;
 
     viewer.data(v2).show_lines = false;
-    viewer.data(v2).show_overlay_depth = false;
-    viewer.data(v2).double_sided = true;
+    viewer.data(v2).show_overlay_depth = true;
+    viewer.data(v2).double_sided = false;
 
     int v1_view, v2_view;
     viewer.callback_init = [&](igl::opengl::glfw::Viewer &)
@@ -486,7 +487,7 @@ int main(int argc, char** argv){
         return true;
     };
 
-    static float dap(0.1f); // Gycm2/s
+    static float dap(0.01f); // Gycm2/s
     double doseFactor = dap/DAPperNPS;
 
     //dose data
@@ -559,7 +560,7 @@ int main(int argc, char** argv){
                     ifsMap.read((char*) &doseMapL0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
                     ifsMap.close();
                     maxSkin0 = *max_element(doseMapS0.begin(),doseMapS0.end());
-                    CalculateRot(0,  0, 0);
+                    CalculateRot(0, 0, 0);
                 }else{
                     ifstream ifsMap("./doseMaps/0_conf.map", ios::binary);
                     ifsMap.read((char*) &doseMapS0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
@@ -621,6 +622,7 @@ int main(int argc, char** argv){
                     strcpy(rec,"recording..");
                 }
             }
+
             ImGui::SameLine(0, p);
             if(ImGui::Button("stop!", ImVec2((w-p)/2.,0))){
                 recording = false;
@@ -663,12 +665,13 @@ int main(int argc, char** argv){
             preStamp = -1;
         //if(calibFrame)
             if(ImGui::Checkbox("Use calibrated phantom", &calib)){
-                if(calib) viewer.data(v2).set_vertices(V_calib);
-                else      viewer.data(v2).set_vertices(V);
+                if(calib) viewer.data(v2).set_vertices(V_calib_cumul);
+                else      viewer.data(v2).set_vertices(V_cumul);
             }
         if(ImGui::Button("RESET DOSE", ImVec2(ImGui::GetContentRegionAvailWidth(),0)))  ResetDose();
     };
 
+    float rotAngle_v2;
     menu.callback_draw_custom_window = [&](){
         ImGui::SetNextWindowPos(ImVec2(boarder - 180.f*menu.menu_scaling(),0.0f),ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
@@ -690,12 +693,12 @@ int main(int argc, char** argv){
         ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
         float p = ImGui::GetStyle().FramePadding.x;
         ColorbarPlugin cbar(colorMap);
-        sprintf(rMaxChar,"%3.2f",maxSkin0*0.1*3600.*doseFactor);
+        sprintf(rMaxChar,"%3.2f",maxSkin0*0.1*3600.e3*doseFactor);
         if (ImGui::CollapsingHeader("Dose Information", ImGuiTreeNodeFlags_DefaultOpen))
         {
             ImGui::BulletText("PSD (Peak skin dose)");
-            ImGui::InputText("mGy/h   " , psdRate, ImGuiInputTextFlags_ReadOnly); ImGui::SameLine(0,p);
-            ImGui::InputText("mGy", psdAcc, ImGuiInputTextFlags_ReadOnly);
+            ImGui::InputText("mGy/h" , psdRate, ImGuiInputTextFlags_ReadOnly); ImGui::SameLine(0,p);
+            ImGui::InputText("mGy  ", psdAcc, ImGuiInputTextFlags_ReadOnly);
             ImGui::BulletText("Average skin dose");
             ImGui::InputText("mGy/h", avgRate, ImGuiInputTextFlags_ReadOnly); ImGui::SameLine(0,p);
             ImGui::InputText("mGy  ", avgAcc, ImGuiInputTextFlags_ReadOnly);
@@ -706,8 +709,52 @@ int main(int argc, char** argv){
             cbar.draw_colorbar(rMaxChar,aMaxChar);
         }
         ImGui::PopItemWidth();
+        ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.5f);
+        if (ImGui::CollapsingHeader("Display Settings", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            Quaterniond identity = Quaterniond::Identity();
+            RotationList vQ_hu(BE.rows(),identity);
+            RotationList vQ_hu1;
+            vector<Vector3d> vT_hu;
+            static int angleA(10);
+            static int angleH(90);
+            static int angleL(5);
+            function<void()> Widen=[&](){
+                vQ_hu[11] = AngleAxisd(angleA/180.*PI, Vector3d(0,0,1));
+                vQ_hu[4] = AngleAxisd(-angleA/180.*PI, Vector3d(0,0,1));
+                vQ_hu[12] = AngleAxisd(angleH*0.5/180.*PI, Vector3d(0,1,0));
+                vQ_hu[5] = AngleAxisd(-angleH*0.5/180.*PI, Vector3d(0,1,0));
+                vQ_hu[13] = AngleAxisd(angleH*0.5/180.*PI, Vector3d(0,1,0));
+                vQ_hu[6] = AngleAxisd(-angleH*0.5/180.*PI, Vector3d(0,1,0));
+                vQ_hu[19] = AngleAxisd(angleL/180.*PI, Vector3d(0,0,1));
+                vQ_hu[15] = AngleAxisd(-angleL/180.*PI, Vector3d(0,0,1));
+                igl::forward_kinematics(C,BE,P,vQ_hu,vQ_hu1,vT_hu);
+                myDqs(V,cleanWeights,vQ_hu1,vT_hu,V_cumul);
+                myDqs(V_calib,cleanWeights,vQ_hu1,vT_hu,V_calib_cumul);
+                if(calib) viewer.data(v2).set_vertices(V_calib_cumul);
+                else      viewer.data(v2).set_vertices(V_cumul);
+                viewer.data(v2).compute_normals();
+            };
+            Widen();
+            if(ImGui::InputInt("hand rot.", &angleH, 10, 20)) Widen();
+            if(ImGui::InputInt("arm rot." , &angleA,  5, 10)) Widen();
+            if(ImGui::InputInt("leg rot." , &angleL,  5, 10)) Widen();
+            static float rotTime(4.);
+            rotAngle_v2 = 2.*PI/viewer.core(v1_view).animation_max_fps/rotTime;
+            if(ImGui::InputFloat("360 rot. time", &rotTime, 0.1, 0.1)){
+                if(viewer.core(v1).animation_max_fps>0)
+                    rotAngle_v2 = 2.*PI/viewer.core(v1_view).animation_max_fps/rotTime;
+            }
+            if(ImGui::Button("stop/start rotation",ImVec2(ImGui::GetContentRegionAvailWidth(),0))){
+                viewer.core(v2_view).is_animating = !viewer.core(v2_view).is_animating;
+                viewer.core(v2_view).camera_eye=Eigen::Vector3f(0,0,-3);
+            }
+        }
+        ImGui::PopItemWidth();
+
         ImGui::End();
     };
+
 
     bool showEye(false);
 
@@ -782,8 +829,8 @@ int main(int argc, char** argv){
             VectorXd::Index maxRow;
             double psdMax = accDoseMap.maxCoeff(&maxRow);
             viewer.data(v2).set_data(accDoseMap,0,psdMax,colorMap);
-            if(calib||loading) viewer.data(v2).set_points(V_calib.row(maxRow),red);
-            else               viewer.data(v2).set_points(V.row(maxRow),red);
+            if(calib) viewer.data(v2).set_points(V_calib_cumul.row(maxRow),red);
+            else               viewer.data(v2).set_points(V_cumul.row(maxRow),red);
             sprintf(psdAcc, "%3.2f", psdMax*1.e3);
             sprintf(aMaxChar, "%3.2f", psdMax*1.e3);
             sprintf(avgAcc, "%3.2f", (accDoseMap.array()*W_avgSkin.array()).sum()*1.e3);
@@ -792,6 +839,7 @@ int main(int argc, char** argv){
     };
 
     RotationList vQprev, vQprevprev;
+    int rotN_v2(0); double loadTime(0);
     viewer.callback_pre_draw = [&](igl::opengl::glfw::Viewer &)->bool
     {
         if(viewer.core(v1_view).is_animating&&loading){
@@ -857,7 +905,11 @@ int main(int argc, char** argv){
             doseMapFunc(vQ,vT,fabs(aPose[0]));
 
             sprintf(rec, "loading..%d/%d", loadNum, (int)recordedData.size());
-            cout<<"Loaded frame #"<<loadNum<<" : "<<recordedData[loadNum++][0]<<"s"<<endl;
+            cout<<"Loaded frame #"<<loadNum<<" : "<<recordedData[loadNum][0]<<"s"<<endl;
+
+            sprintf(frameNum, "%d", loadNum);
+            loadTime+=fabs(recordedData[loadNum++][0]);
+            sprintf(expTime, "%.1f", loadTime);
 
             if(loadNum==recordedData.size()){
                 loading = false; loadNum=0;
@@ -865,6 +917,7 @@ int main(int argc, char** argv){
                 C_calib = C + jointTrans;
                 strcpy(rec,"idle");
                 viewer.core(v1_view).is_animating = false;
+                loadTime=0;
             }
         }
         else if(viewer.core(v1_view).is_animating){
@@ -946,6 +999,12 @@ int main(int argc, char** argv){
                 k4abt_frame_release(bodyFrame);
             }
             preStamp = stamp;
+        }
+
+        if(viewer.core(v2_view).is_animating){
+            double angle = rotAngle_v2*rotN_v2-0.5*PI;
+            viewer.core(v2_view).camera_eye=Eigen::Vector3f(3*cos(angle),0,3*sin(angle));
+            if(++rotN_v2>(2*PI/rotAngle_v2)) rotN_v2=0;
         }
         return false;
     };

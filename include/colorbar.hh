@@ -72,8 +72,8 @@ void ColorbarPlugin::draw_colorbar(char* rMax, char* aMax) const
     ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.3f);
     ImGui::InputText("",rMax, ImGuiInputTextFlags_ReadOnly);
     ImGui::Dummy(ImVec2(0, h - 2.2 * ImGui::GetItemRectSize().y));
-    //ImGui::Dummy(ImVec2(ImGui::GetColumnWidth()-32, ImGui::GetFontSize()));
-    ImGui::SameLine(); ImGui::Text("0 (1E-13)");
+    ImGui::Dummy(ImVec2(ImGui::GetColumnWidth()-32, ImGui::GetFontSize()));
+    ImGui::SameLine(); ImGui::Text("0");
     ImGui::PopItemWidth();
 
     ImGui::NextColumn();
@@ -81,10 +81,11 @@ void ColorbarPlugin::draw_colorbar(char* rMax, char* aMax) const
     ImGui::Image(reinterpret_cast<ImTextureID>(colormaps_), ImVec2(w, h));
 
     ImGui::NextColumn();
-    ImGui::Text("acc.[mGy]");
+    ImGui::Text("CD[mGy]");
     ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.3f);
     ImGui::InputText("",aMax, ImGuiInputTextFlags_ReadOnly);
     ImGui::Dummy(ImVec2(0, h - 2.2 * ImGui::GetItemRectSize().y));
-    ImGui::Text("0 (1E-13)");
+    ImGui::Text("0");
     ImGui::PopItemWidth();
+    ImGui::Columns(1);
 }
