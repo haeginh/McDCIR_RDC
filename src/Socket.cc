@@ -1,7 +1,7 @@
 // Implementation of the Socket class.
 
 
-#include "Socket.h"
+#include "Socket.hh"
 #include "string.h"
 #include <string.h>
 #include <errno.h>

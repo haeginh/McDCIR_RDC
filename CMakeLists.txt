@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.9.0)
 
-project(RemoteCal)
+project(DCIR_RDC)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 set(CMAKE_CXX_STANDARD 17)
@@ -21,7 +21,6 @@ if(WITH_GEANT4_UIVIS)
 else()
   find_package(Geant4 REQUIRED)
 endif()
-
 #k4a
 FIND_PACKAGE(k4a REQUIRED)
 FIND_PACKAGE(k4abt REQUIRED)
@@ -39,10 +38,8 @@ link_directories(/home/hurel/codes/libigl/v2.2.0/lib/)
 ## trase
 #find_package(trase REQUIRED)
 
-file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cpp)
-file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.h)
-file(GLOB g4sources ${PROJECT_SOURCE_DIR}/src/*.cc)
-file(GLOB g4headers ${PROJECT_SOURCE_DIR}/include/*.hh)
+file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cc)
+file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hh)
 include_directories(${PROJECT_SOURCE_DIR}/include
                     ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/
 #                    ~/codes/trase/src/
@@ -55,11 +52,9 @@ include_directories(${PROJECT_SOURCE_DIR}/include
                     ~/codes/libigl/v2.2.0/external/glad/include
                     )
 
-add_executable(RemoteCal RemoteCal.cc ${sources} ${headers})
-add_executable(MapCalculator calculator.cc ${sources} ${headers} ${g4sources} ${g4headers})
-
+add_executable(DCIR_RDC DCIR_RDC.cc ${sources} ${headers})
 # Dependencies of this library
-target_link_libraries(RemoteCal
+target_link_libraries(DCIR_RDC
     igl::core
     igl::opengl
 #    igl::opengl_glfw
@@ -76,5 +71,3 @@ target_link_libraries(RemoteCal
     ${Geant4_LIBRARIES}
     /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
     )
-target_link_libraries(MapCalculator ${Geant4_LIBRARIES})
-
