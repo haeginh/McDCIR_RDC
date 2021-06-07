@@ -13,10 +13,12 @@ using namespace Eigen;
 class Viewer{
     public:
     Viewer();
-    void SetMeshes(MatrixXd V, MatrixXi F, MatrixXd C, MatrixXi BE);
+    void SetMeshes(const MatrixXd &V, const MatrixXi &F, const MatrixXd &C, const MatrixXi &BE);
     void SetCores();
-    void MenuDesign();
+    
+    void Launch(){viewer.launch(true, false, "DCIR System (RDC module)");}
     private:
+    void MenuDesign();
     //variables
     public:
     private:
@@ -26,6 +28,9 @@ class Viewer{
     int v1_view, v2_view;
     int v1, v1_patient, v1_cArm, v2;
     RowVector3d sea_green, white, red;
+    
+    //numbers
+    static char psdAcc[100], psdRate[100], avgAcc[100], avgRate[100], lensAcc[100], lensRate[100];
 };
 
 #endif

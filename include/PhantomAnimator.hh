@@ -37,10 +37,20 @@ class PhantomAnimator{
 public:
     PhantomAnimator();
     PhantomAnimator(string prefix);
+    ~PhantomAnimator();
+
     bool ReadFiles(string prefix);
     bool Initialize();
     bool Calibrate(MatrixXd jointTrans);
-    void ConstructMenu();
+    
+    void GetMeshes(MatrixXd &_V, MatrixXi &_F, MatrixXd &_C, MatrixXi &_BE){
+        _V = V; _F = F; _C = C; _BE = BE;
+    }
+    MatrixXd GetV(){ return V; }
+    MatrixXi GetF(){ return F; }
+    MatrixXd GetC(){ return C; }
+    MatrixXi GetBE(){ return BE; }
+   
 private:
 //variables
 public:

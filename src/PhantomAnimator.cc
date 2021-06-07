@@ -1,4 +1,5 @@
 #include "PhantomAnimator.hh"
+PhantomAnimator::PhantomAnimator(){}
 
 PhantomAnimator::PhantomAnimator(string prefix)
 {
