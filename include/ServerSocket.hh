@@ -24,6 +24,7 @@ class ServerSocket : private Socket
 
   //Get functions
   sockaddr_in GetAdrrInfo() {return Socket::GetAdrrInfo();}
+  int GetSocket() {return Socket::get_socket();}
 
   void accept ( ServerSocket& );
   void close ( ServerSocket& );

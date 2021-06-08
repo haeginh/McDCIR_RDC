@@ -6,9 +6,11 @@
 #include <igl/opengl/glfw/imgui/ImGuiMenu.h>
 #include <igl/opengl/glfw/imgui/ImGuiHelpers.h>
 #include <imgui/imgui.h>
-
 #include <igl/readPLY.h>
 
+#include "ServerSocket.hh"
+
+using namespace std;
 using namespace Eigen;
 class Viewer{
     public:
@@ -18,7 +20,7 @@ class Viewer{
     
     void Launch(){viewer.launch(true, false, "DCIR System (RDC module)");}
     private:
-    void MenuDesign();
+    void Communication();
     //variables
     public:
     private:
@@ -31,6 +33,13 @@ class Viewer{
     
     //numbers
     static char psdAcc[100], psdRate[100], avgAcc[100], avgRate[100], lensAcc[100], lensRate[100];
+
+    //threads
+    thread communicator_th;
+
+    //menu
+    void MenuDesign();
 };
+
 
 #endif

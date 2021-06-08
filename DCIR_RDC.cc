@@ -25,7 +25,6 @@ int main(int argc, char** argv){
     Viewer* viewer = new Viewer();
     viewer->SetMeshes(phantom->GetV(), phantom->GetF(), phantom->GetC(), phantom->GetBE());
     viewer->SetCores();
-    //viewer->MenuDesign();
     viewer->Launch();
 
     return EXIT_SUCCESS;

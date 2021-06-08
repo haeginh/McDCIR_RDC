@@ -48,7 +48,7 @@ class Socket
   void set_non_blocking ( const bool );
 
   bool is_valid() const { return m_sock != -1; }
-
+  int get_socket() const { return m_sock; } 
   //Get functions
   sockaddr_in GetAdrrInfo() {return m_addr;}
 
