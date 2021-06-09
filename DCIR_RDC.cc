@@ -22,8 +22,8 @@ int main(int argc, char** argv){
     PhantomAnimator* phantom = new PhantomAnimator(string(argv[1]));
     phantom->Initialize();
     
-    Viewer* viewer = new Viewer();
-    viewer->SetMeshes(phantom->GetV(), phantom->GetF(), phantom->GetC(), phantom->GetBE());
+    Viewer* viewer = new Viewer(phantom);
+    viewer->SetMeshes();
     viewer->SetCores();
     viewer->Launch();
 

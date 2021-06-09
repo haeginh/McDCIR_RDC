@@ -50,15 +50,16 @@ public:
     MatrixXi GetF(){ return F; }
     MatrixXd GetC(){ return C; }
     MatrixXi GetBE(){ return BE; }
+    RotationList GetAlignRot() {return alignRot;}
    
 private:
 //variables
-public:
 private:
     MatrixXd C, V, W, Wj;
     MatrixXi BE, T, F;
     MatrixXd V_calib, C_calib;
     vector<int> eye2ply;
+    RotationList alignRot;
 };
 
 #endif

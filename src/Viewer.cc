@@ -2,8 +2,9 @@
 #include "colorbar.hh"
 #define PORT 30303
 
-Viewer::Viewer()
-    : sea_green(RowVector3d(70. / 255., 252. / 255., 167. / 255.)), white(RowVector3d(1., 1., 1.)), red(RowVector3d(1., 0., 0.))
+Viewer::Viewer(PhantomAnimator *_phantom)
+    : sea_green(RowVector3d(70. / 255., 252. / 255., 167. / 255.)), white(RowVector3d(1., 1., 1.)), red(RowVector3d(1., 0., 0.)),
+      listen(true), calib_signal(false), waitingCalib(false), initializing(true), phantom(_phantom)
 {
     menu.callback_draw_viewer_window = [&]()
     {
@@ -21,10 +22,13 @@ Viewer::Viewer()
     viewer.plugins.push_back(&menu);
     //function<void(void)> menuFunc = std::bind(&Viewer::MenuDesign, this);
     menu.callback_draw_viewer_menu = std::bind(&Viewer::MenuDesign, this);
-    ;
+    
     //MenuDesign();
 }
 
+static char num_client[3] = "0";
+static char status[20] = "not listening";
+static int calib_sock(20);
 void Viewer::MenuDesign()
 {
     float w = ImGui::GetContentRegionAvailWidth();
@@ -38,9 +42,33 @@ void Viewer::MenuDesign()
     {
         if (ImGui::Button("Start listening", ImVec2(w, 0)))
         {
-            communicator_th = thread(&Viewer::Communication, this);
+            strcpy(status, "listening");
+            listen = true;
+            if (!communicator_th.joinable())
+                communicator_th = thread(&Viewer::Communication, this);
+        }
+        if (ImGui::Button("Stop listening", ImVec2(w, 0)))
+        {
+            listen = false;
+            strcpy(status, "not listening");
+        }
+        ImGui::InputText("status", status, ImGuiInputTextFlags_None);
+        ImGui::InputText("connected", num_client, ImGuiInputTextFlags_None);
+    }
+    if (ImGui::CollapsingHeader("Initialization", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::InputInt("calib. sock.", &calib_sock);
+        if (ImGui::Button("Start calibration!", ImVec2(w, 0)))
+        {
+            calib_signal = true;
         }
     }
+    ImGui::Separator();
+    if (ImGui::Button("FINISH INITIALIZATION!", ImVec2(w, 0)))
+    {
+        initializing = false;
+    }
+
     //         if (ImGui::CollapsingHeader("Beam Conditions", ImGuiTreeNodeFlags_DefaultOpen))
     //         {
     //             static string kVp("80");
@@ -174,8 +202,12 @@ void Viewer::MenuDesign()
     //   };
 }
 
-void Viewer::SetMeshes(const MatrixXd &V, const MatrixXi &F, const MatrixXd &C, const MatrixXi &BE)
+void Viewer::SetMeshes()
 {
+    MatrixXd V = phantom->GetV();
+    MatrixXi F = phantom->GetF();
+    MatrixXd C = phantom->GetC();
+    MatrixXi BE = phantom->GetBE();
     viewer.data().set_mesh(V, F);
     viewer.append_mesh();
     viewer.load_mesh_from_file("patient3.obj");
@@ -250,43 +282,114 @@ void Viewer::Communication()
     FD_SET(server.GetSocket(), &readfds);
     int max_sd = server.GetSocket();
     //bitwise operation (motion, class, bed, c-arm): ex) motion + bed = 10
-    map<int, int> client_sockets;
+    struct timeval sel_timeout;
+    map<int, ServerSocket *> client_sockets;
+    map<int, int> sock_opts;
+
+    //packages to broadcast
+    array<double, 155> pack;
+    RotationList alignRot = phantom->GetAlignRot();
+    int num_bone = phantom->GetBE().rows();
+    for (int i = 0; i < num_bone; i++)
+    {
+        pack[4 * i] = alignRot[i].w();
+        pack[4 * i + 1] = alignRot[i].x();
+        pack[4 * i + 2] = alignRot[i].y();
+        pack[4 * i + 3] = alignRot[i].z();
+    }
+
+    //before init.
+    while (initializing)
+    {
+        tmp = readfds;
+        sel_timeout.tv_sec = 3;
+        sel_timeout.tv_usec = 0;
+        int activity = select(max_sd + 1, &tmp, NULL, NULL, &sel_timeout);
+        if (activity < 0 && errno != EINTR)
+            cout << "" << flush;
+        if (FD_ISSET(server.GetSocket(), &tmp))
+        {
+            ServerSocket *_sock = new ServerSocket();
+            server.accept(*_sock);
+            if (!listen)
+            {
+                (*_sock) << "connection refused!";
+                delete _sock;
+            }
+            else
+            {
+                int sd = _sock->GetSocket();
+                strcpy(num_client, to_string(atoi(num_client) + 1).c_str());
+                cout << "new connection from "
+                     << inet_ntoa(_sock->GetAdrrInfo().sin_addr)
+                     << " (sock #" << sd << ") / opt: ";
+                (*_sock) << "welcome socket #" + to_string(sd) + "!";
+                int tracking_id;
+                _sock->RecvIntBuffer(&tracking_id, 1);
+                sock_opts[sd] = tracking_id;
+                client_sockets[sd] = _sock;
+                if (tracking_id & 8)
+                    cout << "motion ";
+                if (tracking_id & 4)
+                    cout << "glass ";
+                if (tracking_id & 2)
+                    cout << "bed ";
+                if (tracking_id & 1)
+                    cout << "c-arm ";
+                cout << endl;
+                FD_SET(sd, &readfds);
+                if (sd > max_sd)
+                    max_sd = sd;
+                if (tracking_id > 1)
+                {
+                    cout<<"-> Sending alignRot data.."<<flush;
+                    _sock->SendDoubleBuffer(pack.data(), num_bone*4);
+                    string msg;
+                    (*_sock)>>msg; cout<<msg<<endl;
+                }
+            }
+        }
+        if (calib_signal)
+        {
+            if (!FD_ISSET(calib_sock, &tmp))
+                cout << "socket #" << calib_sock << " is unavailable!" << endl;
+            else
+            {
+                int signal(-1); //signal for calib.
+                client_sockets[calib_sock]->SendIntBuffer(&signal, 1);
+                cout<<"Start calibration in socket #"<<calib_sock<<endl;
+                waitingCalib = true;
+            }
+            calib_signal = false;
+        }
+        if(waitingCalib && FD_ISSET(calib_sock, &tmp)){
+            cout<<"Get calibration data.."<<flush;
+            cout<<"done"<<endl;
+        }
+    }
+
+    //after init.
     while (true)
     {
         tmp = readfds;
-        int activity = select(max_sd + 1, &tmp, NULL, NULL, NULL);
-        if (activity < 0 && errno != EINTR)
-            cout << "select error!" << endl;
-        if (FD_ISSET(server.GetSocket(), &tmp))
-        {
-            ServerSocket _sock;
-            server.accept(_sock);
-            int sd = _sock.GetSocket();
-            cout << "new connection from "
-                 << inet_ntoa(_sock.GetAdrrInfo().sin_addr) << " p" << ntohs(_sock.GetAdrrInfo().sin_port)
-                 << " (sock #" << sd << ")" << endl;
-            _sock << "welcome!";
-            int *tracking_id;
-            _sock.RecvIntBuffer(tracking_id, 1);
-            client_sockets[sd] = *tracking_id;
-            FD_SET(sd, &readfds);
-            if (sd > max_sd)
-                max_sd = sd;
-        }
-        for (auto sid : client_sockets)
+        sel_timeout.tv_sec = 3;
+        sel_timeout.tv_usec = 0;
+        int activity = select(max_sd + 1, &tmp, NULL, NULL, &sel_timeout);
+
+        for (auto sid : sock_opts)
         {
             if (!FD_ISSET(sid.first, &tmp))
                 continue;
-            if (sid.second & 8 > 0) //motion
+            if (sid.second & 8) //motion
             {
             }
-            if (sid.second & 4 > 0) //glass
+            if (sid.second & 4) //glass
             {
             }
-            if (sid.second & 2 > 0) //bed
+            if (sid.second & 2) //bed
             {
             }
-            if (sid.second & 1 > 0) //c-arm
+            if (sid.second & 1) //c-arm
             {
             }
         }

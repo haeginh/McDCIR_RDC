@@ -9,20 +9,21 @@
 #include <igl/readPLY.h>
 
 #include "ServerSocket.hh"
+#include "PhantomAnimator.hh"
 
 using namespace std;
 using namespace Eigen;
 class Viewer{
     public:
-    Viewer();
-    void SetMeshes(const MatrixXd &V, const MatrixXi &F, const MatrixXd &C, const MatrixXi &BE);
+    Viewer(PhantomAnimator* _phantom);
+    void SetMeshes();
     void SetCores();
     
     void Launch(){viewer.launch(true, false, "DCIR System (RDC module)");}
     private:
     void Communication();
+    
     //variables
-    public:
     private:
     igl::opengl::glfw::Viewer viewer;
     igl::opengl::glfw::imgui::ImGuiMenu menu;
@@ -36,9 +37,16 @@ class Viewer{
 
     //threads
     thread communicator_th;
+    bool listen;
+    bool calib_signal;
+    bool waitingCalib;
+    bool initializing;
 
     //menu
     void MenuDesign();
+
+    //phantomAnimator
+    PhantomAnimator *phantom;
 };
 
 

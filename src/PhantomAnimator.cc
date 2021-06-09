@@ -178,8 +178,7 @@ bool PhantomAnimator::Initialize()
     kinectDataRot[7] = Quaterniond(tf2);
     tf2 << 0, -1, 0, 1, 0, 0, 0, 0, 1;
     kinectDataRot[14] = Quaterniond(tf2);
-
-    RotationList alignRot;
+    
     map<int, Vector3d> desiredOrt;
     groups = {12, 13, 5, 6, 22, 23, 18, 19};
     for (int id : groups)
@@ -226,4 +225,3 @@ bool PhantomAnimator::Calibrate(MatrixXd jointTrans)
     V_calib = V+Wj*jointTrans.block(0,0,C.rows()-1,3);
     return true;
 }
-
