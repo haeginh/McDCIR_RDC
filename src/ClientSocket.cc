@@ -1,7 +1,7 @@
 // Implementation of the ClientSocket class
 
-#include "ClientSocket.h"
-#include "SocketException.h"
+#include "ClientSocket.hh"
+#include "SocketException.hh"
 
 
 ClientSocket::ClientSocket ( std::string host, int port )

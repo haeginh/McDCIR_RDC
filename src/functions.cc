@@ -1,4 +1,4 @@
-#include "functions.h"
+#include "functions.hh"
 
 MatrixXd GenerateBonePoints(MatrixXd C, MatrixXi BE, double interval){
     MatrixXd output=C;
