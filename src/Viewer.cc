@@ -1,9 +1,10 @@
 #include "Viewer.hh"
 #include "colorbar.hh"
+#include <bitset>
 #define PORT 30303
 
 Viewer::Viewer(PhantomAnimator *_phantom)
-    : sea_green(RowVector3d(70. / 255., 252. / 255., 167. / 255.)), white(RowVector3d(1., 1., 1.)), red(RowVector3d(1., 0., 0.)),
+    : sea_green(70. / 255., 252. / 255., 167. / 255.), white(1., 1., 1.), red(1., 0., 0.), blue(0.,0.,1.),
       listen(true), calib_signal(false), waitingCalib(false), initializing(true), phantom(_phantom)
 {
     menu.callback_draw_viewer_window = [&]()
@@ -20,14 +21,21 @@ Viewer::Viewer(PhantomAnimator *_phantom)
         ImGui::End();
     };
     viewer.plugins.push_back(&menu);
-    //function<void(void)> menuFunc = std::bind(&Viewer::MenuDesign, this);
     menu.callback_draw_viewer_menu = std::bind(&Viewer::MenuDesign, this);
-    
+
     //MenuDesign();
 }
 
+Viewer::~Viewer()
+{  
+    for (auto client : client_sockets)
+        delete client.second;
+    delete server;
+}
+
 static char num_client[3] = "0";
-static char status[20] = "not listening";
+static char status[30] = "not listening";
+static char runStatus[20] = "pre-init.";
 static int calib_sock(20);
 void Viewer::MenuDesign()
 {
@@ -42,15 +50,21 @@ void Viewer::MenuDesign()
     {
         if (ImGui::Button("Start listening", ImVec2(w, 0)))
         {
-            strcpy(status, "listening");
-            listen = true;
-            if (!communicator_th.joinable())
-                communicator_th = thread(&Viewer::Communication, this);
+            if (initializing)
+            {
+                strcpy(status, "listening");
+                listen = true;
+                if (!init_th.joinable())
+                    init_th = thread(&Viewer::Communication_init, this);
+            }
         }
         if (ImGui::Button("Stop listening", ImVec2(w, 0)))
         {
-            listen = false;
-            strcpy(status, "not listening");
+            if (initializing)
+            {
+                listen = false;
+                strcpy(status, "not listening");
+            }
         }
         ImGui::InputText("status", status, ImGuiInputTextFlags_None);
         ImGui::InputText("connected", num_client, ImGuiInputTextFlags_None);
@@ -60,13 +74,43 @@ void Viewer::MenuDesign()
         ImGui::InputInt("calib. sock.", &calib_sock);
         if (ImGui::Button("Start calibration!", ImVec2(w, 0)))
         {
-            calib_signal = true;
+            if (initializing)
+                calib_signal = true;
         }
+        //calib from file
+    }
+    if (ImGui::CollapsingHeader("Synchronization", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        //to-to
     }
     ImGui::Separator();
-    if (ImGui::Button("FINISH INITIALIZATION!", ImVec2(w, 0)))
+    ImGui::InputText("status", runStatus, ImGuiInputTextFlags_None);
+    if (ImGui::Button("START!", ImVec2(w, 0)))
     {
-        initializing = false;
+        if (init_th.joinable())
+        {
+            initializing = false;
+            init_th.join();
+            //run_th = thread(&Viewer::Communication_run, this);
+            viewer.callback_pre_draw = std::bind(&Viewer::Communication_run, this, std::placeholders::_1);
+            viewer.core(v1_view).animation_max_fps = 10;
+            viewer.core(v1_view).is_animating = true;
+            strcpy(runStatus, "running");
+        }
+        else if(initializing){
+            strcpy(status, "Plz init first!");
+        }
+    }
+    if (ImGui::Button("run / pause", ImVec2(w, 0)))
+    {
+        viewer.core(v1_view).is_animating = !viewer.core(v1_view).is_animating;
+        if (viewer.core(v1_view).is_animating)
+        {
+            strcpy(runStatus, "running");
+           // cv.notify_all();
+        }
+        else
+            strcpy(runStatus, "idle");
     }
 
     //         if (ImGui::CollapsingHeader("Beam Conditions", ImGuiTreeNodeFlags_DefaultOpen))
@@ -240,6 +284,13 @@ void Viewer::SetMeshes()
     viewer.data(v2).show_lines = false;
     viewer.data(v2).show_overlay_depth = true;
     viewer.data(v2).double_sided = false;
+
+    //initialize reliabilitiy options
+    for (int i = 0; i < C.rows(); i++)
+    {
+        unsigned int opt = 1 << i;
+        reliab_opt.push_back(opt);
+    }
 }
 
 void Viewer::SetCores()
@@ -273,44 +324,45 @@ void Viewer::SetCores()
     };
 }
 
-void Viewer::Communication()
+void Viewer::Communication_init()
 {
-    fd_set readfds, tmp;
-    ServerSocket server(PORT);
+    fd_set tmp;
+    server = new ServerSocket(PORT);
     cout << "waiting for connections..." << endl;
     FD_ZERO(&readfds);
-    FD_SET(server.GetSocket(), &readfds);
-    int max_sd = server.GetSocket();
+    FD_SET(server->GetSocket(), &readfds);
+    max_sd = server->GetSocket();
     //bitwise operation (motion, class, bed, c-arm): ex) motion + bed = 10
-    struct timeval sel_timeout;
-    map<int, ServerSocket *> client_sockets;
-    map<int, int> sock_opts;
 
     //packages to broadcast
     array<double, 155> pack;
     RotationList alignRot = phantom->GetAlignRot();
+    MatrixXi BE = phantom->GetBE();
     int num_bone = phantom->GetBE().rows();
     for (int i = 0; i < num_bone; i++)
     {
-        pack[4 * i] = alignRot[i].w();
-        pack[4 * i + 1] = alignRot[i].x();
-        pack[4 * i + 2] = alignRot[i].y();
-        pack[4 * i + 3] = alignRot[i].z();
+        pack[6 * i] = alignRot[i].w();
+        pack[6 * i + 1] = alignRot[i].x();
+        pack[6 * i + 2] = alignRot[i].y();
+        pack[6 * i + 3] = alignRot[i].z();
+        pack[6 * i + 4] = BE(i, 0);
+        pack[6 * i + 5] = BE(i, 1);
     }
 
     //before init.
     while (initializing)
     {
         tmp = readfds;
+
         sel_timeout.tv_sec = 3;
         sel_timeout.tv_usec = 0;
         int activity = select(max_sd + 1, &tmp, NULL, NULL, &sel_timeout);
         if (activity < 0 && errno != EINTR)
             cout << "" << flush;
-        if (FD_ISSET(server.GetSocket(), &tmp))
+        if (FD_ISSET(server->GetSocket(), &tmp))
         {
             ServerSocket *_sock = new ServerSocket();
-            server.accept(*_sock);
+            server->accept(*_sock);
             if (!listen)
             {
                 (*_sock) << "connection refused!";
@@ -342,46 +394,138 @@ void Viewer::Communication()
                     max_sd = sd;
                 if (tracking_id > 1)
                 {
-                    cout<<"-> Sending alignRot data.."<<flush;
-                    _sock->SendDoubleBuffer(pack.data(), num_bone*4);
-                    string msg;
-                    (*_sock)>>msg; cout<<msg<<endl;
+                    cout << "-> Sending alignRot/BE data.." << flush;
+                    _sock->SendDoubleBuffer(pack.data(), num_bone * 6);
+                    cout << "success" << endl;
                 }
             }
         }
-        if (calib_signal)
+        if (calib_signal && (!waitingCalib))
         {
             if (!FD_ISSET(calib_sock, &tmp))
                 cout << "socket #" << calib_sock << " is unavailable!" << endl;
             else
             {
+                string msg;
+                (*client_sockets[calib_sock]) >> msg;
                 int signal(-1); //signal for calib.
                 client_sockets[calib_sock]->SendIntBuffer(&signal, 1);
-                cout<<"Start calibration in socket #"<<calib_sock<<endl;
+                cout << "Start calibration in socket #" << calib_sock << endl;
                 waitingCalib = true;
             }
             calib_signal = false;
         }
-        if(waitingCalib && FD_ISSET(calib_sock, &tmp)){
-            cout<<"Get calibration data.."<<flush;
-            cout<<"done"<<endl;
+        else if (waitingCalib && FD_ISSET(calib_sock, &tmp))
+        {
+            cout << "Get calibration data.." << flush;
+            int signal(-1);
+            //client_sockets[calib_sock]->RecvIntBuffer(&signal, 1);
+            client_sockets[calib_sock]->RecvDoubleBuffer(pack.data(), 155);
+            map<int, double> calibLengths;
+            Vector3d eyeL_pos(0, 0, 0), eyeR_pos(0, 0, 0);
+            int i = 0;
+            for (; i < 155; i += 2)
+            {
+                if (pack[i] < 0)
+                    break;
+                calibLengths[pack[i]] = pack[i + 1];
+            }
+            eyeL_pos = Vector3d(pack[i + 1], pack[i + 2], pack[i + 3]);
+            eyeR_pos = Vector3d(pack[i + 4], pack[i + 5], pack[i + 6]);
+            int calibFrame = pack[i + 7];
+            cout << "done" << endl;
+            (*client_sockets[calib_sock]) << phantom->Calibrate(calibLengths, eyeL_pos, eyeR_pos, calibFrame);
+            waitingCalib = false;
         }
     }
-
-    //after init.
-    while (true)
+    string msg;
+    for (auto client : client_sockets)
     {
+        (*client.second) >> msg;
+        int signal(1);
+        client.second->SendIntBuffer(&signal, 1);
+    }
+}
+
+bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
+{
+    igl::Timer timer; timer.start();
+    fd_set tmp;
+    array<double, 187> pack; //max
+    int numBE = phantom->GetBE().rows();
+    int dataNum = (24 + numBE) * 4;
+    if (viewer.core(v1_view).is_animating)
+    {
+        // if (!running)
+        // {
+        //     unique_lock<mutex> lock(m);
+        //     cv.wait(lock);
+        // }
         tmp = readfds;
         sel_timeout.tv_sec = 3;
         sel_timeout.tv_usec = 0;
-        int activity = select(max_sd + 1, &tmp, NULL, NULL, &sel_timeout);
 
+        int activity = select(max_sd + 1, &tmp, NULL, NULL, &sel_timeout);
+        if (activity < 0 && errno != EINTR)
+            cout << "" << flush;
+        if (FD_ISSET(server->GetSocket(), &tmp))
+        {
+            ServerSocket _sock;
+            server->accept(_sock);
+            _sock << "connection refused!";
+        }
+
+        RotationList vQ;
+        vQ.resize(numBE);
+        MatrixXd C_disp(24,3);
+        MatrixXi BE = phantom->GetBE();
+        unsigned int reliability(0), r(0);
         for (auto sid : sock_opts)
         {
             if (!FD_ISSET(sid.first, &tmp))
                 continue;
             if (sid.second & 8) //motion
             {
+                client_sockets[sid.first]->RecvDoubleBuffer(pack.data(), dataNum);
+                if (!reliability)
+                {
+                    int i = 0;
+                    for (; i < 24; i++)
+                        reliability |= bool(pack[i]) << i;
+                    for (int r = 0; i < 24 * 4; r++)
+                    {
+                        C_disp(r, 0) = pack[i++];
+                        C_disp(r, 1) = pack[i++];
+                        C_disp(r, 2) = pack[i++];
+                    }
+                    for (int r = 0; i < dataNum; i += 4, r++)
+                        vQ[r] = Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
+                }
+                else
+                {
+                    int i = 0;
+                    for (; i < 24; i++)
+                        r |= bool(pack[i]) << i;
+                    unsigned int r_chk = (~reliability) & r; //not existing, but exists in the new data
+                    for (int row = 0; i < 24 * 4; row++)
+                    {
+                        if(!(r_chk & reliab_opt[row])){
+                            i+= 3; continue;
+                        }
+                        C_disp(row, 0) = pack[i++];
+                        C_disp(row, 1) = pack[i++];
+                        C_disp(row, 2) = pack[i++];
+                    }
+                    for (int row = 0; i < dataNum; i += 4, row++){
+                        if(!(r_chk & reliab_opt[BE(row,0)])){
+                            i+= 4; continue;
+                        }                        
+                        vQ[row] = Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
+                    }
+                    reliability |= r;
+                }
+                int signal(1);
+                client_sockets[sid.first]->SendIntBuffer(&signal, 1);
             }
             if (sid.second & 4) //glass
             {
@@ -393,5 +537,19 @@ void Viewer::Communication()
             {
             }
         }
+        timer.stop(); cout<<"data transfer: "<<timer.getElapsedTime()<<endl; timer.start();
+        if (reliability)
+        {
+            MatrixXd C_new, V_new;
+            phantom->Animate(vQ, C_disp, C_new, V_new);
+            timer.stop(); cout<<"animation: "<<timer.getElapsedTime()<<endl; timer.start();
+            viewer.data(v1).set_points(C_disp,blue);
+            viewer.data(v1).set_edges(C_new, BE, sea_green);
+            viewer.data(v1).set_vertices(V_new);
+            viewer.data(v1).compute_normals();
+            timer.stop(); cout<<"vis: "<<timer.getElapsedTime()<<endl;
+        }
+        //cout<<bitset<22>(reliability)<<endl;
     }
+    return false;
 }

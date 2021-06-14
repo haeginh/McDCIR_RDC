@@ -32,6 +32,7 @@
 #include <Eigen/StdVector>
 #include <Eigen/SparseCore>
 
+class Viewer;
 class PhantomAnimator{
 //functions
 public:
@@ -41,14 +42,16 @@ public:
 
     bool ReadFiles(string prefix);
     bool Initialize();
-    bool Calibrate(MatrixXd jointTrans);
-    
+    string Calibrate(map<int, double> calibLengths, Vector3d eyeL_pos, Vector3d eyeR_pos, int calibFrame);
+    void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, MatrixXd &V_new, bool calibChk = true);
+
     void GetMeshes(MatrixXd &_V, MatrixXi &_F, MatrixXd &_C, MatrixXi &_BE){
         _V = V; _F = F; _C = C; _BE = BE;
     }
     MatrixXd GetV(){ return V; }
     MatrixXi GetF(){ return F; }
     MatrixXd GetC(){ return C; }
+    MatrixXd GetC_calib(){ return C_calib; }
     MatrixXi GetBE(){ return BE; }
     RotationList GetAlignRot() {return alignRot;}
    
@@ -57,9 +60,14 @@ private:
 private:
     MatrixXd C, V, W, Wj;
     MatrixXi BE, T, F;
+    VectorXi P;
     MatrixXd V_calib, C_calib;
     vector<int> eye2ply;
     RotationList alignRot;
+    vector<map<int, double>> cleanWeights;
+
+    //tmp
+    map<int, double> lengths;
 };
 
 #endif

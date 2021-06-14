@@ -17,10 +17,10 @@ class ServerSocket : private Socket
   const ServerSocket& operator << ( const std::string& ) const;
   const ServerSocket& operator >> ( std::string& ) const;
 
-  const ServerSocket& RecvDoubleBuffer ( double*, int ) const;
-  const ServerSocket& SendDoubleBuffer ( const double*, int, int wait=0) const;
-  const ServerSocket& RecvIntBuffer ( int*, int ) const;
-  const ServerSocket& SendIntBuffer ( const int*, int, int wait=0 ) const;
+  int RecvDoubleBuffer ( double*, int );
+  int SendDoubleBuffer ( const double*, int, int wait=0);
+  int RecvIntBuffer ( int*, int );
+  int SendIntBuffer ( const int*, int, int wait=0 );
 
   //Get functions
   sockaddr_in GetAdrrInfo() {return Socket::GetAdrrInfo();}

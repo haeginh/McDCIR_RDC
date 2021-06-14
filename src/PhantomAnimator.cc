@@ -1,5 +1,5 @@
 #include "PhantomAnimator.hh"
-PhantomAnimator::PhantomAnimator(){}
+PhantomAnimator::PhantomAnimator() {}
 
 PhantomAnimator::PhantomAnimator(string prefix)
 {
@@ -80,7 +80,7 @@ bool PhantomAnimator::ReadFiles(string prefix)
         cout << "there is no " + prefix + "_eye.ply!!" << endl;
     }
     map<tuple<int, int, int>, vector<int>> grid = GenerateGrid(V);
-    
+
     for (int i = 0; i < V_eye.rows(); i++)
     {
         double x = V_eye(i, 0);
@@ -116,7 +116,6 @@ bool PhantomAnimator::ReadFiles(string prefix)
             eyeFaceIDs.push_back(i);
     }
 
-    vector<map<int, double>> cleanWeights;
     double epsilon(1e-5);
     for (int i = 0; i < W.rows(); i++)
     {
@@ -140,9 +139,7 @@ bool PhantomAnimator::ReadFiles(string prefix)
 bool PhantomAnimator::Initialize()
 {
     //additional variables
-    VectorXi P;
     igl::directed_edge_parents(BE, P);
-    map<int, double> lengths;
 
     //distance to parent joint
     for (int i = 0; i < BE.rows(); i++)
@@ -178,7 +175,7 @@ bool PhantomAnimator::Initialize()
     kinectDataRot[7] = Quaterniond(tf2);
     tf2 << 0, -1, 0, 1, 0, 0, 0, 0, 1;
     kinectDataRot[14] = Quaterniond(tf2);
-    
+
     map<int, Vector3d> desiredOrt;
     groups = {12, 13, 5, 6, 22, 23, 18, 19};
     for (int id : groups)
@@ -196,32 +193,98 @@ bool PhantomAnimator::Initialize()
         }
     }
 
-    cout<<"generating F_area, F_incident, F_area_eye matrix..."<<flush;
+    cout << "generating F_area, F_incident, F_area_eye matrix..." << flush;
     VectorXd F_area;
-    igl::doublearea(V,F,F_area);
+    igl::doublearea(V, F, F_area);
     F_area.cwiseSqrt();
     VectorXd W_avgSkin = ArrayXd::Zero(V.rows());
 
-    for(int i=0;i<F.rows();i++){
-        for(int j=0;j<3;j++)
-            W_avgSkin(F(i,j)) +=  F_area(i);
+    for (int i = 0; i < F.rows(); i++)
+    {
+        for (int j = 0; j < 3; j++)
+            W_avgSkin(F(i, j)) += F_area(i);
     }
-    W_avgSkin = W_avgSkin/W_avgSkin.sum();
+    W_avgSkin = W_avgSkin / W_avgSkin.sum();
 
     VectorXd W_Lens(eye2ply.size());
-    for(size_t i=0;i<eye2ply.size();i++)
+    for (size_t i = 0; i < eye2ply.size(); i++)
         W_Lens(i) = W_avgSkin(eye2ply[i]);
 
-    W_avgSkin = W_avgSkin.array()/W_avgSkin.sum();
-    W_Lens    = W_Lens.array()/W_Lens.sum();
+    W_avgSkin = W_avgSkin.array() / W_avgSkin.sum();
+    W_Lens = W_Lens.array() / W_Lens.sum();
 
-    cout<<"done"<<endl;
+    cout << "done" << endl;
+    V_calib = V;
+    C_calib = C;
     return true;
 }
 
-bool PhantomAnimator::Calibrate(MatrixXd jointTrans)
+string PhantomAnimator::Calibrate(map<int, double> calibLengths, Vector3d eyeL_pos, Vector3d eyeR_pos, int calibFrame)
 {
-    C_calib = C+jointTrans;
-    V_calib = V+Wj*jointTrans.block(0,0,C.rows()-1,3);
-    return true;
+    MatrixXd jointTrans = MatrixXd::Zero(C.rows(), 3);
+    int headJ(24), eyeLJ(22), eyeRJ(23);
+    stringstream ss;
+    for (int i = 0; i < BE.rows(); i++)
+    {
+        if (calibLengths.find(i) == calibLengths.end())
+        {
+            calibLengths[i] = lengths[i];
+            jointTrans.row(BE(i, 1)) = jointTrans.row(BE(P(i), 1));
+            continue;
+        }
+        calibLengths[i] /= (double)calibFrame * 10;
+        double ratio = calibLengths[i] / lengths[i];
+        cout << i << " : " << lengths[i] << " -> " << calibLengths[i] << " (" << ratio * 100 << " %)" << endl;
+        ss << i << " : " << ratio * 100 << " %" << endl;
+        jointTrans.row(BE(i, 1)) = (1 - ratio) * (C.row(BE(i, 0)) - C.row(BE(i, 1)));
+        if (P(i) < 0)
+            continue;
+        jointTrans.row(BE(i, 1)) += jointTrans.row(BE(P(i), 1));
+    }
+
+    eyeR_pos /= (double)calibFrame * 10;
+    eyeL_pos /= (double)calibFrame * 10;
+    jointTrans.row(eyeLJ) = C.row(headJ) + jointTrans.row(headJ) + eyeL_pos.transpose() - C.row(eyeLJ);
+    jointTrans.row(eyeRJ) = C.row(headJ) + jointTrans.row(headJ) + eyeR_pos.transpose() - C.row(eyeRJ);
+    jointTrans.row(headJ) = MatrixXd::Zero(1, 3);
+    jointTrans(headJ, 1) = (jointTrans(eyeLJ, 1) + jointTrans(eyeRJ, 1)) * 0.5;
+    C_calib = C + jointTrans;
+
+    cout << Wj.rows() << "*" << Wj.cols() << endl;
+    cout << jointTrans.rows() << "*" << jointTrans.cols() << endl;
+    V_calib = V + Wj * jointTrans.block(0, 0, C.rows() - 1, 3);
+    //MatrixXd jt = jointTrans.block(0,0,C.rows()-1,3);
+    return ss.str();
+}
+
+void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, MatrixXd &V_new, bool calibChk)
+{
+    vector<Vector3d> vT;
+
+    if (calibChk)
+    {
+        C_new = C_calib;
+        C_new.row(0) = C_disp.row(0); //set root
+        for (int i = 0; i < BE.rows(); i++)
+        {
+            Affine3d a;
+            a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C_calib.row(BE(i, 0)).transpose()));
+            vT.push_back(a.translation());
+            C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
+        }
+        myDqs(V_calib, cleanWeights, vQ, vT, V_new);
+    }
+    else
+    {
+        C_new = C;
+        C_new.row(0) = C_disp.row(0); //set root
+        for (int i = 0; i < BE.rows(); i++)
+        {
+            Affine3d a;
+            a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C.row(BE(i, 0)).transpose()));
+            vT.push_back(a.translation());
+            C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
+        }
+        myDqs(V, cleanWeights, vQ, vT, V_new);
+    }
 }
