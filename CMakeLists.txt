@@ -14,19 +14,6 @@ if (OPENMP_FOUND)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
 
-#Geant4
-#option(WITH_GEANT4_UIVIS "Build example with Geant4 UI and Vis drivers" ON)
-#if(WITH_GEANT4_UIVIS)
-#  find_package(Geant4 REQUIRED ui_all vis_all)
-#else()
-#  find_package(Geant4 REQUIRED)
-#endif()
-#k4a
-#FIND_PACKAGE(k4a REQUIRED)
-#FIND_PACKAGE(k4abt REQUIRED)
-#add_subdirectory(extern)
-#add_subdirectory(helper)
-
 # libigl
 option(LIBIGL_WITH_OPENGL            "Use OpenGL"         ON)
 option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
@@ -34,16 +21,11 @@ option(LIBIGL_WITH_OPENGL_GLFW_IMGUI "Use imgui"           ON)
 option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
 find_package(LIBIGL REQUIRED QUIET)
 set(LIBIGL_DIR ${LIBIGL_INCLUDE_DIR}/..)
-#link_directories(/home/hurel/codes/libigl/v2.2.0/lib/)
 
-## trase
-#find_package(trase REQUIRED)
 
 file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cc)
 file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hh)
 include_directories(${PROJECT_SOURCE_DIR}/include
-#                    ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/
-#                    ~/codes/trase/src/
                     ${LIBIGL_DIR}
                     ${LIBIGL_DIR}/external
                     ${LIBIGL_DIR}/external/libigl-imgui/
@@ -58,17 +40,7 @@ add_executable(DCIR_RDC DCIR_RDC.cc ${sources} ${headers})
 target_link_libraries(DCIR_RDC
     igl::core
     igl::opengl
-#    igl::opengl_glfw
-#    /usr/lib/libglfw3.a
     ${LIBIGL_DIR}/lib/libglfw3.a
     igl::opengl_glfw_imgui
     igl::tetgen
-#    k4a
-#    k4arecord
-#    k4abt
-#    window_controller_3d::window_controller_3d
-#    glfw
-#    trase
-#    ${Geant4_LIBRARIES}
-#    /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
     )
