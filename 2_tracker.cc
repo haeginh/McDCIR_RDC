@@ -4,30 +4,30 @@
 #include <functional>
 
 #include "bodytracking.hh"
-#include "colorbar.hh"
-#include <igl/opengl/glfw/Viewer.h>
-#include <igl/opengl/glfw/imgui/ImGuiMenu.h>
-#include <igl/opengl/glfw/imgui/ImGuiHelpers.h>
-#include <imgui/imgui.h>
-#include <igl/readTGF.h>
-#include <igl/writeTGF.h>
-#include <igl/readDMAT.h>
-#include <igl/writeDMAT.h>
-#include <igl/writeMESH.h>
-#include <igl/readMESH.h>
-#include <igl/readPLY.h>
-#include <igl/directed_edge_parents.h>
-#include <igl/copyleft/tetgen/tetrahedralize.h>
-#include <igl/boundary_conditions.h>
-#include <igl/directed_edge_parents.h>
-#include <igl/directed_edge_orientations.h>
-#include <igl/deform_skeleton.h>
-#include <igl/forward_kinematics.h>
-#include <igl/doublearea.h>
-#include <igl/dqs.h>
-#include <igl/unproject_onto_mesh.h>
-#include <igl/Timer.h>
-#include <igl/mat_max.h>
+//#include "colorbar.hh"
+// #include <igl/opengl/glfw/Viewer.h>
+// #include <igl/opengl/glfw/imgui/ImGuiMenu.h>
+// #include <igl/opengl/glfw/imgui/ImGuiHelpers.h>
+// #include <imgui/imgui.h>
+// #include <igl/readTGF.h>
+// #include <igl/writeTGF.h>
+// #include <igl/readDMAT.h>
+// #include <igl/writeDMAT.h>
+// #include <igl/writeMESH.h>
+// #include <igl/readMESH.h>
+// #include <igl/readPLY.h>
+// #include <igl/directed_edge_parents.h>
+// #include <igl/copyleft/tetgen/tetrahedralize.h>
+// #include <igl/boundary_conditions.h>
+// #include <igl/directed_edge_parents.h>
+// #include <igl/directed_edge_orientations.h>
+// #include <igl/deform_skeleton.h>
+// #include <igl/forward_kinematics.h>
+// #include <igl/doublearea.h>
+// #include <igl/dqs.h>
+// #include <igl/unproject_onto_mesh.h>
+// #include <igl/Timer.h>
+// #include <igl/mat_max.h>
 
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
@@ -35,9 +35,12 @@
 #define PI 3.14159265358979323846
 
 #include "ClientSocket.hh"
+#include "GlassTracker.hh"
 #define PORT 30303
 #define BE_NUM 22
 #define C_NUM 24
+
+#define TEST
 
 void PrintUsage()
 {
@@ -50,11 +53,14 @@ void PrintUsage()
 
 using namespace Eigen;
 using namespace std;
+
 typedef Triplet<double> T;
 
 int main(int argc, char **argv)
 {
     //trackin option configuration
+    GlassTracker glassTracker;
+    glassTracker.SetScalingFactor(0.3);
     if (argc < 3)
         PrintUsage();
     int option(0);
@@ -63,12 +69,24 @@ int main(int argc, char **argv)
         if (string(argv[i]) == "-m")
             option = option | 8; // 1000
         else if (string(argv[i]) == "-g")
+        {
             option = option | 4; // 0100
+            if (!glassTracker.ReadDetectorParameters(string(argv[++i])))
+            {
+                cerr << "Check detector parmeter file!" << endl;
+                return 1;
+            }
+            if(!glassTracker.ReadCameraParameters(string(argv[++i]))){
+                cerr<<"Check camera parmeter file!"<<endl;
+                return 1;
+            }
+        }
         else if (string(argv[i]) == "-b")
             option = option | 2; // 0010
     }
 
     //connection to server
+#ifndef TEST
     string ip(argv[1]);
     ClientSocket socket(ip, PORT);
     string msg;
@@ -87,7 +105,7 @@ int main(int argc, char **argv)
         BE.row(i) << (int)pack[i * 6 + 4], (int)pack[i * 6 + 5];
     }
     socket << "success!";
-
+#endif
     // joint number conv.
     vector<int> i2k = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24};
     map<int, int> k2i;
@@ -99,10 +117,7 @@ int main(int argc, char **argv)
     VERIFY(k4a_device_open(0, &device), "Open K4A Device failed!");
 
     // Start camera. Make sure depth camera is enabled.
-    k4a_device_configuration_t deviceConfig = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
-    deviceConfig.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
-    deviceConfig.color_resolution = K4A_COLOR_RESOLUTION_OFF;
-    deviceConfig.camera_fps = K4A_FRAMES_PER_SECOND_15;
+    k4a_device_configuration_t deviceConfig = get_default_config();
     VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
 
     // Get calibration information
@@ -115,11 +130,13 @@ int main(int argc, char **argv)
     // Create Body Tracker
     k4abt_tracker_t tracker = nullptr;
     k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
-    tracker_config.processing_mode = K4ABT_TRACKER_PROCESSING_MODE_GPU;
+    tracker_config.processing_mode = K4ABT_TRACKER_PROCESSING_MODE_GPU_CUDA;
     VERIFY(k4abt_tracker_create(&sensorCalibration, tracker_config, &tracker), "Body tracker initialization failed!");
 
     int signal(-1);
     Window3dWrapper window3d;
+#ifndef TEST
+    //calibration part
     while (signal < 0)
     {
         signal = -1;
@@ -219,38 +236,48 @@ int main(int argc, char **argv)
         socket >> msg;
         cout << msg;
     }
-
+#endif
     cout << "ready" << endl;
     vector<int> poseJoints = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24, 8, 15, 21, 25, 28, 30};
     bool calib(true);
     window3d.Create("Motion Capture", sensorCalibration);
     window3d.SetCloseCallback(CloseCallback);
     window3d.SetKeyCallback(ProcessKey);
+
+    //variables
+
+    Mat color;
+
     while (1)
     {
-        window3d.SetLayout3d(s_layoutMode);
-        window3d.SetJointFrameVisualization(s_visualizeJointFrame);
-        window3d.Render();
-
         k4a_capture_t sensorCapture = nullptr;
         k4a_wait_result_t getCaptureResult = k4a_device_get_capture(device, &sensorCapture, 0);
-        if (getCaptureResult == K4A_WAIT_RESULT_SUCCEEDED)
+
+        if (getCaptureResult == K4A_WAIT_RESULT_FAILED)
         {
-            k4a_wait_result_t queueCaptureResult = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 0);
-            k4a_capture_release(sensorCapture);
-            if (queueCaptureResult == K4A_WAIT_RESULT_FAILED)
-            {
-                std::cout << "Error! Add capture to tracker process queue failed!" << std::endl;
-                break;
-            }
+            std::cout << "Get img capture returned error: " << getCaptureResult << std::endl;
+            break;
         }
-        else if (getCaptureResult != K4A_WAIT_RESULT_TIMEOUT)
+        else if (getCaptureResult == K4A_WAIT_RESULT_TIMEOUT)
+            continue;
+
+        //ARUCO
+        k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
+        color = color_to_opencv(color_img);
+        k4a_image_release(color_img);
+        glassTracker.SetNewFrame(color);
+        glassTracker.ProcessCurrentFrame();
+        glassTracker.Render();
+
+        //MOTION TRACKING
+        k4a_wait_result_t queueCaptureResult = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 0);
+        k4a_capture_release(sensorCapture);
+        if (queueCaptureResult == K4A_WAIT_RESULT_FAILED)
         {
-            std::cout << "Get depth capture returned error: " << getCaptureResult << std::endl;
+            std::cout << "Error! Add capture to tracker process queue failed!" << std::endl;
             break;
         }
 
-        // Pop Result from Body Tracker
         k4abt_frame_t bodyFrame = nullptr;
         k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0
         if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
@@ -260,16 +287,17 @@ int main(int argc, char **argv)
             {
                 k4abt_body_t body;
                 k4abt_frame_get_body_skeleton(bodyFrame, 0, &body.skeleton);
+#ifndef TEST
                 int n = poseJoints.size();
                 for (size_t i = 0; i < poseJoints.size(); i++)
                 {
                     pack[i] = 0;
                     if (body.skeleton.joints[poseJoints[i]].confidence_level == K4ABT_JOINT_CONFIDENCE_MEDIUM)
                         pack[i] = 1;
-                    
-                    pack[n + i * 3]= body.skeleton.joints[poseJoints[i]].position.xyz.x * 0.1;
-                    pack[n + i * 3 + 1]= body.skeleton.joints[poseJoints[i]].position.xyz.y * 0.1;
-                    pack[n + i * 3 + 2]= body.skeleton.joints[poseJoints[i]].position.xyz.z * 0.1;
+
+                    pack[n + i * 3] = body.skeleton.joints[poseJoints[i]].position.xyz.x * 0.1;
+                    pack[n + i * 3 + 1] = body.skeleton.joints[poseJoints[i]].position.xyz.y * 0.1;
+                    pack[n + i * 3 + 2] = body.skeleton.joints[poseJoints[i]].position.xyz.z * 0.1;
                 }
                 n *= 4;
                 for (int i = 0; i < BE.rows(); i++)
@@ -282,8 +310,9 @@ int main(int argc, char **argv)
                     pack[n + i * 4 + 2] = q1.y();
                     pack[n + i * 4 + 3] = q1.z();
                 }
-                socket.SendDoubleBuffer(pack.data(), n+BE.rows()*4);
+                socket.SendDoubleBuffer(pack.data(), n + BE.rows() * 4);
                 socket.RecvIntBuffer(&signal, 1);
+#endif
             }
             k4abt_frame_release(bodyFrame);
         }

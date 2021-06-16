@@ -14,13 +14,17 @@ if (OPENMP_FOUND)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
 
+#openCV
+find_package(OpenCV)
+include_directories(${OpenCV_INCLUDE_DIRS})
+
 #Geant4
-option(WITH_GEANT4_UIVIS "Build example with Geant4 UI and Vis drivers" ON)
-if(WITH_GEANT4_UIVIS)
-  find_package(Geant4 REQUIRED ui_all vis_all)
-else()
-  find_package(Geant4 REQUIRED)
-endif()
+#option(WITH_GEANT4_UIVIS "Build example with Geant4 UI and Vis drivers" ON)
+#if(WITH_GEANT4_UIVIS)
+#  find_package(Geant4 REQUIRED ui_all vis_all)
+#else()
+#  find_package(Geant4 REQUIRED)
+#endif()
 
 #k4a
 FIND_PACKAGE(k4a REQUIRED)
@@ -57,20 +61,21 @@ add_executable(2_tracker 2_tracker.cc ${sources} ${headers})
 
 # Dependencies of this library
 target_link_libraries(2_tracker
-    igl::core
-    igl::opengl
+    # igl::core
+    # igl::opengl
 #    igl::opengl_glfw
 #    /usr/lib/libglfw3.a
-    /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
-    igl::opengl_glfw_imgui
-    igl::tetgen
+    # /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
+    # igl::opengl_glfw_imgui
+    # igl::tetgen
     k4a
     k4arecord
     k4abt
     window_controller_3d::window_controller_3d
+    ${OpenCV_LIBS}
 #    glfw
 #    trase
-    ${Geant4_LIBRARIES}
-    /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
+    # ${Geant4_LIBRARIES}
+    # /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
     )
 
