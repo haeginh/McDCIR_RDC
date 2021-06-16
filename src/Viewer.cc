@@ -366,7 +366,7 @@ void Viewer::Communication_init()
             if (!listen)
             {
                 (*_sock) << "connection refused!";
-                delete _sock;
+                //delete _sock;
             }
             else
             {
@@ -480,13 +480,17 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
         MatrixXd C_disp(24,3);
         MatrixXi BE = phantom->GetBE();
         unsigned int reliability(0), r(0);
+        vector<int> eraseSID;
         for (auto sid : sock_opts)
         {
             if (!FD_ISSET(sid.first, &tmp))
                 continue;
             if (sid.second & 8) //motion
             {
-                client_sockets[sid.first]->RecvDoubleBuffer(pack.data(), dataNum);
+                if(!client_sockets[sid.first]->RecvDoubleBuffer(pack.data(), dataNum)) {
+                    eraseSID.push_back(sid.first);
+                    continue;
+                }
                 if (!reliability)
                 {
                     int i = 0;
@@ -537,6 +541,11 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
             {
             }
         }
+        for(int i:eraseSID) 
+        {
+            client_sockets.erase(i);
+            sock_opts.erase(i);
+        }
         timer.stop(); cout<<"data transfer: "<<timer.getElapsedTime()<<endl; timer.start();
         if (reliability)
         {
@@ -549,6 +558,7 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
             viewer.data(v1).compute_normals();
             timer.stop(); cout<<"vis: "<<timer.getElapsedTime()<<endl;
         }
+        cout<<endl;
         //cout<<bitset<22>(reliability)<<endl;
     }
     return false;
