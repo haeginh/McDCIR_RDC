@@ -33,7 +33,7 @@ option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
 option(LIBIGL_WITH_OPENGL_GLFW_IMGUI "Use imgui"           ON)
 option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
 find_package(LIBIGL REQUIRED QUIET)
-set(LIBIGL_DIR /home/hurel/codes/libigl/v2.2.0)
+set(LIBIGL_DIR ${LIBIGL_INCLUDE_DIR}/..)
 #link_directories(/home/hurel/codes/libigl/v2.2.0/lib/)
 
 ## trase
