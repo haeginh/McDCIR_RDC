@@ -76,8 +76,9 @@ int main(int argc, char **argv)
                 cerr << "Check detector parmeter file!" << endl;
                 return 1;
             }
-            if(!glassTracker.ReadCameraParameters(string(argv[++i]))){
-                cerr<<"Check camera parmeter file!"<<endl;
+            if (!glassTracker.ReadCameraParameters(string(argv[++i])))
+            {
+                cerr << "Check camera parmeter file!" << endl;
                 return 1;
             }
         }
@@ -262,13 +263,16 @@ int main(int argc, char **argv)
             continue;
 
         //ARUCO
-        k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
-        color = color_to_opencv(color_img);
-        k4a_image_release(color_img);
-        glassTracker.SetNewFrame(color);
-        glassTracker.ProcessCurrentFrame();
-        glassTracker.Render();
-
+        if (option & 4)
+        {
+            k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
+            color = color_to_opencv(color_img);
+            k4a_image_release(color_img);
+            glassTracker.SetNewFrame(color);
+            glassTracker.ProcessCurrentFrame();
+            glassTracker.Render();
+        }
+        
         //MOTION TRACKING
         k4a_wait_result_t queueCaptureResult = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 0);
         k4a_capture_release(sensorCapture);
