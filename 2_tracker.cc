@@ -36,6 +36,7 @@
 
 #include "ClientSocket.hh"
 #include "GlassTracker.hh"
+#include "CharucoSync.hh"
 #define PORT 30303
 #define BE_NUM 22
 #define C_NUM 24
@@ -59,6 +60,8 @@ typedef Triplet<double> T;
 int main(int argc, char **argv)
 {
     //trackin option configuration
+    string detParm("detector_params.yml");
+    string camParm("camera2160.yml");
     GlassTracker glassTracker;
     glassTracker.SetScalingFactor(0.3);
     if (argc < 3)
@@ -71,14 +74,14 @@ int main(int argc, char **argv)
         else if (string(argv[i]) == "-g")
         {
             option = option | 4; // 0100
-            if (!glassTracker.ReadDetectorParameters(string(argv[++i])))
+            if (!glassTracker.ReadDetectorParameters(detParm))
             {
-                cerr << "Check detector parmeter file!" << endl;
+                cerr << "Check detector parmeter file! (" << detParm << ")" << endl;
                 return 1;
             }
-            if (!glassTracker.ReadCameraParameters(string(argv[++i])))
+            if (!glassTracker.ReadCameraParameters(camParm))
             {
-                cerr << "Check camera parmeter file!" << endl;
+                cerr << "Check camera parmeter file! (" << camParm << ")" << endl;
                 return 1;
             }
         }
@@ -133,6 +136,34 @@ int main(int argc, char **argv)
     k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
     tracker_config.processing_mode = K4ABT_TRACKER_PROCESSING_MODE_GPU_CUDA;
     VERIFY(k4abt_tracker_create(&sensorCalibration, tracker_config, &tracker), "Body tracker initialization failed!");
+
+    // Synchronization
+    CharucoSync sync;
+    sync.SetParameters(camParm, detParm);
+   
+    while (1)
+    {
+        k4a_capture_t sensorCapture = nullptr;
+        k4a_wait_result_t getCaptureResult = k4a_device_get_capture(device, &sensorCapture, 0);
+
+        if (getCaptureResult == K4A_WAIT_RESULT_FAILED)
+        {
+            std::cout << "Get img capture returned error: " << getCaptureResult << std::endl;
+            break;
+        }
+        else if (getCaptureResult == K4A_WAIT_RESULT_TIMEOUT)
+            continue;
+
+        Mat color, display;
+        Vec3d rvec, tvec;
+        k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
+        color = color_to_opencv(color_img);
+        k4a_image_release(color_img);
+        sync.EstimatePose(color, display, rvec, tvec);
+        resize(display, display, Size(display.cols*0.4, display.rows*0.4));
+        imshow("Synchronization", display);
+        waitKey(1);
+    }
 
     int signal(-1);
     Window3dWrapper window3d;
@@ -263,10 +294,10 @@ int main(int argc, char **argv)
         }
         else if (getCaptureResult == K4A_WAIT_RESULT_TIMEOUT)
             continue;
-            
-        //bed
-        if(option & 2){
 
+        //bed
+        if (option & 2)
+        {
         }
 
         //ARUCO
@@ -335,6 +366,7 @@ int main(int argc, char **argv)
         }
     }
 
+    k4abt_tracker_destroy(tracker);
     return 1;
 
     //     //main variables
