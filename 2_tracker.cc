@@ -41,7 +41,7 @@
 #define BE_NUM 22
 #define C_NUM 24
 
-#define TEST
+//#define TEST
 
 void PrintUsage()
 {
@@ -138,9 +138,9 @@ int main(int argc, char **argv)
     VERIFY(k4abt_tracker_create(&sensorCalibration, tracker_config, &tracker), "Body tracker initialization failed!");
 
     // Synchronization
-    CharucoSync sync;
+  /*  CharucoSync sync;
     sync.SetParameters(camParm, detParm);
-   
+
     while (1)
     {
         k4a_capture_t sensorCapture = nullptr;
@@ -162,8 +162,9 @@ int main(int argc, char **argv)
         sync.EstimatePose(color, display, rvec, tvec);
         resize(display, display, Size(display.cols*0.4, display.rows*0.4));
         imshow("Synchronization", display);
-        waitKey(1);
-    }
+        char key = waitKey(1);
+        if(key=='q') break;
+    }*/
 
     int signal(-1);
     Window3dWrapper window3d;

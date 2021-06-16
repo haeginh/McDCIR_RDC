@@ -38,7 +38,7 @@ option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
 option(LIBIGL_WITH_OPENGL_GLFW_IMGUI "Use imgui"           ON)
 option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
 find_package(LIBIGL REQUIRED QUIET)
-link_directories(/home/hurel/codes/libigl/v2.2.0/lib/)
+set(LIBIGL_DIR ${LIBIGL_INCLUDE_DIR}/..)
 
 ## trase
 #find_package(trase REQUIRED)
@@ -48,13 +48,13 @@ file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hh)
 include_directories(${PROJECT_SOURCE_DIR}/include
                     ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/
 #                    ~/codes/trase/src/
-                    ~/codes/libigl/v2.2.0/external/
-                    ~/codes/libigl/v2.2.0/include/
-                    ~/codes/libigl/v2.2.0/external/libigl-imgui/
-                    ~/codes/libigl/v2.2.0/external/imgui/examples/
-                    ~/codes/libigl/v2.2.0/external/imgui/
-                    ~/codes/libigl/v2.2.0/external/glfw/include
-                    ~/codes/libigl/v2.2.0/external/glad/include
+                    ${LIBIGL_DIR}/external/
+                    ${LIBIGL_DIR}/include/
+                    ${LIBIGL_DIR}/external/libigl-imgui/
+                    ${LIBIGL_DIR}/external/imgui/examples/
+                    ${LIBIGL_DIR}/external/imgui/
+                    ${LIBIGL_DIR}/external/glfw/include
+                    ${LIBIGL_DIR}/external/glad/include
                     )
 
 add_executable(2_tracker 2_tracker.cc ${sources} ${headers})
