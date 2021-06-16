@@ -241,10 +241,12 @@ int main(int argc, char **argv)
     cout << "ready" << endl;
     vector<int> poseJoints = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24, 8, 15, 21, 25, 28, 30};
     bool calib(true);
-    window3d.Create("Motion Capture", sensorCalibration);
-    window3d.SetCloseCallback(CloseCallback);
-    window3d.SetKeyCallback(ProcessKey);
-
+    if (option & 8)
+    {
+        window3d.Create("Motion Capture", sensorCalibration);
+        window3d.SetCloseCallback(CloseCallback);
+        window3d.SetKeyCallback(ProcessKey);
+    }
     //variables
 
     Mat color;
@@ -261,6 +263,11 @@ int main(int argc, char **argv)
         }
         else if (getCaptureResult == K4A_WAIT_RESULT_TIMEOUT)
             continue;
+            
+        //bed
+        if(option & 2){
+
+        }
 
         //ARUCO
         if (option & 4)
@@ -272,57 +279,60 @@ int main(int argc, char **argv)
             glassTracker.ProcessCurrentFrame();
             glassTracker.Render();
         }
-        
+
         //MOTION TRACKING
-        k4a_wait_result_t queueCaptureResult = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 0);
-        k4a_capture_release(sensorCapture);
-        if (queueCaptureResult == K4A_WAIT_RESULT_FAILED)
+        if (option & 8)
         {
-            std::cout << "Error! Add capture to tracker process queue failed!" << std::endl;
-            break;
-        }
-
-        k4abt_frame_t bodyFrame = nullptr;
-        k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0
-        if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
-        {
-            VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight);
-            if (k4abt_frame_get_num_bodies(bodyFrame))
+            k4a_wait_result_t queueCaptureResult = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 0);
+            k4a_capture_release(sensorCapture);
+            if (queueCaptureResult == K4A_WAIT_RESULT_FAILED)
             {
-                k4abt_body_t body;
-                k4abt_frame_get_body_skeleton(bodyFrame, 0, &body.skeleton);
-#ifndef TEST
-                int n = poseJoints.size();
-                for (size_t i = 0; i < poseJoints.size(); i++)
-                {
-                    pack[i] = 0;
-                    if (body.skeleton.joints[poseJoints[i]].confidence_level == K4ABT_JOINT_CONFIDENCE_MEDIUM)
-                        pack[i] = 1;
-
-                    pack[n + i * 3] = body.skeleton.joints[poseJoints[i]].position.xyz.x * 0.1;
-                    pack[n + i * 3 + 1] = body.skeleton.joints[poseJoints[i]].position.xyz.y * 0.1;
-                    pack[n + i * 3 + 2] = body.skeleton.joints[poseJoints[i]].position.xyz.z * 0.1;
-                }
-                n *= 4;
-                for (int i = 0; i < BE.rows(); i++)
-                {
-                    k4a_quaternion_t q = body.skeleton.joints[i2k[BE(i, 0)]].orientation;
-                    Quaterniond q1 = Quaterniond(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z) * alignRot[i];
-                    q1.normalize();
-                    pack[n + i * 4] = q1.w();
-                    pack[n + i * 4 + 1] = q1.x();
-                    pack[n + i * 4 + 2] = q1.y();
-                    pack[n + i * 4 + 3] = q1.z();
-                }
-                socket.SendDoubleBuffer(pack.data(), n + BE.rows() * 4);
-                socket.RecvIntBuffer(&signal, 1);
-#endif
+                std::cout << "Error! Add capture to tracker process queue failed!" << std::endl;
+                break;
             }
-            k4abt_frame_release(bodyFrame);
+
+            k4abt_frame_t bodyFrame = nullptr;
+            k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0
+            if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
+            {
+                VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight);
+                if (k4abt_frame_get_num_bodies(bodyFrame))
+                {
+                    k4abt_body_t body;
+                    k4abt_frame_get_body_skeleton(bodyFrame, 0, &body.skeleton);
+#ifndef TEST
+                    int n = poseJoints.size();
+                    for (size_t i = 0; i < poseJoints.size(); i++)
+                    {
+                        pack[i] = 0;
+                        if (body.skeleton.joints[poseJoints[i]].confidence_level == K4ABT_JOINT_CONFIDENCE_MEDIUM)
+                            pack[i] = 1;
+
+                        pack[n + i * 3] = body.skeleton.joints[poseJoints[i]].position.xyz.x * 0.1;
+                        pack[n + i * 3 + 1] = body.skeleton.joints[poseJoints[i]].position.xyz.y * 0.1;
+                        pack[n + i * 3 + 2] = body.skeleton.joints[poseJoints[i]].position.xyz.z * 0.1;
+                    }
+                    n *= 4;
+                    for (int i = 0; i < BE.rows(); i++)
+                    {
+                        k4a_quaternion_t q = body.skeleton.joints[i2k[BE(i, 0)]].orientation;
+                        Quaterniond q1 = Quaterniond(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z) * alignRot[i];
+                        q1.normalize();
+                        pack[n + i * 4] = q1.w();
+                        pack[n + i * 4 + 1] = q1.x();
+                        pack[n + i * 4 + 2] = q1.y();
+                        pack[n + i * 4 + 3] = q1.z();
+                    }
+                    socket.SendDoubleBuffer(pack.data(), n + BE.rows() * 4);
+                    socket.RecvIntBuffer(&signal, 1);
+#endif
+                }
+                k4abt_frame_release(bodyFrame);
+            }
+            window3d.SetLayout3d(s_layoutMode);
+            window3d.SetJointFrameVisualization(s_visualizeJointFrame);
+            window3d.Render();
         }
-        window3d.SetLayout3d(s_layoutMode);
-        window3d.SetJointFrameVisualization(s_visualizeJointFrame);
-        window3d.Render();
     }
 
     return 1;
