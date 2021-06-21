@@ -36,8 +36,6 @@
 
 #include "ClientSocket.hh"
 #include "GlassTracker.hh"
-#include "CharucoSync.hh"
-//#include "quaternion_average.h"
 #define PORT 30303
 #define BE_NUM 22
 #define C_NUM 24
@@ -140,43 +138,6 @@ int main(int argc, char **argv)
     tracker_config.processing_mode = K4ABT_TRACKER_PROCESSING_MODE_GPU_CUDA;
     VERIFY(k4abt_tracker_create(&sensorCalibration, tracker_config, &tracker), "Body tracker initialization failed!");
 
-    // Synchronization
-    CharucoSync sync;
-    sync.SetParameters(camParm, detParm);
-    sync.SetScalingFactor(0.3f);
-    vector<Vector4d> quaternions;
-    while (1)
-    {
-        k4a_capture_t sensorCapture = nullptr;
-        k4a_wait_result_t getCaptureResult = k4a_device_get_capture(device, &sensorCapture, 0);
-
-        if (getCaptureResult == K4A_WAIT_RESULT_FAILED)
-        {
-            std::cout << "Get img capture returned error: " << getCaptureResult << std::endl;
-            break;
-        }
-        else if (getCaptureResult == K4A_WAIT_RESULT_TIMEOUT)
-            continue;
-
-        Mat color;
-        Vec3d rvec, tvec;
-        k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
-        color = color_to_opencv(color_img);
-        k4a_image_release(color_img);
-        k4a_capture_release(sensorCapture);
-        sync.EstimatePose(color, rvec, tvec);
-        double angle = norm(rvec);
-        Vector3d axis(rvec(0)/angle, rvec(1)/angle, rvec(2)/angle);
-        Quaterniond q(AngleAxisd(angle, axis));
-        quaternions.push_back(Vector4d(q.w(), q.x(), q.y(), q.z()));
-        sync.Render();
-        char key = waitKey(1);
-        if (key == 'q')
-            break;
-    }
-
-    cropRect = Rect(0,0,0,0);
-    destroyWindow("Synchronization");
     int signal(-1);
     Window3dWrapper window3d;
 #ifndef TEST
