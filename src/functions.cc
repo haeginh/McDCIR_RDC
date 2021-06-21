@@ -300,10 +300,10 @@ Eigen::Vector4d quaternionAverage(std::vector<Eigen::Vector4d> quaternions)
 	}
 
 	Eigen::Vector4d average;
-	average(0) = U(0, largestEigenValueIndex);
-	average(1) = U(1, largestEigenValueIndex);
-	average(2) = U(2, largestEigenValueIndex);
-	average(3) = U(3, largestEigenValueIndex);
+	average(0) = -U(0, largestEigenValueIndex);
+	average(1) = -U(1, largestEigenValueIndex);
+	average(2) = -U(2, largestEigenValueIndex);
+	average(3) = -U(3, largestEigenValueIndex);
 
 	return average;
 }

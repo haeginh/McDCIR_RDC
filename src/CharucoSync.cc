@@ -49,7 +49,7 @@ bool CharucoSync::SetParameters(string camParm, string detParam)
 }
 
 extern Rect cropRect;
-void CharucoSync::EstimatePose(Mat color, Vec3d &rvec, Vec3d &tvec)
+void CharucoSync::EstimatePose(const Mat &color, Vec3d &rvec, Vec3d &tvec)
 {
     color.copyTo(display);
 
@@ -65,7 +65,11 @@ void CharucoSync::EstimatePose(Mat color, Vec3d &rvec, Vec3d &tvec)
     // if at least one marker detected
     if (markerIds.size() > 0)
     {
-        std::for_each(markerCorners.begin(), markerCorners.end(), [](vector<Point2f> &vec){for(Point2f &point:vec) point +=Point2f(cropRect.tl());});
+        std::for_each(markerCorners.begin(), markerCorners.end(), [](vector<Point2f> &vec)
+                      {
+                          for (Point2f &point : vec)
+                              point += Point2f(cropRect.tl());
+                      });
         cv::aruco::drawDetectedMarkers(display, markerCorners, markerIds);
         std::vector<cv::Point2f> charucoCorners;
         std::vector<int> charucoIds;
@@ -79,9 +83,16 @@ void CharucoSync::EstimatePose(Mat color, Vec3d &rvec, Vec3d &tvec)
             // if charuco pose is valid
             if (valid)
                 cv::aruco::drawAxis(display, camMatrix, distCoeffs, rvec, tvec, 0.1f);
+            if (getPose)
+            {
+                double angle = norm(rvec);
+                Vector3d axis(rvec(0) / angle, rvec(1) / angle, rvec(2) / angle);
+                Quaterniond q(AngleAxisd(angle, axis)); q.normalize();
+                quaternions.push_back(Vector4d(q.x(), q.y(), q.z(), q.w()));
+                tvec_sum += tvec;
+            }
         }
     }
-    imshow("crop", cropImg);
 }
 
 extern bool clicked;
@@ -93,11 +104,34 @@ void CharucoSync::Render()
     setMouseCallback("Synchronization", onMouseCropImage);
     if (clicked)
         cv::rectangle(display, P1, P2, CV_RGB(255, 255, 0), 3);
-    else if (cropRect.width > 0)
+    else if (cropRect.width > 0){
+        imshow("crop img.", display(cropRect));
         cv::rectangle(display, cropRect, CV_RGB(255, 255, 0), 3);
+    }
+    resize(display, display, Size(display.cols * sf, display.rows * sf));
+    putText(display, "number of data: "+to_string(quaternions.size()), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
+    if(getPose) 
+        putText(display, "obtaining pose data..", Point(10, 40), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1);
+    imshow("Synchronization", display);
+}
+
+#include "functions.hh"
+#include <opencv2/core/eigen.hpp>
+#include <opencv2/calib3d.hpp>
+void CharucoSync::ShowAvgValue(const Mat &color)
+{
+    AngleAxisd avg(Quaterniond((quaternionAverage(quaternions)))); 
+
+    Vec3d rvec;
+    eigen2cv(avg.axis(), rvec);
+    rvec *= avg.angle();
+    Vec3d tvec_avg = tvec_sum / (double)quaternions.size();
+
+    color.copyTo(display);
+    cv::aruco::drawAxis(display, camMatrix, distCoeffs, rvec, tvec_avg, 0.1f);
     resize(display, display, Size(display.cols * sf, display.rows * sf));
     imshow("Synchronization", display);
-    waitKey(1);
+    waitKey(0);
 }
 
 void CharucoSync::SetScalingFactor(float s)
