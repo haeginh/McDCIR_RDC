@@ -40,7 +40,7 @@
 #define BE_NUM 22
 #define C_NUM 24
 
-//#define TEST
+#define TEST
 extern Rect cropRect;
 void PrintUsage()
 {

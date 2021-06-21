@@ -4,6 +4,7 @@
 #include <map>
 #include <opencv2/aruco.hpp>
 #include "Kinect2OpenCV.hh"
+#include "functions.hh"
 
 using namespace cv;
 using namespace std;
@@ -24,6 +25,10 @@ class GlassTracker
     }
     bool ProcessCurrentFrame();
     void Render();
+
+    Vec3d GetTvecCumul() {return tvec_cumul;}
+    Eigen::Quaterniond GetQuaternionCumul() {return q_cumul;}
+
     void SetScalingFactor(float s);
 
     private:
@@ -33,7 +38,8 @@ class GlassTracker
     Mat color, display;
 
     map<int, vector<Point2f>> corner_cumul;
-    vector<Vec3d> pose_cumul; //rvec XYZ, tvec
+    Vec3d tvec_cumul;
+    Eigen::Quaterniond q_cumul;
     int cumulCount;
     vector<double> coeffX;
     vector<double> coeffY;

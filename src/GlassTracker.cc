@@ -1,4 +1,5 @@
 #include "GlassTracker.hh"
+#include <opencv2/core/eigen.hpp>
 
 bool clicked;
 Point2i P1, P2;
@@ -11,8 +12,8 @@ GlassTracker::GlassTracker()
 {
     dictionary = aruco::generateCustomDictionary(6, 4, 2);
     params = aruco::DetectorParameters::create();
-    coeffX = {15,-1,-15,15,-1,-15};
-    coeffY = {-10,-10,-10,10,10,10};
+    coeffX = {15, -1, -15, 15, -1, -15};
+    coeffY = {-10, -10, -10, 10, 10, 10};
 }
 
 GlassTracker::~GlassTracker()
@@ -111,56 +112,53 @@ bool GlassTracker::ProcessCurrentFrame()
         aruco::estimatePoseSingleMarkers(cornersWhole, markerLength, camMatrix, distCoeffs, rvecs,
                                          tvecs);
 
-        Vec3d tvec(0, 0, 0), axisX(0, 0, 0), axisY(0, 0, 0), axisZ(0, 0, 0);
-
-        // six variations (x -> z -> y)
-        for (int i = 0; i < ids.size(); i++)
+        //rvec
+        std::vector<Eigen::Vector4d> q_vec;
+        for (Vec3d v : rvecs)
         {
-            Affine3d rot(rvecs[i]);
-            axisX += rot * Vec3d(1, 0, 0);
-            axisY += rot * Vec3d(0, 1, 0);
-            //                axisZ += rot*Vec3d(0,0,1);
+            double angle = norm(v);
+            Eigen::Vector3d axis(v(0) / angle, v(1) / angle, v(2) / angle);
+            Eigen::Quaterniond q(Eigen::AngleAxisd(angle, axis));
+            q.normalize();
+            q_vec.push_back(Eigen::Vector4d(q.x(), q.y(), q.z(), q.w()));
         }
+        Eigen::Quaterniond q_avg(quaternionAverage(q_vec));
+        if(cumulCount>1) q_cumul = q_cumul.slerp(1.f/(cumulCount+1.f), q_avg);
+        else q_cumul = q_avg;
 
-        //            ofs<<endl;
-        if (cumulCount > 1)
-        {
-            axisX += pose_cumul[0] * (cumulCount - 1);
-            axisY += pose_cumul[1] * (cumulCount - 1);
-        }
-        axisX = normalize(axisX);
-        axisY = normalize(axisY);
-        axisZ = axisX.cross(axisY);
-        axisY = axisZ.cross(axisX);
-        double rotData[9] = {axisX(0), axisY(0), axisZ(0), axisX(1), axisY(1), axisZ(1), axisX(2), axisY(2), axisZ(2)};
-        Affine3d rot;
-        rot.rotation(cv::Mat(3, 3, CV_64F, rotData));
+        Eigen::AngleAxisd avg(q_cumul);
+        Vec3d rvec;
+        eigen2cv(avg.axis(), rvec);
+        rvec *= avg.angle();
+        Vec3d axisX, axisY, axisZ;
+        eigen2cv(q_cumul * Eigen::Vector3d(1.f,0.f,0.f), axisX);
+        eigen2cv(q_cumul * Eigen::Vector3d(0.f,1.f,0.f), axisY);
+        eigen2cv(q_cumul * Eigen::Vector3d(0.f,0.f,1.f), axisZ);
 
+        //tvec
+        Vec3d tvec(0, 0, 0);
         for (int i = 0; i < ids.size(); i++)
         {
             int id = ids[i];
             Vec3d xTrans = coeffX[id] * axisX;
             Vec3d yTrans = coeffY[id] * axisY;
-            //              cout<<id<<tvecs[i]<<endl;
             tvec += (tvecs[i] + xTrans + yTrans);
         }
         tvec *= 1.f / ids.size();
         if (cumulCount > 1)
         {
-            //               cout<<tvec<<endl;
-            tvec += pose_cumul[3] * (cumulCount - 1);
+            tvec += tvec_cumul * (cumulCount - 1);
             tvec /= (double)cumulCount;
         }
-        // cout<<tvec<<endl;
-        aruco::drawAxis(display, camMatrix, distCoeffs, rot.rvec(), tvec,
+        tvec_cumul = tvec;
+        aruco::drawAxis(display, camMatrix, distCoeffs, rvec, tvec,
                         markerLength * 3.f);
-
-        pose_cumul = {axisX, axisY, axisZ, tvec};
     }
     else
     {
         corner_cumul.clear();
         cumulCount = 0;
+        return false;
     }
 
     //draw result
@@ -175,6 +173,7 @@ bool GlassTracker::ProcessCurrentFrame()
         }
         aruco::drawDetectedMarkers(display, cornersTemp, idsTemp);
     }
+    return true;
 }
 
 void GlassTracker::Render()
@@ -184,12 +183,19 @@ void GlassTracker::Render()
         cv::rectangle(display, P1, P2, CV_RGB(255, 255, 0), 3);
     else if (cropRect.width > 0)
         cv::rectangle(display, cropRect, CV_RGB(255, 255, 0), 3);
-    resize(display, display, Size(display.cols*sf, display.rows*sf));
+    resize(display, display, Size(display.cols * sf, display.rows * sf));
+    putText(display, "cummulated data #: "+to_string(cumulCount), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
+    putText(display, "q: "+to_string(q_cumul.w())+", "+to_string(q_cumul.x())+", "+to_string(q_cumul.y())+", "+to_string(q_cumul.z()), Point(10, 40), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
+    putText(display, "tvec: "+to_string(tvec_cumul(0))+", "+to_string(tvec_cumul(1))+", "+to_string(tvec_cumul(2)), Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
     imshow("Glass Tracker", display);
     waitKey(1);
 }
 
-void GlassTracker::SetScalingFactor(float s){sf = s; sfInv = 1/s;}
+void GlassTracker::SetScalingFactor(float s)
+{
+    sf = s;
+    sfInv = 1 / s;
+}
 
 void onMouseCropImage(int event, int x, int y, int f, void *param)
 {
@@ -197,21 +203,21 @@ void onMouseCropImage(int event, int x, int y, int f, void *param)
     {
     case EVENT_LBUTTONDOWN:
         clicked = true;
-        P1.x = x*sfInv;
-        P1.y = y*sfInv;
-        P2.x = x*sfInv;
-        P2.y = y*sfInv;
+        P1.x = x * sfInv;
+        P1.y = y * sfInv;
+        P2.x = x * sfInv;
+        P2.y = y * sfInv;
         break;
     case EVENT_LBUTTONUP:
-        P2.x = x*sfInv;
-        P2.y = y*sfInv;
+        P2.x = x * sfInv;
+        P2.y = y * sfInv;
         clicked = false;
         break;
     case EVENT_MOUSEMOVE:
         if (clicked)
         {
-            P2.x = x*sfInv;
-            P2.y = y*sfInv;
+            P2.x = x * sfInv;
+            P2.y = y * sfInv;
         }
         break;
     case EVENT_RBUTTONUP:
