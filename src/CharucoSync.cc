@@ -77,8 +77,7 @@ void CharucoSync::EstimatePose(const Mat &color, Vec3d &rvec, Vec3d &tvec)
         // if at least one charuco corner detected
         if (charucoIds.size() > 0)
         {
-            cv::Scalar color = cv::Scalar(255, 0, 0);
-            cv::aruco::drawDetectedCornersCharuco(display, charucoCorners, charucoIds, color);
+            cv::aruco::drawDetectedCornersCharuco(display, charucoCorners, charucoIds);
             bool valid = cv::aruco::estimatePoseCharucoBoard(charucoCorners, charucoIds, board, camMatrix, distCoeffs, rvec, tvec);
             // if charuco pose is valid
             if (valid)
