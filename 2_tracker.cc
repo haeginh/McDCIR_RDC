@@ -239,7 +239,7 @@ int main(int argc, char **argv)
         cout << endl
              << "Sent calibration data" << endl;
         socket >> msg;
-        cout << msg;
+        cout << msg << endl;
     }
 #endif
     cout << "ready" << endl;
