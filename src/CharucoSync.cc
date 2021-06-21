@@ -1,7 +1,7 @@
 #include "CharucoSync.hh"
 
 CharucoSync::CharucoSync()
-:getPose(false)
+    : getPose(false)
 {
 }
 
@@ -17,8 +17,8 @@ bool CharucoSync::SetParameters(string camParm, string detParam)
     fs["camera_matrix"] >> camMatrix;
     fs["distortion_coefficients"] >> distCoeffs;
 
-    cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
-    board = cv::aruco::CharucoBoard::create(5, 7, 0.04f, 0.02f, dictionary);
+    cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+    board = cv::aruco::CharucoBoard::create(5, 7, 0.0765f, 0.0535f, dictionary);
     params = cv::aruco::DetectorParameters::create();
 
     FileStorage fs2(detParam, FileStorage::READ);
@@ -48,15 +48,24 @@ bool CharucoSync::SetParameters(string camParm, string detParam)
     return true;
 }
 
-void CharucoSync::EstimatePose(Mat color, Mat &display, Vec3d &rvec, Vec3d &tvec)
+extern Rect cropRect;
+void CharucoSync::EstimatePose(Mat color, Vec3d &rvec, Vec3d &tvec)
 {
     color.copyTo(display);
+
+    Mat cropImg;
+    if (cropRect.width > 0 && cropRect.height > 0)
+        cropImg = color(cropRect).clone();
+    else
+        color.copyTo(cropImg);
+
     std::vector<int> markerIds;
     std::vector<std::vector<cv::Point2f>> markerCorners;
-    cv::aruco::detectMarkers(color, board->dictionary, markerCorners, markerIds, params);
+    cv::aruco::detectMarkers(cropImg, board->dictionary, markerCorners, markerIds, params);
     // if at least one marker detected
     if (markerIds.size() > 0)
     {
+        std::for_each(markerCorners.begin(), markerCorners.end(), [](vector<Point2f> &vec){for(Point2f &point:vec) point +=Point2f(cropRect.tl());});
         cv::aruco::drawDetectedMarkers(display, markerCorners, markerIds);
         std::vector<cv::Point2f> charucoCorners;
         std::vector<int> charucoIds;
@@ -66,12 +75,33 @@ void CharucoSync::EstimatePose(Mat color, Mat &display, Vec3d &rvec, Vec3d &tvec
         {
             cv::Scalar color = cv::Scalar(255, 0, 0);
             cv::aruco::drawDetectedCornersCharuco(display, charucoCorners, charucoIds, color);
-            //cv::Vec3d rvec, tvec;
-            // cv::aruco::estimatePoseCharucoBoard(charucoCorners, charucoIds, board, cameraMatrix, distCoeffs, rvec, tvec);
             bool valid = cv::aruco::estimatePoseCharucoBoard(charucoCorners, charucoIds, board, camMatrix, distCoeffs, rvec, tvec);
             // if charuco pose is valid
             if (valid)
                 cv::aruco::drawAxis(display, camMatrix, distCoeffs, rvec, tvec, 0.1f);
         }
     }
+    imshow("crop", cropImg);
+}
+
+extern bool clicked;
+extern Point2i P1, P2;
+extern float sfInv;
+extern void onMouseCropImage(int event, int x, int y, int f, void *param);
+void CharucoSync::Render()
+{
+    setMouseCallback("Synchronization", onMouseCropImage);
+    if (clicked)
+        cv::rectangle(display, P1, P2, CV_RGB(255, 255, 0), 3);
+    else if (cropRect.width > 0)
+        cv::rectangle(display, cropRect, CV_RGB(255, 255, 0), 3);
+    resize(display, display, Size(display.cols * sf, display.rows * sf));
+    imshow("Synchronization", display);
+    waitKey(1);
+}
+
+void CharucoSync::SetScalingFactor(float s)
+{
+    sf = s;
+    sfInv = 1 / s;
 }

@@ -37,12 +37,13 @@
 #include "ClientSocket.hh"
 #include "GlassTracker.hh"
 #include "CharucoSync.hh"
+//#include "quaternion_average.h"
 #define PORT 30303
 #define BE_NUM 22
 #define C_NUM 24
 
 //#define TEST
-
+extern Rect cropRect;
 void PrintUsage()
 {
     cout << "<Usage>" << endl;
@@ -59,7 +60,7 @@ typedef Triplet<double> T;
 
 int main(int argc, char **argv)
 {
-    //trackin option configuration
+    //trackin option configuration3
     string detParm("detector_params.yml");
     string camParm("camera2160.yml");
     GlassTracker glassTracker;
@@ -81,6 +82,8 @@ int main(int argc, char **argv)
             }
             if (!glassTracker.ReadCameraParameters(camParm))
             {
+                array<double, 187> pack;
+
                 cerr << "Check camera parmeter file! (" << camParm << ")" << endl;
                 return 1;
             }
@@ -138,9 +141,10 @@ int main(int argc, char **argv)
     VERIFY(k4abt_tracker_create(&sensorCalibration, tracker_config, &tracker), "Body tracker initialization failed!");
 
     // Synchronization
-  /*  CharucoSync sync;
+    CharucoSync sync;
     sync.SetParameters(camParm, detParm);
-
+    sync.SetScalingFactor(0.3f);
+    vector<Vector4d> quaternions;
     while (1)
     {
         k4a_capture_t sensorCapture = nullptr;
@@ -154,18 +158,25 @@ int main(int argc, char **argv)
         else if (getCaptureResult == K4A_WAIT_RESULT_TIMEOUT)
             continue;
 
-        Mat color, display;
+        Mat color;
         Vec3d rvec, tvec;
         k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
         color = color_to_opencv(color_img);
         k4a_image_release(color_img);
-        sync.EstimatePose(color, display, rvec, tvec);
-        resize(display, display, Size(display.cols*0.4, display.rows*0.4));
-        imshow("Synchronization", display);
+        k4a_capture_release(sensorCapture);
+        sync.EstimatePose(color, rvec, tvec);
+        double angle = norm(rvec);
+        Vector3d axis(rvec(0)/angle, rvec(1)/angle, rvec(2)/angle);
+        Quaterniond q(AngleAxisd(angle, axis));
+        quaternions.push_back(Vector4d(q.w(), q.x(), q.y(), q.z()));
+        sync.Render();
         char key = waitKey(1);
-        if(key=='q') break;
-    }*/
+        if (key == 'q')
+            break;
+    }
 
+    cropRect = Rect(0,0,0,0);
+    destroyWindow("Synchronization");
     int signal(-1);
     Window3dWrapper window3d;
 #ifndef TEST
@@ -279,10 +290,12 @@ int main(int argc, char **argv)
         window3d.SetCloseCallback(CloseCallback);
         window3d.SetKeyCallback(ProcessKey);
     }
+
     //variables
-
     Mat color;
+    mutex m;
 
+    int n = poseJoints.size();
     while (1)
     {
         k4a_capture_t sensorCapture = nullptr;
@@ -330,10 +343,9 @@ int main(int argc, char **argv)
                 VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight);
                 if (k4abt_frame_get_num_bodies(bodyFrame))
                 {
+#ifndef TEST
                     k4abt_body_t body;
                     k4abt_frame_get_body_skeleton(bodyFrame, 0, &body.skeleton);
-#ifndef TEST
-                    int n = poseJoints.size();
                     for (size_t i = 0; i < poseJoints.size(); i++)
                     {
                         pack[i] = 0;
@@ -344,18 +356,17 @@ int main(int argc, char **argv)
                         pack[n + i * 3 + 1] = body.skeleton.joints[poseJoints[i]].position.xyz.y * 0.1;
                         pack[n + i * 3 + 2] = body.skeleton.joints[poseJoints[i]].position.xyz.z * 0.1;
                     }
-                    n *= 4;
                     for (int i = 0; i < BE.rows(); i++)
                     {
                         k4a_quaternion_t q = body.skeleton.joints[i2k[BE(i, 0)]].orientation;
                         Quaterniond q1 = Quaterniond(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z) * alignRot[i];
                         q1.normalize();
-                        pack[n + i * 4] = q1.w();
-                        pack[n + i * 4 + 1] = q1.x();
-                        pack[n + i * 4 + 2] = q1.y();
-                        pack[n + i * 4 + 3] = q1.z();
+                        pack[n*4 + i * 4] = q1.w();
+                        pack[n*4 + i * 4 + 1] = q1.x();
+                        pack[n*4 + i * 4 + 2] = q1.y();
+                        pack[n*4 + i * 4 + 3] = q1.z();
                     }
-                    socket.SendDoubleBuffer(pack.data(), n + BE.rows() * 4);
+                    socket.SendDoubleBuffer(pack.data(), (n + BE.rows()) * 4);
                     socket.RecvIntBuffer(&signal, 1);
 #endif
                 }
