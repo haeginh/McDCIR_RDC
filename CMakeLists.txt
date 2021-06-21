@@ -18,14 +18,6 @@ endif()
 find_package(OpenCV)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
-#Geant4
-#option(WITH_GEANT4_UIVIS "Build example with Geant4 UI and Vis drivers" ON)
-#if(WITH_GEANT4_UIVIS)
-#  find_package(Geant4 REQUIRED ui_all vis_all)
-#else()
-#  find_package(Geant4 REQUIRED)
-#endif()
-
 #k4a
 FIND_PACKAGE(k4a REQUIRED)
 FIND_PACKAGE(k4abt REQUIRED)
@@ -34,48 +26,44 @@ add_subdirectory(helper)
 
 # libigl
 option(LIBIGL_WITH_OPENGL            "Use OpenGL"         ON)
-option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
-option(LIBIGL_WITH_OPENGL_GLFW_IMGUI "Use imgui"           ON)
-option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
+# option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
+# option(LIBIGL_WITH_OPENGL_GLFW_IMGUI "Use imgui"           ON)
+# option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
 find_package(LIBIGL REQUIRED QUIET)
 set(LIBIGL_DIR ${LIBIGL_INCLUDE_DIR}/..)
-
-## trase
-#find_package(trase REQUIRED)
 
 file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cc)
 file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hh)
 include_directories(${PROJECT_SOURCE_DIR}/include
                     ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/
-#                    ~/codes/trase/src/
                     ${LIBIGL_DIR}/external/
                     ${LIBIGL_DIR}/include/
-                    ${LIBIGL_DIR}/external/libigl-imgui/
-                    ${LIBIGL_DIR}/external/imgui/examples/
-                    ${LIBIGL_DIR}/external/imgui/
-                    ${LIBIGL_DIR}/external/glfw/include
-                    ${LIBIGL_DIR}/external/glad/include
+                    # ${LIBIGL_DIR}/external/libigl-imgui/
+                    # ${LIBIGL_DIR}/external/imgui/examples/
+                    # ${LIBIGL_DIR}/external/imgui/
+                    # ${LIBIGL_DIR}/external/glfw/include
+                    # ${LIBIGL_DIR}/external/glad/include
                     )
 
+## 2_tracker
 add_executable(2_tracker 2_tracker.cc ${sources} ${headers})
-
-# Dependencies of this library
 target_link_libraries(2_tracker
-    # igl::core
-    # igl::opengl
-#    igl::opengl_glfw
-#    /usr/lib/libglfw3.a
-    # /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
-    # igl::opengl_glfw_imgui
-    # igl::tetgen
     k4a
     k4arecord
     k4abt
     window_controller_3d::window_controller_3d
     ${OpenCV_LIBS}
-#    glfw
-#    trase
-    # ${Geant4_LIBRARIES}
-    # /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
     )
+
+## 3_synchronization
+add_executable(3_synchronization 3_synchronization.cc ${sources} ${headers})
+target_link_libraries(3_synchronization k4a ${OpenCV_LIBS})
+
+## 4_camera_calib
+add_executable(4_camera_calib 4_camera_calib.cc ${sources} ${headers})
+target_link_libraries(4_camera_calib k4a ${OpenCV_LIBS})
+
+## 5_charuco_gen
+add_executable(5_charuco_gen 5_charuco_gen.cc)
+target_link_libraries(5_charuco_gen ${OpenCV_LIBS})
 
