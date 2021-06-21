@@ -4,7 +4,7 @@
 #define PORT 30303
 
 Viewer::Viewer(PhantomAnimator *_phantom)
-    : sea_green(70. / 255., 252. / 255., 167. / 255.), white(1., 1., 1.), red(1., 0., 0.), blue(0.,0.,1.),
+    : sea_green(70. / 255., 252. / 255., 167. / 255.), white(1., 1., 1.), red(1., 0., 0.), blue(0., 0., 1.),
       listen(true), calib_signal(false), waitingCalib(false), initializing(true), phantom(_phantom)
 {
     menu.callback_draw_viewer_window = [&]()
@@ -22,12 +22,10 @@ Viewer::Viewer(PhantomAnimator *_phantom)
     };
     viewer.plugins.push_back(&menu);
     menu.callback_draw_viewer_menu = std::bind(&Viewer::MenuDesign, this);
-
-    //MenuDesign();
 }
 
 Viewer::~Viewer()
-{  
+{
     for (auto client : client_sockets)
         delete client.second;
     delete server;
@@ -37,6 +35,8 @@ static char num_client[3] = "0";
 static char status[30] = "not listening";
 static char runStatus[20] = "pre-init.";
 static int calib_sock(20);
+static int profileID(0);
+static char newProfile[20] = "H_Han";
 void Viewer::MenuDesign()
 {
     float w = ImGui::GetContentRegionAvailWidth();
@@ -69,19 +69,22 @@ void Viewer::MenuDesign()
         ImGui::InputText("status", status, ImGuiInputTextFlags_None);
         ImGui::InputText("connected", num_client, ImGuiInputTextFlags_None);
     }
+    static vector<string> profileNames;
     if (ImGui::CollapsingHeader("Initialization", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::InputInt("calib. sock.", &calib_sock);
-        if (ImGui::Button("Start calibration!", ImVec2(w, 0)))
+        vector<string> names = phantom->GetProfileNames();
+        profileNames.resize(names.size());
+        copy(names.begin(), names.end(), profileNames.begin());
+        ImGui::Combo("profile", &profileID, profileNames);
+        ImGui::InputText("add new profile", newProfile, ImGuiInputTextFlags_CharsNoBlank);
+        ImGui::InputInt("socket num.", &calib_sock);
+        if (ImGui::Button("Start measurement!", ImVec2(w, 0)))
         {
-            if (initializing)
+            if(phantom->AlreadyExists(newProfile))
+                cout<<newProfile<<" aready exists!"<<endl;
+            else if (initializing)
                 calib_signal = true;
         }
-        //calib from file
-    }
-    if (ImGui::CollapsingHeader("Synchronization", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        //to-to
     }
     ImGui::Separator();
     ImGui::InputText("status", runStatus, ImGuiInputTextFlags_None);
@@ -91,13 +94,14 @@ void Viewer::MenuDesign()
         {
             initializing = false;
             init_th.join();
-            //run_th = thread(&Viewer::Communication_run, this);
+            phantom->CalibrateTo(profileNames[profileID]);
             viewer.callback_pre_draw = std::bind(&Viewer::Communication_run, this, std::placeholders::_1);
             viewer.core(v1_view).animation_max_fps = 10;
             viewer.core(v1_view).is_animating = true;
             strcpy(runStatus, "running");
         }
-        else if(initializing){
+        else if (initializing)
+        {
             strcpy(status, "Plz init first!");
         }
     }
@@ -107,7 +111,7 @@ void Viewer::MenuDesign()
         if (viewer.core(v1_view).is_animating)
         {
             strcpy(runStatus, "running");
-           // cv.notify_all();
+            // cv.notify_all();
         }
         else
             strcpy(runStatus, "idle");
@@ -434,8 +438,18 @@ void Viewer::Communication_init()
             eyeR_pos = Vector3d(pack[i + 4], pack[i + 5], pack[i + 6]);
             int calibFrame = pack[i + 7];
             cout << "done" << endl;
-            (*client_sockets[calib_sock]) << phantom->Calibrate(calibLengths, eyeL_pos, eyeR_pos, calibFrame);
             waitingCalib = false;
+            
+            for(i=0;i<BE.rows();i++)
+            {
+                if(calibLengths.find(i)==calibLengths.end()) continue;
+                calibLengths[i] /= (double)calibFrame * 10;
+            }
+            eyeR_pos /= (double)calibFrame * 10;
+            eyeL_pos /= (double)calibFrame * 10;
+            profileID = phantom->AddProfile(calibLengths, eyeL_pos, eyeR_pos, newProfile);
+            phantom->WriteProfileData("profile.txt");
+            (*client_sockets[calib_sock]) << "Profile data for " + string(newProfile) + " was successfully transmitted!";
         }
     }
     string msg;
@@ -449,7 +463,8 @@ void Viewer::Communication_init()
 
 bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
 {
-    igl::Timer timer; timer.start();
+    igl::Timer timer;
+    timer.start();
     fd_set tmp;
     array<double, 187> pack; //max
     int numBE = phantom->GetBE().rows();
@@ -477,7 +492,7 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
 
         RotationList vQ;
         vQ.resize(numBE);
-        MatrixXd C_disp(24,3);
+        MatrixXd C_disp(24, 3);
         MatrixXi BE = phantom->GetBE();
         unsigned int reliability(0), r(0);
         vector<int> eraseSID;
@@ -487,10 +502,13 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
                 continue;
             if (sid.second & 8) //motion
             {
-                if(!client_sockets[sid.first]->RecvDoubleBuffer(pack.data(), dataNum)) {
+                if (!client_sockets[sid.first]->RecvDoubleBuffer(pack.data(), dataNum))
+                {
                     eraseSID.push_back(sid.first);
                     continue;
                 }
+                int signal(1);
+                client_sockets[sid.first]->SendIntBuffer(&signal, 1);
                 if (!reliability)
                 {
                     int i = 0;
@@ -513,23 +531,26 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
                     unsigned int r_chk = (~reliability) & r; //not existing, but exists in the new data
                     for (int row = 0; i < 24 * 4; row++)
                     {
-                        if(!(r_chk & reliab_opt[row])){
-                            i+= 3; continue;
+                        if (!(r_chk & reliab_opt[row]))
+                        {
+                            i += 3;
+                            continue;
                         }
                         C_disp(row, 0) = pack[i++];
                         C_disp(row, 1) = pack[i++];
                         C_disp(row, 2) = pack[i++];
                     }
-                    for (int row = 0; i < dataNum; i += 4, row++){
-                        if(!(r_chk & reliab_opt[BE(row,0)])){
-                            i+= 4; continue;
-                        }                        
+                    for (int row = 0; i < dataNum; i += 4, row++)
+                    {
+                        if (!(r_chk & reliab_opt[BE(row, 0)]))
+                        {
+                            i += 4;
+                            continue;
+                        }
                         vQ[row] = Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
                     }
                     reliability |= r;
                 }
-                int signal(1);
-                client_sockets[sid.first]->SendIntBuffer(&signal, 1);
             }
             if (sid.second & 4) //glass
             {
@@ -541,24 +562,29 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
             {
             }
         }
-        for(int i:eraseSID) 
+        for (int i : eraseSID)
         {
             client_sockets.erase(i);
             sock_opts.erase(i);
         }
-        timer.stop(); cout<<"data transfer: "<<timer.getElapsedTime()<<endl; timer.start();
+        timer.stop();
+        cout << "data transfer: " << timer.getElapsedTime() << endl;
+        timer.start();
         if (reliability)
         {
             MatrixXd C_new, V_new;
             phantom->Animate(vQ, C_disp, C_new, V_new);
-            timer.stop(); cout<<"animation: "<<timer.getElapsedTime()<<endl; timer.start();
-            viewer.data(v1).set_points(C_disp,blue);
+            timer.stop();
+            cout << "animation: " << timer.getElapsedTime() << endl;
+            timer.start();
+            viewer.data(v1).set_points(C_disp, blue);
             viewer.data(v1).set_edges(C_new, BE, sea_green);
             viewer.data(v1).set_vertices(V_new);
             viewer.data(v1).compute_normals();
-            timer.stop(); cout<<"vis: "<<timer.getElapsedTime()<<endl;
+            timer.stop();
+            cout << "vis: " << timer.getElapsedTime() << endl;
         }
-        cout<<endl;
+        cout << endl;
         //cout<<bitset<22>(reliability)<<endl;
     }
     return false;

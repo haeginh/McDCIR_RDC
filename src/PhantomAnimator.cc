@@ -4,6 +4,7 @@ PhantomAnimator::PhantomAnimator() {}
 PhantomAnimator::PhantomAnimator(string prefix)
 {
     ReadFiles(prefix);
+    ReadProfileData("profile.txt");
 }
 
 bool PhantomAnimator::ReadFiles(string prefix)
@@ -219,8 +220,13 @@ bool PhantomAnimator::Initialize()
     return true;
 }
 
-string PhantomAnimator::Calibrate(map<int, double> calibLengths, Vector3d eyeL_pos, Vector3d eyeR_pos, int calibFrame)
+string PhantomAnimator::CalibrateTo(string name)
 {
+    int id = profileIDs[name];
+    map<int, double> calibLengths = jointLengths[id];
+    Vector3d eyeL_pos = eyeL_vec[id];
+    Vector3d eyeR_pos = eyeR_vec[id];
+    
     MatrixXd jointTrans = MatrixXd::Zero(C.rows(), 3);
     int headJ(24), eyeLJ(22), eyeRJ(23);
     stringstream ss;
@@ -232,7 +238,6 @@ string PhantomAnimator::Calibrate(map<int, double> calibLengths, Vector3d eyeL_p
             jointTrans.row(BE(i, 1)) = jointTrans.row(BE(P(i), 1));
             continue;
         }
-        calibLengths[i] /= (double)calibFrame * 10;
         double ratio = calibLengths[i] / lengths[i];
         cout << i << " : " << lengths[i] << " -> " << calibLengths[i] << " (" << ratio * 100 << " %)" << endl;
         ss << i << " : " << ratio * 100 << " %" << endl;
@@ -242,8 +247,6 @@ string PhantomAnimator::Calibrate(map<int, double> calibLengths, Vector3d eyeL_p
         jointTrans.row(BE(i, 1)) += jointTrans.row(BE(P(i), 1));
     }
 
-    eyeR_pos /= (double)calibFrame * 10;
-    eyeL_pos /= (double)calibFrame * 10;
     jointTrans.row(eyeLJ) = C.row(headJ) + jointTrans.row(headJ) + eyeL_pos.transpose() - C.row(eyeLJ);
     jointTrans.row(eyeRJ) = C.row(headJ) + jointTrans.row(headJ) + eyeR_pos.transpose() - C.row(eyeRJ);
     jointTrans.row(headJ) = MatrixXd::Zero(1, 3);
@@ -287,4 +290,107 @@ void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd 
         }
         myDqs(V, cleanWeights, vQ, vT, V_new);
     }
+}
+
+bool PhantomAnimator::ReadProfileData(string fileName)
+{
+    ifstream ifs(fileName);
+    if (!ifs.is_open())
+    {
+        cout << "There is no " + fileName << endl;
+        return false;
+    }
+    profileIDs.clear();
+    jointLengths.clear();
+    eyeR_vec.clear();
+    eyeL_vec.clear();
+
+    int num;
+    ifs >> num;
+    string firstLine;
+    getline(ifs, firstLine);
+    jointLengths.resize(num);
+    eyeR_vec.resize(num);
+    eyeL_vec.resize(num);
+
+    getline(ifs, firstLine);
+    stringstream ss(firstLine);
+    vector<int> boneIDs;
+    for (int i = 0; i < 17; i++)
+    {
+        int boneID;
+        ss >> boneID;
+        boneIDs.push_back(boneID);
+    }
+
+    for (int i = 0; i < num; i++)
+    {
+        string aLine;
+        getline(ifs, aLine);
+        stringstream ss1(aLine);
+        string name;
+        double d;
+        ss1 >> name;
+        profileIDs[name] = i;
+        for (int j = 0; j < 17; j++)
+        {
+            double d;
+            ss1 >> d;
+            jointLengths[i][boneIDs[j]] = d;
+        }
+        for (int j = 0; j < 3; j++)
+        {
+            ss1 >> d;
+            eyeL_vec[i](j) = d;
+        }
+        for (int j = 0; j < 3; j++)
+        {
+            ss1 >> d;
+            eyeR_vec[i](j) = d;
+        }
+    }
+
+    ifs.close();
+    return true;
+}
+
+bool PhantomAnimator::WriteProfileData(string filename)
+{
+    if (!jointLengths.size())
+        return false;
+    ofstream ofs(filename);
+    int num = jointLengths.size();
+    ofs << num << endl
+        << "\t";
+
+    vector<int> boneIDs;
+    for (auto iter : jointLengths[0])
+        boneIDs.push_back(iter.first);
+
+    for (int i : boneIDs)
+    {
+        ofs << i << "\t";
+    }
+    ofs << "eyeL_x\teyeL_y\teyeL_z\teyeR_x\teyeR_y\teyeR_z" << endl;
+
+    vector<string> names;
+    names.resize(num);
+    for (auto iter : profileIDs)
+        names[iter.second] = iter.first;
+
+    for (int i = 0; i < num; i++)
+    {
+        ofs << names[i] << "\t";
+        for (int j = 0; j < 17; j++)
+            ofs << jointLengths[i][boneIDs[j]] << "\t";
+        for (int j = 0; j < 3; j++)
+            ofs << eyeL_vec[i](j) << "\t";
+        for (int j = 0; j < 3; j++)
+            ofs << eyeR_vec[i](j) << "\t";
+        ofs << endl;
+    }
+
+    ofs.close();
+
+    return true;
 }

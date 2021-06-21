@@ -42,7 +42,7 @@ public:
 
     bool ReadFiles(string prefix);
     bool Initialize();
-    string Calibrate(map<int, double> calibLengths, Vector3d eyeL_pos, Vector3d eyeR_pos, int calibFrame);
+    string CalibrateTo(string name);
     void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, MatrixXd &V_new, bool calibChk = true);
 
     void GetMeshes(MatrixXd &_V, MatrixXi &_F, MatrixXd &_C, MatrixXi &_BE){
@@ -55,7 +55,31 @@ public:
     MatrixXi GetBE(){ return BE; }
     RotationList GetAlignRot() {return alignRot;}
    
-private:
+public:
+    bool ReadProfileData(string fileName);
+    bool WriteProfileData(string fileName);
+    int AddProfile(map<int, double> calibLengths, Vector3d eyeL_pos, Vector3d eyeR_pos, string name){
+        auto iter = profileIDs.insert(make_pair(name, jointLengths.size()));
+        jointLengths.push_back(calibLengths);
+        eyeL_vec.push_back(eyeL_pos);
+        eyeR_vec.push_back(eyeR_pos);
+        return distance(profileIDs.begin(), iter.first);
+    }
+    vector<string> GetProfileNames()
+    {
+        vector<string> names;
+        for(auto iter:profileIDs) names.push_back(iter.first);
+        return names;
+    }
+    bool AlreadyExists(string name)
+    {
+        if(profileIDs.find(name)==profileIDs.end()) return false;
+        else return true;
+    }
+    map<string, int> profileIDs;
+    vector<map<int, double>> jointLengths;
+    vector<Vector3d> eyeR_vec, eyeL_vec;
+
 //variables
 private:
     MatrixXd C, V, W, Wj;
