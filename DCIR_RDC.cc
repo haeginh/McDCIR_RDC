@@ -28,26 +28,26 @@ int main(int argc, char **argv)
     phantom->Initialize();
 
     //charuco mark
-    Quaterniond q;
-    Vector3d tvec;
-    string dump;
-    ifstream ifs("test.txt");
-    ifs >> dump >> q.x() >> q.y() >> q.z() >> q.w();
-    ifs >> dump >> tvec(0) >> tvec(1) >> tvec(2);
-    ifs.close();
-    Affine3d coordAff = Affine3d::Identity();
-    q.normalize();
-    coordAff.rotate(q.toRotationMatrix().transpose());
-    coordAff.translate(-tvec);
+    // Quaterniond q;
+    // Vector3d tvec;
+    // string dump;
+    // ifstream ifs("test.txt");
+    // ifs >> dump >> q.x() >> q.y() >> q.z() >> q.w();
+    // ifs >> dump >> tvec(0) >> tvec(1) >> tvec(2);
+    // ifs.close();
+    // Affine3d coordAff = Affine3d::Identity();
+    // q.normalize();
+    // coordAff.rotate(q.toRotationMatrix().transpose());
+    // coordAff.translate(-tvec);
 
-    Affine3d charucoAff = Affine3d::Identity();
-    charucoAff.translate(tvec);
-    charucoAff.rotate(q);
+    // Affine3d charucoAff = Affine3d::Identity();
+    // charucoAff.translate(tvec);
+    // charucoAff.rotate(q);
     
     //libigl viewer
     Viewer *viewer = new Viewer(phantom);
-    viewer->SetCharucoAff(charucoAff);
-    viewer->SetCoordAff(coordAff);
+    // viewer->SetCharucoAff(charucoAff);
+    // viewer->SetCoordAff(coordAff);
     viewer->SetMeshes();
     viewer->SetCores();
 

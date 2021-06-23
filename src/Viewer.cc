@@ -266,8 +266,8 @@ void Viewer::SetMeshes()
     igl::readPLY("charuco.ply", V_charuco, F_charuco);
     viewer.data().set_mesh(V_cArm, F_cArm);
     viewer.append_mesh();
-    TransformVertices(V_charuco, charucoAff);
-    TransformVertices(V_charuco, coordAff);
+    // TransformVertices(V_charuco, charucoAff);
+    // TransformVertices(V_charuco, coordAff);
     viewer.data().set_mesh(V_charuco, F_charuco);
     igl::writeOBJ("charuco.obj", V_charuco, F_charuco);
     viewer.append_mesh();
@@ -352,7 +352,7 @@ void Viewer::Communication_init()
     //bitwise operation (motion, class, bed, c-arm): ex) motion + bed = 10
 
     //packages to broadcast
-    array<double, 155> pack;
+    array<double, 155> pack, pack_recv;
     RotationList alignRot = phantom->GetAlignRot();
     MatrixXi BE = phantom->GetBE();
     int num_bone = phantom->GetBE().rows();
@@ -388,13 +388,18 @@ void Viewer::Communication_init()
             else
             {
                 int sd = _sock->GetSocket();
+                FD_SET(sd, &readfds);
+                if (sd > max_sd)
+                    max_sd = sd;
+                
                 strcpy(num_client, to_string(atoi(num_client) + 1).c_str());
                 cout << "new connection from "
                      << inet_ntoa(_sock->GetAdrrInfo().sin_addr)
                      << " (sock #" << sd << ") / opt: ";
                 (*_sock) << "welcome socket #" + to_string(sd) + "!";
-                int tracking_id;
-                _sock->RecvIntBuffer(&tracking_id, 1);
+                
+                _sock->RecvDoubleBuffer(pack_recv.data(), 8);
+                int tracking_id = (int)pack_recv[0];
                 sock_opts[sd] = tracking_id;
                 client_sockets[sd] = _sock;
                 if (tracking_id & 8)
@@ -406,9 +411,12 @@ void Viewer::Communication_init()
                 if (tracking_id & 1)
                     cout << "c-arm ";
                 cout << endl;
-                FD_SET(sd, &readfds);
-                if (sd > max_sd)
-                    max_sd = sd;
+
+                Affine3d aff = Affine3d::Identity();
+                aff.rotate(Quaterniond(pack_recv[4],pack_recv[1],pack_recv[2],pack_recv[3]).normalized().toRotationMatrix().transpose());
+                aff.translate(-Vector3d(pack_recv[5],pack_recv[6],pack_recv[7]));
+                sock_coord[sd] = aff;
+                
                 if (tracking_id > 1)
                 {
                     cout << "-> Sending alignRot/BE data.." << flush;
@@ -496,7 +504,7 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
 
         int activity = select(max_sd + 1, &tmp, NULL, NULL, &sel_timeout);
         if (activity < 0 && errno != EINTR)
-            cout << "" << flush;
+            return true;
         if (FD_ISSET(server->GetSocket(), &tmp))
         {
             ServerSocket _sock;
@@ -556,8 +564,9 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
                         C_disp(n, 1) = pack[i++];
                         C_disp(n, 2) = pack[i++];
                     }
+                    TransformVertices(C_disp, sock_coord[sid.first]);
                     for (int r = 0; r < numBE; i += 4, r++)
-                        vQ[r] = Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
+                          vQ[r] = sock_coord[sid.first].rotation()*Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
                 }
                 else
                 {
@@ -576,6 +585,7 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
                         C_disp(row, 1) = pack[i++];
                         C_disp(row, 2) = pack[i++];
                     }
+                    TransformVertices(C_disp, sock_coord[sid.first]);
                     for (int row = 0; row < numBE; i += 4, row++)
                     {
                         if (!(r_chk & reliab_opt[BE(row, 0)]))
@@ -583,8 +593,9 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
                             i += 4;
                             continue;
                         }
-                        vQ[row] = Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
+                        vQ[row] = sock_coord[sid.first].rotation()*Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
                     }
+
                     reliability |= r;
                 }
             }
@@ -604,9 +615,6 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
         if (reliability)
         {
             MatrixXd C_new, V_new;
-            TransformVertices(C_disp, coordAff);
-            for (auto &q : vQ)
-                q = coordAff.rotation() * q;
             phantom->Animate(vQ, C_disp, C_new, V_new);
             // timer.stop();
             // cout << "animation: " << timer.getElapsedTime() << endl;
@@ -620,7 +628,6 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
             // timer.stop();
             // cout << "vis: " << timer.getElapsedTime() << endl;
         }
-        cout << endl;
         //cout<<bitset<22>(reliability)<<endl;
     }
     return false;
