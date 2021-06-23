@@ -34,7 +34,7 @@ class Viewer{
     igl::opengl::glfw::imgui::ImGuiMenu menu;
     MatrixXd V_cumul;
     int v1_view, v2_view;
-    int v1, v1_patient, v1_cArm, v2;
+    int v1, v1_patient, v1_cArm, v1_charuco, v2;
     RowVector3d sea_green, white, red, blue;
     
     //numbers
@@ -65,6 +65,16 @@ class Viewer{
     PhantomAnimator *phantom;
     vector<unsigned int> reliab_opt;
 
+
+    //temp
+    public:
+    void SetCharucoAff(Affine3d aff) { charucoAff = aff; }
+    void SetCoordAff(Affine3d aff) { coordAff = aff; }
+    void TransformVertices(MatrixXd &V, Affine3d aff)
+    {V = (V.rowwise().homogeneous()*aff.matrix().transpose()).rowwise().hnormalized();}
+
+    private:
+    Affine3d charucoAff, coordAff;
 };
 static std::condition_variable cv;
 static std::mutex m;

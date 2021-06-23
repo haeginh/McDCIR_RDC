@@ -50,6 +50,25 @@ const ClientSocket& ClientSocket::SendDoubleBuffer ( const double* buf, int num,
     return *this;
 }
 
+const ClientSocket& ClientSocket::RecvFloatBuffer ( float* arr, int num ) const
+{
+  if ( ! Socket::recv ( arr, num ) )
+    {
+      throw SocketException ( "Could not read from socket." );
+    }
+
+  return *this;
+}
+
+const ClientSocket& ClientSocket::SendFloatBuffer ( const float* buf, int num, int wait) const{
+    if ( ! Socket::send ( buf, num ) )
+      {
+        throw SocketException ( "Could not write to socket." );
+      }
+    else usleep(wait);
+    return *this;
+}
+
 const ClientSocket& ClientSocket::RecvIntBuffer ( int* arr, int num ) const
 {
   if ( ! Socket::recv ( arr, num ) )

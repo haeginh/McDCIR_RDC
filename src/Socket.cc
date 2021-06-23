@@ -138,6 +138,19 @@ bool Socket::send ( const double* buff, int num ) const
     }
 }
 
+bool Socket::send ( const float* buff, int num ) const
+{
+  int status = ::send ( m_sock, (void*) buff, num*4, MSG_NOSIGNAL );
+  if ( status == -1 )
+    {
+      return false;
+    }
+  else
+    {
+      return true;
+    }
+}
+
 bool Socket::send ( const int* buff, int num ) const
 {
   int status = ::send ( m_sock, (void*) buff, sizeof(int)*num, MSG_NOSIGNAL );
@@ -181,6 +194,25 @@ int Socket::recv ( std::string& s ) const
 int Socket::recv ( double* arr, int num) const
 {
   int status = ::recv ( m_sock, (void*) arr, num*8, 0 );
+
+  if ( status == -1 )
+    {
+      std::cout << "status == -1   errno == " << errno << "  in Socket::recv\n";
+      return 0;
+    }
+  else if ( status == 0 )
+    {
+      return 0;
+    }
+  else
+    {
+      return status;
+    }
+}
+
+int Socket::recv ( float* arr, int num) const
+{
+  int status = ::recv ( m_sock, (void*) arr, num*4, 0 );
 
   if ( status == -1 )
     {

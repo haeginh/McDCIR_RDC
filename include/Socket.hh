@@ -40,8 +40,10 @@ class Socket
 
   // Buffer Transimission
   bool send ( const double*, int ) const;
+  bool send ( const float*, int ) const;
   bool send ( const int*, int ) const;
   int recv ( double*, int ) const;
+  int recv ( float*, int ) const;
   int recv ( int*, int ) const;
 
 

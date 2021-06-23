@@ -19,6 +19,8 @@ class ServerSocket : private Socket
 
   int RecvDoubleBuffer ( double*, int );
   int SendDoubleBuffer ( const double*, int, int wait=0);
+  int RecvFloatBuffer ( float*, int );
+  int SendFloatBuffer ( const float*, int, int wait=0);
   int RecvIntBuffer ( int*, int );
   int SendIntBuffer ( const int*, int, int wait=0 );
 

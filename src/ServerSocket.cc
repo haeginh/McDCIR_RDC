@@ -68,6 +68,26 @@ int ServerSocket::SendDoubleBuffer(const double *buf, int num, int wait)
   return 0;
 }
 
+int ServerSocket::RecvFloatBuffer(float *arr, int num)
+{
+  if(Socket::recv(arr, num))
+    return 1;
+  std::cout<<"socket #"<<get_socket()<<" is disconnected -> delete this!"<<std::endl;
+  delete this;
+  return 0;
+}
+
+int ServerSocket::SendFloatBuffer(const float *buf, int num, int wait)
+{
+  if(Socket::send(buf, num)){
+    usleep(wait);
+    return 1;
+  }
+  std::cout<<"socket #"<<get_socket()<<" is disconnected -> delete this!"<<std::endl;
+  delete this;
+  return 0;
+}
+
 int ServerSocket::RecvIntBuffer(int *arr, int num)
 {
   if(Socket::recv(arr, num))

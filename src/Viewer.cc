@@ -80,8 +80,8 @@ void Viewer::MenuDesign()
         ImGui::InputInt("socket num.", &calib_sock);
         if (ImGui::Button("Start measurement!", ImVec2(w, 0)))
         {
-            if(phantom->AlreadyExists(newProfile))
-                cout<<newProfile<<" aready exists!"<<endl;
+            if (phantom->AlreadyExists(newProfile))
+                cout << newProfile << " aready exists!" << endl;
             else if (initializing)
                 calib_signal = true;
         }
@@ -260,10 +260,16 @@ void Viewer::SetMeshes()
     viewer.append_mesh();
     viewer.load_mesh_from_file("patient3.obj");
     viewer.append_mesh();
-    MatrixXd V_cArm;
-    MatrixXi F_cArm;
+    MatrixXd V_cArm, V_charuco;
+    MatrixXi F_cArm, F_charuco;
     igl::readPLY("c-arm.ply", V_cArm, F_cArm);
+    igl::readPLY("charuco.ply", V_charuco, F_charuco);
     viewer.data().set_mesh(V_cArm, F_cArm);
+    viewer.append_mesh();
+    TransformVertices(V_charuco, charucoAff);
+    TransformVertices(V_charuco, coordAff);
+    viewer.data().set_mesh(V_charuco, F_charuco);
+    igl::writeOBJ("charuco.obj", V_charuco, F_charuco);
     viewer.append_mesh();
     MatrixXd V_cumul(V);
     viewer.data().set_mesh(V, F);
@@ -271,7 +277,8 @@ void Viewer::SetMeshes()
     v1 = viewer.data_list[0].id;
     v1_patient = viewer.data_list[1].id;
     v1_cArm = viewer.data_list[2].id;
-    v2 = viewer.data_list[3].id;
+    v1_charuco = viewer.data_list[3].id;
+    v2 = viewer.data_list[4].id;
 
     viewer.data(v1).set_edges(C, BE, sea_green);
     viewer.data(v1).show_lines = false;
@@ -283,8 +290,10 @@ void Viewer::SetMeshes()
     viewer.data(v1_patient).show_lines = true;
     viewer.data(v1_patient).show_overlay_depth = false;
     viewer.data(v1_patient).show_faces = false;
+    viewer.data(v1_patient).is_visible = false;
     viewer.data(v1_cArm).set_colors(white);
     viewer.data(v1_cArm).show_lines = false;
+    viewer.data(v1_cArm).is_visible = false;
     viewer.data(v2).show_lines = false;
     viewer.data(v2).show_overlay_depth = true;
     viewer.data(v2).double_sided = false;
@@ -306,14 +315,18 @@ void Viewer::SetCores()
         v2_view = viewer.append_core(Eigen::Vector4f(640, 0, 640, 800));
         viewer.core(v1_view).background_color = Eigen::Vector4f(109. / 255., 100. / 255., 102. / 255., 1);
         viewer.core(v2_view).background_color = Eigen::Vector4f(163. / 255., 163. / 255., 163. / 255., 1);
-        viewer.core(v1_view).camera_eye = Eigen::Vector3f(0, 0, -2);
+
+        viewer.core(v1_view).camera_eye = Eigen::Vector3f(20, -20, 20);
+        viewer.core(v1_view).camera_center = Eigen::Vector3f(0, 0, 10);
+        viewer.core(v1_view).camera_up = Eigen::Vector3f(0, 0, 1);
+
         viewer.core(v2_view).camera_eye = Eigen::Vector3f(0, 0, -3);
-        viewer.core(v1_view).camera_up = Eigen::Vector3f(0, -1, 0);
         viewer.core(v2_view).camera_up = Eigen::Vector3f(0, -1, 0);
 
         viewer.data(v1).set_visible(false, v2_view);
         viewer.data(v1_patient).set_visible(false, v2_view);
         viewer.data(v1_cArm).set_visible(false, v2_view);
+        viewer.data(v1_charuco).set_visible(false, v2_view);
         viewer.data(v2).set_visible(false, v1_view);
 
         return false;
@@ -439,10 +452,11 @@ void Viewer::Communication_init()
             int calibFrame = pack[i + 7];
             cout << "done" << endl;
             waitingCalib = false;
-            
-            for(i=0;i<BE.rows();i++)
+
+            for (i = 0; i < BE.rows(); i++)
             {
-                if(calibLengths.find(i)==calibLengths.end()) continue;
+                if (calibLengths.find(i) == calibLengths.end())
+                    continue;
                 calibLengths[i] /= (double)calibFrame * 10;
             }
             eyeR_pos /= (double)calibFrame * 10;
@@ -463,10 +477,10 @@ void Viewer::Communication_init()
 
 bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
 {
-    igl::Timer timer;
-    timer.start();
+    // igl::Timer timer;
+    // timer.start();
     fd_set tmp;
-    array<double, 187> pack; //max
+    array<float, 375> pack; //max ()
     int numBE = phantom->GetBE().rows();
     int dataNum = (24 + numBE) * 4;
     if (viewer.core(v1_view).is_animating)
@@ -477,8 +491,8 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
         //     cv.wait(lock);
         // }
         tmp = readfds;
-        sel_timeout.tv_sec = 3;
-        sel_timeout.tv_usec = 0;
+        sel_timeout.tv_sec = 0;
+        sel_timeout.tv_usec = 1;
 
         int activity = select(max_sd + 1, &tmp, NULL, NULL, &sel_timeout);
         if (activity < 0 && errno != EINTR)
@@ -500,36 +514,58 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
         {
             if (!FD_ISSET(sid.first, &tmp))
                 continue;
-            if (sid.second & 8) //motion
+
+            if (!client_sockets[sid.first]->RecvFloatBuffer(pack.data(), 375))
             {
-                if (!client_sockets[sid.first]->RecvDoubleBuffer(pack.data(), dataNum))
-                {
-                    eraseSID.push_back(sid.first);
-                    continue;
-                }
-                int signal(1);
-                client_sockets[sid.first]->SendIntBuffer(&signal, 1);
+                eraseSID.push_back(sid.first);
+                continue;
+            }
+            // for (int i = 0; i < 375; i++)
+            //     cout << i << ": " << pack[i] << endl;
+            // cout << "-----------------" << endl;
+            int capture_opt = pack[374];
+
+            int signal(1);
+            client_sockets[sid.first]->SendIntBuffer(&signal, 1);
+
+            if (capture_opt & 2) //bed
+            {
+            }
+            if (capture_opt & 4) //glass (0-7)
+            {
+                Quaterniond q;
+                Vector3d t;
+                pack[0] = q.x();
+                pack[1] = q.y();
+                pack[2] = q.z();
+                pack[3] = q.w();
+                pack[4] = t(0);
+                pack[5] = t(1);
+                pack[6] = t(2);
+            }
+            if (capture_opt & 8) //motion (7-)
+            {
                 if (!reliability)
                 {
-                    int i = 0;
-                    for (; i < 24; i++)
-                        reliability |= bool(pack[i]) << i;
-                    for (int r = 0; i < 24 * 4; r++)
+                    int i = 7;
+                    for (int n=0; n < 24; n++)
+                        reliability |= bool(pack[i]) << i++;
+                    for (int n = 0; n < 24 ; n++)
                     {
-                        C_disp(r, 0) = pack[i++];
-                        C_disp(r, 1) = pack[i++];
-                        C_disp(r, 2) = pack[i++];
+                        C_disp(n, 0) = pack[i++];
+                        C_disp(n, 1) = pack[i++];
+                        C_disp(n, 2) = pack[i++];
                     }
-                    for (int r = 0; i < dataNum; i += 4, r++)
+                    for (int r = 0; r < numBE; i += 4, r++)
                         vQ[r] = Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
                 }
                 else
                 {
-                    int i = 0;
-                    for (; i < 24; i++)
-                        r |= bool(pack[i]) << i;
+                    int i = 7;
+                    for (int n=0; n < 24; n++)
+                        r |= bool(pack[i]) << i++;
                     unsigned int r_chk = (~reliability) & r; //not existing, but exists in the new data
-                    for (int row = 0; i < 24 * 4; row++)
+                    for (int row = 0; row < 24; row++)
                     {
                         if (!(r_chk & reliab_opt[row]))
                         {
@@ -540,7 +576,7 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
                         C_disp(row, 1) = pack[i++];
                         C_disp(row, 2) = pack[i++];
                     }
-                    for (int row = 0; i < dataNum; i += 4, row++)
+                    for (int row = 0; row < numBE; i += 4, row++)
                     {
                         if (!(r_chk & reliab_opt[BE(row, 0)]))
                         {
@@ -552,12 +588,7 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
                     reliability |= r;
                 }
             }
-            if (sid.second & 4) //glass
-            {
-            }
-            if (sid.second & 2) //bed
-            {
-            }
+
             if (sid.second & 1) //c-arm
             {
             }
@@ -567,22 +598,27 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
             client_sockets.erase(i);
             sock_opts.erase(i);
         }
-        timer.stop();
-        cout << "data transfer: " << timer.getElapsedTime() << endl;
-        timer.start();
+        // timer.stop();
+        // cout << "data transfer: " << timer.getElapsedTime() << endl;
+        // timer.start();
         if (reliability)
         {
             MatrixXd C_new, V_new;
+            TransformVertices(C_disp, coordAff);
+            for (auto &q : vQ)
+                q = coordAff.rotation() * q;
             phantom->Animate(vQ, C_disp, C_new, V_new);
-            timer.stop();
-            cout << "animation: " << timer.getElapsedTime() << endl;
-            timer.start();
+            // timer.stop();
+            // cout << "animation: " << timer.getElapsedTime() << endl;
+            // timer.start();
+
             viewer.data(v1).set_points(C_disp, blue);
             viewer.data(v1).set_edges(C_new, BE, sea_green);
+
             viewer.data(v1).set_vertices(V_new);
             viewer.data(v1).compute_normals();
-            timer.stop();
-            cout << "vis: " << timer.getElapsedTime() << endl;
+            // timer.stop();
+            // cout << "vis: " << timer.getElapsedTime() << endl;
         }
         cout << endl;
         //cout<<bitset<22>(reliability)<<endl;
