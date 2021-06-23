@@ -58,7 +58,6 @@ typedef Triplet<double> T;
 
 int main(int argc, char **argv)
 {
-    //trackin option configuration3
     string detParm("detector_params.yml");
     string camParm("camera2160.yml");
     GlassTracker glassTracker;
@@ -66,6 +65,8 @@ int main(int argc, char **argv)
     if (argc < 3)
         PrintUsage();
     int option(0);
+
+    //trackin option configuration
     for (int i = 2; i < argc; i++)
     {
         if (string(argv[i]) == "-m")
@@ -89,7 +90,7 @@ int main(int argc, char **argv)
         else if (string(argv[i]) == "-b")
             option = option | 2; // 0010
     }
-
+    
     //connection to server
 #ifndef TEST
     string ip(argv[1]);
@@ -98,7 +99,16 @@ int main(int argc, char **argv)
     array<double, 187> pack;
     socket >> msg;
     cout << msg << endl;
-    socket.SendIntBuffer(&option, 1);
+
+    //read sync data
+    string dump;
+    ifstream ifs("test.txt");
+    ifs >> dump >> pack[1] >> pack[2] >> pack[3] >> pack[4];
+    ifs >> dump >> pack[5] >> pack[6] >> pack[7];
+    ifs.close();
+    pack[0] = option;
+    socket.SendDoubleBuffer(pack.data(), 8);
+    //socket.SendIntBuffer(&option, 1);
 
     //recieve alignRot/BE
     RotationList alignRot;
@@ -109,6 +119,7 @@ int main(int argc, char **argv)
         alignRot.push_back(Quaterniond(pack[i * 6], pack[i * 6 + 1], pack[i * 6 + 2], pack[i * 6 + 3]));
         BE.row(i) << (int)pack[i * 6 + 4], (int)pack[i * 6 + 5];
     }
+
     socket << "success!";
 #endif
     // joint number conv.

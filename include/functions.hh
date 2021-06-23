@@ -37,5 +37,6 @@ void myDqs(
 
 Eigen::Vector4d quaternionAverage(std::vector<Eigen::Vector4d> quaternions);
 
+
 #endif
 
