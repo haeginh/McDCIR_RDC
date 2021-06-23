@@ -19,6 +19,8 @@ class ClientSocket : private Socket
 
   const ClientSocket& RecvDoubleBuffer ( double*, int ) const;
   const ClientSocket& SendDoubleBuffer ( const double*, int, int wait=0) const;
+  const ClientSocket& RecvFloatBuffer ( float*, int ) const;
+  const ClientSocket& SendFloatBuffer ( const float*, int, int wait=0) const;
   const ClientSocket& RecvIntBuffer ( int*, int ) const;
   const ClientSocket& SendIntBuffer ( const int*, int, int wait=0 ) const;
 

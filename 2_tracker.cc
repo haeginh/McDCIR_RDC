@@ -40,7 +40,7 @@
 #define BE_NUM 22
 #define C_NUM 24
 
-#define TEST
+//#define TEST
 extern Rect cropRect;
 void PrintUsage()
 {
@@ -255,13 +255,13 @@ int main(int argc, char **argv)
     //variables
     Mat color;
     mutex m;
-
+    array<float, 375> pack_run;
     int n = poseJoints.size();
     while (1)
     {
         k4a_capture_t sensorCapture = nullptr;
         k4a_wait_result_t getCaptureResult = k4a_device_get_capture(device, &sensorCapture, 0);
-
+        int capture_opt(0);
         if (getCaptureResult == K4A_WAIT_RESULT_FAILED)
         {
             std::cout << "Get img capture returned error: " << getCaptureResult << std::endl;
@@ -275,7 +275,7 @@ int main(int argc, char **argv)
         {
         }
 
-        //ARUCO
+        //ARUCO (0-6)
         if (option & 4)
         {
             k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
@@ -284,11 +284,24 @@ int main(int argc, char **argv)
             glassTracker.SetNewFrame(color);
             glassTracker.ProcessCurrentFrame();
             glassTracker.Render();
+            Quaterniond q = glassTracker.GetQuaternionCumul();
+            Vec3d t = glassTracker.GetTvecCumul();
+#ifndef TEST
+            capture_opt |= 4;
+            pack_run[0] = (float)q.x();
+            pack_run[1] = (float)q.y();
+            pack_run[2] = (float)q.z();
+            pack_run[3] = (float)q.w();
+            pack_run[4] = (float)t(0);
+            pack_run[5] = (float)t(1);
+            pack_run[6] = (float)t(2);
+#endif
         }
 
-        //MOTION TRACKING
+        //MOTION TRACKING (7-)
         if (option & 8)
         {
+            int m = 7;
             k4a_wait_result_t queueCaptureResult = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 0);
             k4a_capture_release(sensorCapture);
             if (queueCaptureResult == K4A_WAIT_RESULT_FAILED)
@@ -305,30 +318,29 @@ int main(int argc, char **argv)
                 if (k4abt_frame_get_num_bodies(bodyFrame))
                 {
 #ifndef TEST
+                    capture_opt |= 8;
                     k4abt_body_t body;
                     k4abt_frame_get_body_skeleton(bodyFrame, 0, &body.skeleton);
                     for (size_t i = 0; i < poseJoints.size(); i++)
                     {
-                        pack[i] = 0;
+                        pack_run[m + i] = 0;
                         if (body.skeleton.joints[poseJoints[i]].confidence_level == K4ABT_JOINT_CONFIDENCE_MEDIUM)
-                            pack[i] = 1;
+                            pack_run[m + i] = 1;
 
-                        pack[n + i * 3] = body.skeleton.joints[poseJoints[i]].position.xyz.x * 0.1;
-                        pack[n + i * 3 + 1] = body.skeleton.joints[poseJoints[i]].position.xyz.y * 0.1;
-                        pack[n + i * 3 + 2] = body.skeleton.joints[poseJoints[i]].position.xyz.z * 0.1;
+                        pack_run[m + n + i * 3] = body.skeleton.joints[poseJoints[i]].position.xyz.x * 0.1;
+                        pack_run[m + n + i * 3 + 1] = body.skeleton.joints[poseJoints[i]].position.xyz.y * 0.1;
+                        pack_run[m + n + i * 3 + 2] = body.skeleton.joints[poseJoints[i]].position.xyz.z * 0.1;
                     }
                     for (int i = 0; i < BE.rows(); i++)
                     {
                         k4a_quaternion_t q = body.skeleton.joints[i2k[BE(i, 0)]].orientation;
                         Quaterniond q1 = Quaterniond(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z) * alignRot[i];
                         q1.normalize();
-                        pack[n*4 + i * 4] = q1.w();
-                        pack[n*4 + i * 4 + 1] = q1.x();
-                        pack[n*4 + i * 4 + 2] = q1.y();
-                        pack[n*4 + i * 4 + 3] = q1.z();
+                        pack_run[m + n * 4 + i * 4] = q1.w();
+                        pack_run[m + n * 4 + i * 4 + 1] = q1.x();
+                        pack_run[m + n * 4 + i * 4 + 2] = q1.y();
+                        pack_run[m + n * 4 + i * 4 + 3] = q1.z();
                     }
-                    socket.SendDoubleBuffer(pack.data(), (n + BE.rows()) * 4);
-                    socket.RecvIntBuffer(&signal, 1);
 #endif
                 }
                 k4abt_frame_release(bodyFrame);
@@ -337,6 +349,13 @@ int main(int argc, char **argv)
             window3d.SetJointFrameVisualization(s_visualizeJointFrame);
             window3d.Render();
         }
+#ifndef TEST
+        // for(int i=0;i<375;i++) cout<<i<<": "<<pack_run[i]<<endl;
+        // cout<<"-----------------"<<endl;
+        pack_run[374] = capture_opt;
+        socket.SendFloatBuffer(pack_run.data(), 375);
+        socket.RecvIntBuffer(&signal, 1);
+#endif
     }
 
     k4abt_tracker_destroy(tracker);

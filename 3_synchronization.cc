@@ -69,13 +69,18 @@ int main(int argc, char **argv)
         if (key == 'q')
             break;
         else if (key == 'a')
+        {
             sync.ShowAvgValue(color);
+            char key2 = waitKey(0);
+            if(key2=='q') break;
+        }
         else if (key == 'c')
             sync.ClearData();
         else if (key == 'g')
             sync.TickSwitch();
     }
     k4a_device_close(device);
+    sync.WriteTransformationData(string(argv[1]));
 
     return EXIT_SUCCESS;
 }

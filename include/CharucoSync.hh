@@ -21,6 +21,7 @@ class CharucoSync
     void EstimatePose(const Mat &color, Vec3d &rvec, Vec3d &tvec);
     void Render();
     void ShowAvgValue(const Mat &color);
+    void WriteTransformationData(string file);
 
     void ClearData(){quaternions.clear(); tvec_sum = Vec3d(0,0,0);}
     void TickSwitch(){
