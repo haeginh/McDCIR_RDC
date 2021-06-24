@@ -32,9 +32,9 @@ class Viewer{
     private:
     igl::opengl::glfw::Viewer viewer;
     igl::opengl::glfw::imgui::ImGuiMenu menu;
-    MatrixXd V_cumul;
+    MatrixXd V_cumul, V_glass;
     int v1_view, v2_view;
-    int v1, v1_patient, v1_cArm, v1_charuco, v2;
+    int v1, v1_patient, v1_cArm, v1_charuco, v1_glass, v2;
     RowVector3d sea_green, white, red, blue;
     
     //numbers

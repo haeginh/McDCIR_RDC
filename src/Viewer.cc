@@ -261,15 +261,15 @@ void Viewer::SetMeshes()
     viewer.load_mesh_from_file("patient3.obj");
     viewer.append_mesh();
     MatrixXd V_cArm, V_charuco;
-    MatrixXi F_cArm, F_charuco;
+    MatrixXi F_cArm, F_charuco, F_glass;
     igl::readPLY("c-arm.ply", V_cArm, F_cArm);
     igl::readPLY("charuco.ply", V_charuco, F_charuco);
+    igl::readPLY("glass.ply", V_glass, F_glass);
     viewer.data().set_mesh(V_cArm, F_cArm);
     viewer.append_mesh();
-    // TransformVertices(V_charuco, charucoAff);
-    // TransformVertices(V_charuco, coordAff);
     viewer.data().set_mesh(V_charuco, F_charuco);
-    igl::writeOBJ("charuco.obj", V_charuco, F_charuco);
+    viewer.append_mesh();
+    viewer.data().set_mesh(V_glass, F_glass);
     viewer.append_mesh();
     MatrixXd V_cumul(V);
     viewer.data().set_mesh(V, F);
@@ -278,7 +278,8 @@ void Viewer::SetMeshes()
     v1_patient = viewer.data_list[1].id;
     v1_cArm = viewer.data_list[2].id;
     v1_charuco = viewer.data_list[3].id;
-    v2 = viewer.data_list[4].id;
+    v1_glass = viewer.data_list[4].id;
+    v2 = viewer.data_list[5].id;
 
     viewer.data(v1).set_edges(C, BE, sea_green);
     viewer.data(v1).show_lines = false;
@@ -391,13 +392,13 @@ void Viewer::Communication_init()
                 FD_SET(sd, &readfds);
                 if (sd > max_sd)
                     max_sd = sd;
-                
+
                 strcpy(num_client, to_string(atoi(num_client) + 1).c_str());
                 cout << "new connection from "
                      << inet_ntoa(_sock->GetAdrrInfo().sin_addr)
                      << " (sock #" << sd << ") / opt: ";
                 (*_sock) << "welcome socket #" + to_string(sd) + "!";
-                
+
                 _sock->RecvDoubleBuffer(pack_recv.data(), 8);
                 int tracking_id = (int)pack_recv[0];
                 sock_opts[sd] = tracking_id;
@@ -413,10 +414,10 @@ void Viewer::Communication_init()
                 cout << endl;
 
                 Affine3d aff = Affine3d::Identity();
-                aff.rotate(Quaterniond(pack_recv[4],pack_recv[1],pack_recv[2],pack_recv[3]).normalized().toRotationMatrix().transpose());
-                aff.translate(-Vector3d(pack_recv[5],pack_recv[6],pack_recv[7]));
+                aff.rotate(Quaterniond(pack_recv[4], pack_recv[1], pack_recv[2], pack_recv[3]).normalized().toRotationMatrix().transpose());
+                aff.translate(-Vector3d(pack_recv[5], pack_recv[6], pack_recv[7]));
                 sock_coord[sd] = aff;
-                
+
                 if (tracking_id > 1)
                 {
                     cout << "-> Sending alignRot/BE data.." << flush;
@@ -512,6 +513,7 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
             _sock << "connection refused!";
         }
 
+        Affine3d glass_aff = Affine3d::Identity();
         RotationList vQ;
         vQ.resize(numBE);
         MatrixXd C_disp(24, 3);
@@ -543,22 +545,26 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
             {
                 Quaterniond q;
                 Vector3d t;
-                pack[0] = q.x();
-                pack[1] = q.y();
-                pack[2] = q.z();
-                pack[3] = q.w();
-                pack[4] = t(0);
-                pack[5] = t(1);
-                pack[6] = t(2);
+                q.x() = pack[0]; q.y() = pack[1]; q.z() = pack[2]; q.w() = pack[3];
+                t(0) = pack[4]; t(1) = pack[5]; t(2) = pack[6];
+
+                Affine3d aff = Affine3d::Identity();
+                aff.translate(t);
+                aff.rotate(q);
+                glass_aff = sock_coord[sid.first] * aff;
+
+                //cout << glass_aff.matrix() << endl;
+                viewer.data(v1_glass).set_vertices((V_glass.rowwise().homogeneous() * glass_aff.matrix().transpose()).rowwise().hnormalized());
+                viewer.data(v1_glass).compute_normals();
             }
             if (capture_opt & 8) //motion (7-)
             {
                 if (!reliability)
                 {
                     int i = 7;
-                    for (int n=0; n < 24; n++)
+                    for (int n = 0; n < 24; n++)
                         reliability |= bool(pack[i]) << i++;
-                    for (int n = 0; n < 24 ; n++)
+                    for (int n = 0; n < 24; n++)
                     {
                         C_disp(n, 0) = pack[i++];
                         C_disp(n, 1) = pack[i++];
@@ -566,12 +572,12 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
                     }
                     TransformVertices(C_disp, sock_coord[sid.first]);
                     for (int r = 0; r < numBE; i += 4, r++)
-                          vQ[r] = sock_coord[sid.first].rotation()*Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
+                        vQ[r] = sock_coord[sid.first].rotation() * Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
                 }
                 else
                 {
                     int i = 7;
-                    for (int n=0; n < 24; n++)
+                    for (int n = 0; n < 24; n++)
                         r |= bool(pack[i]) << i++;
                     unsigned int r_chk = (~reliability) & r; //not existing, but exists in the new data
                     for (int row = 0; row < 24; row++)
@@ -593,7 +599,7 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
                             i += 4;
                             continue;
                         }
-                        vQ[row] = sock_coord[sid.first].rotation()*Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
+                        vQ[row] = sock_coord[sid.first].rotation() * Quaterniond(pack[i], pack[i + 1], pack[i + 2], pack[i + 3]);
                     }
 
                     reliability |= r;
@@ -625,6 +631,7 @@ bool Viewer::Communication_run(igl::opengl::glfw::Viewer &)
 
             viewer.data(v1).set_vertices(V_new);
             viewer.data(v1).compute_normals();
+
             // timer.stop();
             // cout << "vis: " << timer.getElapsedTime() << endl;
         }
