@@ -1,45 +1,33 @@
-cmake_minimum_required(VERSION 3.9.0)
+# Set the minimum required version of cmake for a project.
+cmake_minimum_required(VERSION 2.8.9)
 
-project(DCIR_RDC)
+# Set Variables
+SET(CMAKE_CXX_FLAGS "-std=c++0x") # C++11
+SET(PROJECT_NAME "vcap")
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_C_STANDARD 99)
+# Project
+PROJECT(${PROJECT_NAME} CXX)
 
-#openMP
-FIND_PACKAGE(OpenMP)
-if (OPENMP_FOUND)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-endif()
+# Find library package
+FIND_PACKAGE(OpenCV REQUIRED)
+FIND_PACKAGE(VTK REQUIRED)
+FIND_PACKAGE(k4a REQUIRED)
 
-# libigl
-option(LIBIGL_WITH_OPENGL            "Use OpenGL"         ON)
-option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
-option(LIBIGL_WITH_OPENGL_GLFW_IMGUI "Use imgui"           ON)
-option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
-find_package(LIBIGL REQUIRED QUIET)
-set(LIBIGL_DIR ${LIBIGL_INCLUDE_DIR}/..)
+# Include directories
+include_directories(${PROJECT_SOURCE_DIR}/src)
+include_directories(${PROJECT_SOURCE_DIR}/include)
+include_directories(${OpenCV_INCLUDE_DIRS})
+link_directories(${OpenCV_LIBRARY_DIRS})
+add_definitions(${OpenCV_DEFINITIONS})
+include(${VTK_USE_FILE})
 
+# File
+FILE(GLOB SRC_FILES ${PROJECT_SOURCE_DIR}/src/*)
+FILE(GLOB HEADER_FILES ${PROJECT_SOURCE_DIR}/include/*)
 
-file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cc)
-file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hh)
-include_directories(${PROJECT_SOURCE_DIR}/include
-                    ${LIBIGL_DIR}
-                    ${LIBIGL_DIR}/external
-                    ${LIBIGL_DIR}/external/libigl-imgui/
-                    ${LIBIGL_DIR}/external/imgui/examples/
-                    ${LIBIGL_DIR}/external/imgui/
-                    ${LIBIGL_DIR}/external/glfw/include
-                    ${LIBIGL_DIR}/external/glad/include
-                    )
+# The main program
+add_executable(${PROJECT_NAME} vcap_main.cpp ${SRC_FILES} ${HEADER_FILES})
 
-add_executable(DCIR_RDC DCIR_RDC.cc ${sources} ${headers})
-# Dependencies of this library
-target_link_libraries(DCIR_RDC
-    igl::core
-    igl::opengl
-    igl::opengl_glfw_imgui
-    igl::tetgen
-    )
+# Link
+target_link_libraries( ${PROJECT_NAME} ${OpenCV_LIBS} ${VTK_LIBRARIES} k4a::k4a )
+
