@@ -90,7 +90,7 @@ int main(int argc, char **argv)
         else if (string(argv[i]) == "-b")
             option = option | 2; // 0010
     }
-    
+
     //connection to server
 #ifndef TEST
     string ip(argv[1]);
@@ -102,7 +102,7 @@ int main(int argc, char **argv)
 
     //read sync data
     string dump;
-    ifstream ifs("test.txt");
+    ifstream ifs("sync.txt");
     ifs >> dump >> pack[1] >> pack[2] >> pack[3] >> pack[4];
     ifs >> dump >> pack[5] >> pack[6] >> pack[7];
     ifs.close();
@@ -293,19 +293,22 @@ int main(int argc, char **argv)
             color = color_to_opencv(color_img);
             k4a_image_release(color_img);
             glassTracker.SetNewFrame(color);
-            glassTracker.ProcessCurrentFrame();
-            glassTracker.Render();
-            Quaterniond q = glassTracker.GetQuaternionCumul();
-            Vec3d t = glassTracker.GetTvecCumul();
+            Quaterniond q;
+            Eigen::Vector3d t;
+            bool detected = glassTracker.ProcessCurrentFrame(q, t);
+            glassTracker.Render(detected);
 #ifndef TEST
-            capture_opt |= 4;
-            pack_run[0] = (float)q.x();
-            pack_run[1] = (float)q.y();
-            pack_run[2] = (float)q.z();
-            pack_run[3] = (float)q.w();
-            pack_run[4] = (float)t(0);
-            pack_run[5] = (float)t(1);
-            pack_run[6] = (float)t(2);
+            if (detected)
+            {
+                capture_opt |= 4;
+                pack_run[0] = (float)q.x();
+                pack_run[1] = (float)q.y();
+                pack_run[2] = (float)q.z();
+                pack_run[3] = (float)q.w();
+                pack_run[4] = (float)t(0);
+                pack_run[5] = (float)t(1);
+                pack_run[6] = (float)t(2);
+            }
 #endif
         }
 

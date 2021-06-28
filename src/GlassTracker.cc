@@ -59,7 +59,7 @@ bool GlassTracker::ReadCameraParameters(string filename)
     return true;
 }
 
-bool GlassTracker::ProcessCurrentFrame()
+bool GlassTracker::ProcessCurrentFrame(Eigen::Quaterniond &q_current, Eigen::Vector3d &t_current)
 {
     Mat cropImg;
     if (cropRect.width > 0)
@@ -123,17 +123,19 @@ bool GlassTracker::ProcessCurrentFrame()
             q_vec.push_back(Eigen::Vector4d(q.x(), q.y(), q.z(), q.w()));
         }
         Eigen::Quaterniond q_avg(quaternionAverage(q_vec));
-        if(cumulCount>1) q_cumul = q_cumul.slerp(1.f/(cumulCount+1.f), q_avg);
-        else q_cumul = q_avg;
+        if (cumulCount > 1)
+            q_cumul = q_cumul.slerp(1.f / (cumulCount + 1.f), q_avg);
+        else
+            q_cumul = q_avg;
 
         Eigen::AngleAxisd avg(q_cumul);
         Vec3d rvec;
         eigen2cv(avg.axis(), rvec);
         rvec *= avg.angle();
         Vec3d axisX, axisY, axisZ;
-        eigen2cv(q_cumul * Eigen::Vector3d(1.f,0.f,0.f), axisX);
-        eigen2cv(q_cumul * Eigen::Vector3d(0.f,1.f,0.f), axisY);
-        eigen2cv(q_cumul * Eigen::Vector3d(0.f,0.f,1.f), axisZ);
+        eigen2cv(q_cumul * Eigen::Vector3d(1.f, 0.f, 0.f), axisX);
+        eigen2cv(q_cumul * Eigen::Vector3d(0.f, 1.f, 0.f), axisY);
+        eigen2cv(q_cumul * Eigen::Vector3d(0.f, 0.f, 1.f), axisZ);
 
         //tvec
         Vec3d tvec(0, 0, 0);
@@ -153,6 +155,9 @@ bool GlassTracker::ProcessCurrentFrame()
         tvec_cumul = tvec;
         aruco::drawAxis(display, camMatrix, distCoeffs, rvec, tvec,
                         markerLength * 3.f);
+
+        q_current = q_cumul;
+        cv2eigen(tvec_cumul, t_current);
     }
     else
     {
@@ -176,7 +181,7 @@ bool GlassTracker::ProcessCurrentFrame()
     return true;
 }
 
-void GlassTracker::Render()
+void GlassTracker::Render(bool showResult)
 {
     setMouseCallback("Glass Tracker", onMouseCropImage, &display);
     if (clicked)
@@ -184,9 +189,12 @@ void GlassTracker::Render()
     else if (cropRect.width > 0)
         cv::rectangle(display, cropRect, CV_RGB(255, 255, 0), 3);
     resize(display, display, Size(display.cols * sf, display.rows * sf));
-    putText(display, "cummulated data #: "+to_string(cumulCount), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
-    putText(display, "q: "+to_string(q_cumul.w())+", "+to_string(q_cumul.x())+", "+to_string(q_cumul.y())+", "+to_string(q_cumul.z()), Point(10, 40), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
-    putText(display, "tvec: "+to_string(tvec_cumul(0))+", "+to_string(tvec_cumul(1))+", "+to_string(tvec_cumul(2)), Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f,0.f,0.f), 1.2);
+    if (showResult)
+    {
+        putText(display, "cummulated data #: " + to_string(cumulCount), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f, 0.f, 0.f), 1.2);
+        putText(display, "q: " + to_string(q_cumul.w()) + ", " + to_string(q_cumul.x()) + ", " + to_string(q_cumul.y()) + ", " + to_string(q_cumul.z()), Point(10, 40), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f, 0.f, 0.f), 1.2);
+        putText(display, "tvec: " + to_string(tvec_cumul(0)) + ", " + to_string(tvec_cumul(1)) + ", " + to_string(tvec_cumul(2)), Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f, 0.f, 0.f), 1.2);
+    }
     imshow("Glass Tracker", display);
     waitKey(1);
 }

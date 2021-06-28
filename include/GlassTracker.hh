@@ -23,11 +23,8 @@ class GlassTracker
         _color.copyTo(color);
         _color.copyTo(display);
     }
-    bool ProcessCurrentFrame();
-    void Render();
-
-    Vec3d GetTvecCumul() {return tvec_cumul;}
-    Eigen::Quaterniond GetQuaternionCumul() {return q_cumul;}
+    bool ProcessCurrentFrame(Eigen::Quaterniond &q_current, Eigen::Vector3d &t_current);
+    void Render(bool showResult = true);
 
     void SetScalingFactor(float s);
 
