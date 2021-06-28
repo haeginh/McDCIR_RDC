@@ -66,16 +66,12 @@ class Viewer{
     vector<unsigned int> reliab_opt;
 
 
-    //temp
     public:
-    // void SetCharucoAff(Affine3d aff) { charucoAff = aff; }
-    // void SetCoordAff(Affine3d aff) { coordAff = aff; }
     void TransformVertices(MatrixXd &V, Affine3d aff)
     {V = (V.rowwise().homogeneous()*aff.matrix().transpose()).rowwise().hnormalized();}
 
     private:
     map<int, Affine3d> sock_coord;
-    // Affine3d charucoAff, coordAff;
 };
 static std::condition_variable cv;
 static std::mutex m;

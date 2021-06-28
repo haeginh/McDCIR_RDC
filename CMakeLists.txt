@@ -40,7 +40,6 @@ add_executable(DCIR_RDC DCIR_RDC.cc ${sources} ${headers})
 target_link_libraries(DCIR_RDC
     igl::core
     igl::opengl
-#    ${LIBIGL_DIR}/lib/libglfw3.a
     igl::opengl_glfw_imgui
     igl::tetgen
     )
