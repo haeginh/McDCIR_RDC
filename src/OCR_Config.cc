@@ -10,6 +10,8 @@ void Config::saveConfig(std::string fileN) {
     cv::FileStorage fs(fileN, cv::FileStorage::WRITE);
     fs << "digitMinHeight" << _digitMinHeight;
     fs << "digitMaxHeight" << _digitMaxHeight;
+    fs << "captureboardWidth" << _captureBoardWidth;
+    fs << "captureboardHeight" << _captureBoardHeight;
     fs << "captureboardFPS" << _captureBoardFPS;
     fs << "ocrThreshold" << _ocrThreshold; _ocrThreshold *=255*255;
     fs << "trainingDataFilename" << _trainingDataFilename;
@@ -28,6 +30,8 @@ void Config::loadConfig(std::string fileN) {
     if (fs.isOpened()) {
         fs["digitMinHeight"] >> _digitMinHeight;
         fs["digitMaxHeight"] >> _digitMaxHeight;
+        fs["captureboardWidth"] >> _captureBoardWidth;
+        fs["captureboardHeight"] >> _captureBoardHeight;
         fs["captureboardFPS"] >> _captureBoardFPS;
         fs["ocrThreshold"] >> (int)_ocrThreshold/(255*255);
         fs["trainingDataFilename"] >> _trainingDataFilename;
@@ -42,7 +46,7 @@ void Config::loadConfig(std::string fileN) {
             cv::Scalar boxInfo;
             fs[roiNames[i]]>>boxInfo;
             if(boxInfo[2]==0 || boxInfo[3]==0 ) {
-                std::cerr<<"Check ROI boxex of config file"<<std::endl;
+                std::cerr<<"Check ROI boxes of config file"<<std::endl;
                 exit(100);
             }
             _roiBox.push_back(cv::Rect(boxInfo[0],boxInfo[1],boxInfo[2],boxInfo[3]));

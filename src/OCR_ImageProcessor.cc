@@ -2,7 +2,7 @@
 
 ImageProcessor::ImageProcessor(const Config &_config)
 	: debugWindow(false), debugBin(false), debugContour(false), //debugPower(false), debugOCR(false),
-	  config(_config)//, powerOn(false), key(0)
+	  config(_config)											//, powerOn(false), key(0)
 {
 }
 
@@ -18,15 +18,16 @@ std::vector<cv::Mat> ImageProcessor::Process(cv::Mat &img)
 	cv::Mat imgGray, imgGray2;
 	cv::cvtColor(diffBG, imgGray, cv::COLOR_BGR2GRAY);
 	cv::cvtColor(diffCHAR, imgGray2, cv::COLOR_BGR2GRAY);
-	cv::Mat imgBin = imgGray>imgGray2;
+	cv::Mat imgBin = imgGray > imgGray2;
 
 	// find and isolate counter digits
-	std::vector<cv::Rect> bBox_raw =  FindCounterDigits(imgBin);
+	std::vector<cv::Rect> bBox_raw = FindCounterDigits(imgBin);
 	std::vector<cv::Rect> bBox;
-	FindAlignedBoxes(bBox_raw.begin(), bBox_raw.end(), bBox,1);
+	FindAlignedBoxes(bBox_raw.begin(), bBox_raw.end(), bBox, 1);
 
 	std::vector<cv::Mat> digits;
-	for(auto roi:bBox){
+	for (auto roi : bBox)
+	{
 		digits.push_back(imgBin(roi));
 	}
 	return digits;
@@ -36,7 +37,7 @@ std::vector<cv::Mat> ImageProcessor::Process(cv::Mat &img)
 	// return powerOn;
 }
 
-std::vector<cv::Mat> ImageProcessor::Process(cv::Mat &img, std::vector<cv::Rect>& bBox, cv::Mat &imgBin)
+std::vector<cv::Mat> ImageProcessor::Process(cv::Mat &img, std::vector<cv::Rect> &bBox, cv::Mat &imgBin)
 {
 	//subtract background
 	cv::Mat diffBG = abs(img - bgColor);
@@ -46,46 +47,58 @@ std::vector<cv::Mat> ImageProcessor::Process(cv::Mat &img, std::vector<cv::Rect>
 	cv::Mat imgGray, imgGray2;
 	cv::cvtColor(diffBG, imgGray, cv::COLOR_BGR2GRAY);
 	cv::cvtColor(diffCHAR, imgGray2, cv::COLOR_BGR2GRAY);
-	imgBin = imgGray>imgGray2;
+	imgBin = imgGray > imgGray2;
 
 	// find and isolate counter digits
-	std::vector<cv::Rect> bBox_raw =  FindCounterDigits(imgBin);
+	std::vector<cv::Rect> bBox_raw = FindCounterDigits(imgBin);
 	std::vector<cv::Mat> digits;
-	if(bBox_raw.size()==0) return digits;
+	if (bBox_raw.size() == 0)
+		return digits;
 
-	//FindAlignedBoxes(bBox_raw.begin(), bBox_raw.end(), bBox,1);
-	bBox = bBox_raw;
-	for(auto roi:bBox){
+	FindAlignedBoxes(bBox_raw.begin(), bBox_raw.end(), bBox, 1);
+	//bBox = bBox_raw;
+	for (auto &roi : bBox)
+	{
+		if(roi.x<0) roi.x=0;
+		if(roi.y<0) roi.y=0;
+		if(roi.br().x>imgBin.cols-1) roi.width=(imgBin.cols-1) - roi.x;
+		if(roi.br().y>imgBin.rows-1) roi.height=(imgBin.rows-1) - roi.y;
+
 		digits.push_back(imgBin(roi));
 	}
 	return digits;
 }
 
 void ImageProcessor::FindAlignedBoxes(std::vector<cv::Rect>::const_iterator begin,
-									  std::vector<cv::Rect>::const_iterator end, std::vector<cv::Rect> &result, int addMargin=0)
+									  std::vector<cv::Rect>::const_iterator end, std::vector<cv::Rect> &result, int addMargin = 0)
 {
 	cv::Point2i margin(addMargin, addMargin);
 	result.clear();
 	std::vector<cv::Rect>::const_iterator it = begin;
 
-	cv::Rect range = *it++;
-	result.push_back(cv::Rect(range.tl()-margin,range.br()+margin));
+	result.push_back(cv::Rect(it->tl() - margin, it->br() + margin));
+	int rangeTop = result.back().tl().y;
+	int rangeBottom = result.back().br().y;
 
-	for (; it != end; ++it)
+	for (auto prev = it++; it != end; prev = it++)
 	{
-		int range_b = range.y + range.height;
-		int iter_b = it->y + it->height;
-		if(iter_b<range.y || it->y>range_b)	continue;
+		if (it->y > rangeBottom || it->br().y < rangeTop)
+			continue;
 
-		result.push_back(cv::Rect(it->tl()-margin, it->br()+margin));
-		range.y = it->y < range.y ? it->y : range.y;
-		int bottom = iter_b > range_b ? iter_b : range_b;
-		range.height = bottom - range.y; 
-
-		// if (abs(start.y + start.height - it->y - it->height ) < config.getDigitYAlignment())
-		// {
-		// 	result.push_back(*it);
-		// }
+		//i, j (Vertically separated letters)
+		cv::Rect merged;
+		if (prev->br().y <= it->y)
+			merged = cv::Rect(prev->tl(), it->br());
+		else if (it->br().y <= prev->y)
+			merged = cv::Rect(cv::Point2i(prev->x, it->y), cv::Point2i(it->br().x, prev->br().y));
+		
+		if (merged.width > 0 && merged.width < it->width + prev->width)
+			result.back() = cv::Rect(merged.tl() - margin, merged.br() + margin);
+		else
+		 	result.push_back(cv::Rect(it->tl() - margin, it->br() + margin));
+		
+		rangeTop = it->y < rangeTop ? it->y:rangeTop;
+		rangeBottom = it->br().y > rangeBottom ? it->br().y : rangeBottom;
 	}
 }
 

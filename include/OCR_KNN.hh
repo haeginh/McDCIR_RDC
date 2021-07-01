@@ -8,37 +8,39 @@
 #include <list>
 #include <string>
 
-class KNearestOcr {
+class KNearestOcr
+{
 public:
 	KNearestOcr();
 	virtual ~KNearestOcr();
 
-	int learn(const cv::Mat& img);
-	int learn(const std::vector<cv::Mat>& images);
+	void initModel();
+	void initBaseModel(std::string fileN);
+
+	int learn(const cv::Mat &img);
+	int learn(const std::vector<cv::Mat> &images);
 	bool hasTrainingData();
-	void saveTrainingData(std::string fileN);
-    void printTrainingStatus();
+	void saveTrainingData(std::string fileN = "training1.yml");
+	void printTrainingStatus();
 	bool loadTrainingData(std::string fileN);
 
-	char recognize(const cv::Mat& img);
-	std::string recognize(const std::vector<cv::Mat>& images);
+	char recognize(const cv::Mat &img);
+	std::string recognize(const std::vector<cv::Mat> &images);
 
 private:
-	cv::Mat prepareSample(const cv::Mat& img);
-	void initModel();
+	cv::Mat prepareSample(const cv::Mat &img);
 
 	cv::Mat samples;
 	cv::Mat responses;
 	cv::Ptr<cv::ml::KNearest> pModel;
-	
-    //specific training
+
+	//specific training
 public:
-    void RecogAndLearn(const std::vector<cv::Mat> &digits);
-    void SetOcrThreshold(int n) {ocrThreshold = n;}
+	void RecogAndLearn(const std::vector<cv::Mat> &digits);
+	void SetOcrThreshold(int n) { ocrThreshold = n; }
+
 private:
-    int ocrThreshold;
-
-
+	int ocrThreshold;
 };
 
 #endif /* INCLUDE_OCR_KNN_HH_ */

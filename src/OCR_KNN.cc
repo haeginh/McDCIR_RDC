@@ -45,7 +45,7 @@ bool KNearestOcr::hasTrainingData()
 }
 
 // Save training data to file.
-void KNearestOcr::saveTrainingData(std::string fileN = "training.yml")
+void KNearestOcr::saveTrainingData(std::string fileN)
 {
 	cv::FileStorage fs(fileN, cv::FileStorage::WRITE);
 	fs << "samples" << samples;
@@ -61,6 +61,7 @@ void KNearestOcr::printTrainingStatus()
 	std::cout << "[SUMMARY]" << std::endl;
 	for (int i = 0; i < responses.rows; i++)
 		counter[(int)responses.at<float>(i, 0)]++;
+
 	for (auto iter : counter)
 	{
 		char character = iter.first;
@@ -79,7 +80,9 @@ bool KNearestOcr::loadTrainingData(std::string fileN = "training.yml")
 		fs["responses"] >> responses;
 		fs.release();
 
-		initModel();
+		cv::Ptr<cv::ml::TrainData> trainData = cv::ml::TrainData::create(samples, cv::ml::ROW_SAMPLE, responses);
+		pModel->train(trainData);
+		trainData.release();
 	}
 	else
 		return false;
@@ -98,7 +101,8 @@ char KNearestOcr::recognize(const cv::Mat &img)
 
 	cv::Mat results, neighborResponses, dists;
 	float result = pModel->findNearest(prepareSample(img), k_idx, results, neighborResponses, dists);
-	if(((float*)dists.data)[0]>ocrThreshold) throw -1;
+	if (((float *)dists.data)[0] > ocrThreshold)
+		throw -1;
 
 	return (char)result;
 }
@@ -110,8 +114,12 @@ std::string KNearestOcr::recognize(const std::vector<cv::Mat> &images)
 	for (std::vector<cv::Mat>::const_iterator it = images.begin();
 		 it != images.end(); ++it)
 	{
-		try{result += recognize(*it);}
-		catch(int exception){
+		try
+		{
+			result += recognize(*it);
+		}
+		catch (int exception)
+		{
 			return "";
 		}
 	}
@@ -134,8 +142,6 @@ void KNearestOcr::initModel()
 	pModel = cv::ml::KNearest::create();
 	pModel->setIsClassifier(true);
 	// load persistent model
-	cv::Ptr<cv::ml::TrainData> trainData = cv::ml::TrainData::create(samples, cv::ml::ROW_SAMPLE, responses);
-	pModel->train(trainData);
 }
 
 void KNearestOcr::RecogAndLearn(const std::vector<cv::Mat> &digits)
@@ -145,8 +151,7 @@ void KNearestOcr::RecogAndLearn(const std::vector<cv::Mat> &digits)
 		sampleVec.push_back(prepareSample(img));
 
 	cv::Mat results, results2;
-	std::vector<int> addChk;
-	if (!pModel.empty())
+	if (samples.cols > 0)
 	{
 		cv::Mat neighborResponses, dists;
 		pModel->findNearest(sampleVec, 1, results, neighborResponses, dists);
@@ -167,20 +172,25 @@ void KNearestOcr::RecogAndLearn(const std::vector<cv::Mat> &digits)
 		cv::Mat overTH = dists.col(0) > ocrThreshold;
 		if (cv::countNonZero(overTH) > 0)
 		{
-			std::cout<<cv::countNonZero(overTH)<<"over threshold detected!"<<std::endl;
+			std::cout << cv::countNonZero(overTH) << "over threshold detected!" << std::endl;
 			int key = cv::waitKey(0);
 			if (key == 'r')
 			{
 				resultStr.clear();
 				std::cout << "Type correct answer: " << std::flush;
 				std::cin >> resultStr;
+				if (sampleVec.rows != resultStr.length())
+				{
+					std::cout << resultStr.length() << " inputs for " << sampleVec.rows << " letters!" << std::endl;
+					return;
+				}
 				std::vector<char> vectorData(resultStr.begin(), resultStr.begin() + sampleVec.rows);
 				cv::Mat resultVec(vectorData, true);
 				resultVec.convertTo(results, CV_32F);
 			}
-			else if(key=='q')
+			else if (key == 'q')
 			{
-				std::cout<<"skip this data"<<std::endl;
+				std::cout << "skip this data" << std::endl;
 				return;
 			}
 		}
@@ -198,8 +208,8 @@ void KNearestOcr::RecogAndLearn(const std::vector<cv::Mat> &digits)
 	}
 	else
 	{
-		pModel = cv::ml::KNearest::create();
-		pModel->setIsClassifier(true);
+		// pModel = cv::ml::KNearest::create();
+		// pModel->setIsClassifier(true);
 		std::cout << "Type the answer: ";
 		std::string resultStr;
 		std::cin >> resultStr;

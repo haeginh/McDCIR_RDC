@@ -20,6 +20,14 @@ public:
         return _digitMaxHeight;
     }
 
+    int getCaptureBoardWidth() const {
+        return _captureBoardWidth;
+    }
+
+    int getCaptureBoardHeight() const {
+        return _captureBoardHeight;
+    }
+
     int getCaptureBoardFPS() const {
         return _captureBoardFPS;
     }
@@ -59,6 +67,8 @@ private:
     float _ocrThreshold;
     int _digitMinHeight;
     int _digitMaxHeight;
+    int _captureBoardWidth;
+    int _captureBoardHeight;
     int _captureBoardFPS;
     std::string _trainingDataFilename;
     cv::Scalar _bgColor, _charColor;
