@@ -13,6 +13,7 @@
 
 #include "ServerSocket.hh"
 #include "PhantomAnimator.hh"
+#include "MapContainer.hh"
 #include "Communicator.hh"
 #include "Config.hh"
 
@@ -29,16 +30,23 @@ class Viewer{
 
     void SetIsoCenter(Vector3d v){isoCenter = v;}
 
+    void SetRecordFile(string name)
+    {
+        ifs.open(name);
+        playback = true;
+    }
+
     private:
     bool Communication_run(igl::opengl::glfw::Viewer &);
+    bool CalculateDoses();
 
     //variables
     private:
     igl::opengl::glfw::Viewer viewer;
     igl::opengl::glfw::imgui::ImGuiMenu menu;
-    MatrixXd V_cumul, V_glass, V_cArm;
+    MatrixXd V_cumul, V_glass, V_cArm, V_beam, V_patient, V_table;
     int v1_view, v2_view;
-    int v1, v1_patient, v1_cArm, v1_charuco, v1_glass, v2;
+    int v1, v1_patient, v1_table, v1_cArm, v1_beam, v1_charuco, v1_glass, v2;
     RowVector3d sea_green, white, red, blue;
     
     //numbers
@@ -57,6 +65,7 @@ class Viewer{
 
     //menu
     void MenuDesign();
+    void CustomMenuDesign();
 
     //phantomAnimator
     PhantomAnimator *phantom;
@@ -64,6 +73,31 @@ class Viewer{
 
     //cArm
     Vector3d isoCenter;
+
+    //doses
+    MapContainer* maps;
+    VectorXd skinRate, skinAcc;
+    Matrix3d cArm_IT;
+    igl::ColorMapType colorMap;
+
+    MatrixXd ComputeNormal(const MatrixXd &VV, const MatrixXi &FF)
+    {
+        MatrixXd F_normals, V_normals;
+        igl::per_face_normals(VV, FF, F_normals);
+        igl::per_vertex_normals(VV, FF, F_normals, V_normals);
+        return V_normals;
+    }
+
+    //v2
+    double v2_viewAng;
+
+    //timer
+    igl::Timer timer;
+    bool beamOn;
+
+    //playback
+    bool playback;
+    ifstream ifs;
 };
 static std::condition_variable cv;
 static std::mutex m;

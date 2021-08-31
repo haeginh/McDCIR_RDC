@@ -10,7 +10,7 @@ PhantomAnimator::PhantomAnimator(string prefix)
 bool PhantomAnimator::ReadFiles(string prefix)
 {
     cout << "Read " + prefix + ".tgf" << endl;
-    igl::readTGF(prefix + ".tgf", C, BE);
+    igl::readTGF("./phantoms/AM.tgf", C, BE);
     igl::readPLY(prefix + ".ply", V, F);
 
     //perform BBW
@@ -74,48 +74,72 @@ bool PhantomAnimator::ReadFiles(string prefix)
     }
 
     //eye part
-    MatrixXd V_eye;
-    MatrixXi F_eye;
-    if (!igl::readPLY(prefix + "_eye.ply", V_eye, F_eye))
+    VectorXd data = VectorXd::Zero(Wj.rows());
+    for(int i=0;i<Wj.rows();i++)
     {
-        cout << "there is no " + prefix + "_eye.ply!!" << endl;
-    }
-    map<tuple<int, int, int>, vector<int>> grid = GenerateGrid(V);
-
-    for (int i = 0; i < V_eye.rows(); i++)
-    {
-        double x = V_eye(i, 0);
-        double y = V_eye(i, 1);
-        double z = V_eye(i, 2);
-        auto ijk = make_tuple(floor(x + 0.5), floor(y + 0.5), floor(z + 0.5));
-        for (int n : grid[ijk])
+        // if(Wj(i, 22)>0.8 || Wj(i, 23)>0.8 )
+        // {
+        //     eyeIDs.push_back(i);
+        //     if(Wj(i, 22)>0.8)data(i) = Wj(i, 22)-0.8;
+        //     if(Wj(i, 23)>0.8)data(i) = Wj(i, 23)-0.8;
+        // }
+        // else 
+        if((C.row(23)-V.row(i)).squaredNorm()<10)
         {
-            if (fabs(x - V(n, 0)) > 0.001)
-                continue;
-            if (fabs(y - V(n, 1)) > 0.001)
-                continue;
-            if (fabs(z - V(n, 2)) > 0.001)
-                continue;
-            eye2ply.push_back(n);
-            break;
+            eyeIDs.push_back(i);
+            data(i) = -(C.row(23)-V.row(i)).squaredNorm()+10;
         }
+        else if((C.row(22)-V.row(i)).squaredNorm()<10)
+        {
+            eyeIDs.push_back(i);
+            data(i) = -(C.row(22)-V.row(i)).squaredNorm()+10;
+        }
+
     }
 
-    vector<vector<int>> eyeFaces;
-    for (int i = 0; i < F_eye.rows(); i++)
-    {
-        vector<int> face = {eye2ply[F_eye(i, 0)], eye2ply[F_eye(i, 1)], eye2ply[F_eye(i, 2)]};
-        sort(face.begin(), face.end());
-        eyeFaces.push_back(face);
-    }
-    vector<int> eyeFaceIDs;
-    for (int i = 0; i < F.rows(); i++)
-    {
-        vector<int> face = {F(i, 0), F(i, 1), F(i, 2)};
-        sort(face.begin(), face.end());
-        if (find(eyeFaces.begin(), eyeFaces.end(), face) != eyeFaces.end())
-            eyeFaceIDs.push_back(i);
-    }
+    // MatrixXd V_eye;
+    // MatrixXi F_eye;
+    // if (!igl::readPLY(prefix + "_eye.ply", V_eye, F_eye))
+    // {
+    //     cout << "there is no " + prefix + "_eye.ply!!" << endl;
+    // }
+    // map<tuple<int, int, int>, vector<int>> grid = GenerateGrid(V);
+
+    // for (int i = 0; i < V_eye.rows(); i++)
+    // {
+    //     double x = V_eye(i, 0);
+    //     double y = V_eye(i, 1);
+    //     double z = V_eye(i, 2);
+    //     auto ijk = make_tuple(floor(x + 0.5), floor(y + 0.5), floor(z + 0.5));
+    //     for (int n : grid[ijk])
+    //     {
+    //         if (fabs(x - V(n, 0)) > 0.001)
+    //             continue;
+    //         if (fabs(y - V(n, 1)) > 0.001)
+    //             continue;
+    //         if (fabs(z - V(n, 2)) > 0.001)
+    //             continue;
+    //         eye2ply.push_back(n);
+    //         break;
+    //     }
+    // }
+
+
+    // vector<vector<int>> eyeFaces;
+    // for (int i = 0; i < F_eye.rows(); i++)
+    // {
+    //     vector<int> face = {eye2ply[F_eye(i, 0)], eye2ply[F_eye(i, 1)], eye2ply[F_eye(i, 2)]};
+    //     sort(face.begin(), face.end());
+    //     eyeFaces.push_back(face);
+    // }
+    // vector<int> eyeFaceIDs;
+    // for (int i = 0; i < F.rows(); i++)
+    // {
+    //     vector<int> face = {F(i, 0), F(i, 1), F(i, 2)};
+    //     sort(face.begin(), face.end());
+    //     if (find(eyeFaces.begin(), eyeFaces.end(), face) != eyeFaces.end())
+    //         eyeFaceIDs.push_back(i);
+    // }
 
     double epsilon(1e-5);
     for (int i = 0; i < W.rows(); i++)
@@ -194,25 +218,25 @@ bool PhantomAnimator::Initialize()
         }
     }
 
-    cout << "generating F_area, F_incident, F_area_eye matrix..." << flush;
-    VectorXd F_area;
-    igl::doublearea(V, F, F_area);
-    F_area.cwiseSqrt();
-    VectorXd W_avgSkin = ArrayXd::Zero(V.rows());
+    // cout << "generating F_area, F_incident, F_area_eye matrix..." << flush;
+    // VectorXd F_area;
+    // igl::doublearea(V, F, F_area);
+    // F_area.cwiseSqrt();
+    // VectorXd W_avgSkin = ArrayXd::Zero(V.rows());
 
-    for (int i = 0; i < F.rows(); i++)
-    {
-        for (int j = 0; j < 3; j++)
-            W_avgSkin(F(i, j)) += F_area(i);
-    }
-    W_avgSkin = W_avgSkin / W_avgSkin.sum();
+    // for (int i = 0; i < F.rows(); i++)
+    // {
+    //     for (int j = 0; j < 3; j++)
+    //         W_avgSkin(F(i, j)) += F_area(i);
+    // }
+    // W_avgSkin = W_avgSkin / W_avgSkin.sum();
 
-    VectorXd W_Lens(eye2ply.size());
-    for (size_t i = 0; i < eye2ply.size(); i++)
-        W_Lens(i) = W_avgSkin(eye2ply[i]);
+    // VectorXd W_Lens(eye2ply.size());
+    // for (size_t i = 0; i < eye2ply.size(); i++)
+    //     W_Lens(i) = W_avgSkin(eye2ply[i]);
 
-    W_avgSkin = W_avgSkin.array() / W_avgSkin.sum();
-    W_Lens = W_Lens.array() / W_Lens.sum();
+    // W_avgSkin = W_avgSkin.array() / W_avgSkin.sum();
+    // W_Lens = W_Lens.array() / W_Lens.sum();
 
     cout << "done" << endl;
     V_calib = V;
@@ -226,7 +250,7 @@ string PhantomAnimator::CalibrateTo(string name)
     map<int, double> calibLengths = jointLengths[id];
     Vector3d eyeL_pos = eyeL_vec[id];
     Vector3d eyeR_pos = eyeR_vec[id];
-    
+
     MatrixXd jointTrans = MatrixXd::Zero(C.rows(), 3);
     int headJ(24), eyeLJ(22), eyeRJ(23);
     stringstream ss;
@@ -260,7 +284,7 @@ string PhantomAnimator::CalibrateTo(string name)
     return ss.str();
 }
 
-void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, MatrixXd &V_new, bool calibChk)
+void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool calibChk)
 {
     vector<Vector3d> vT;
 
@@ -275,7 +299,7 @@ void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd 
             vT.push_back(a.translation());
             C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
         }
-        myDqs(V_calib, cleanWeights, vQ, vT, V_new);
+        myDqs(V_calib, cleanWeights, vQ, vT, U);
     }
     else
     {
@@ -288,8 +312,24 @@ void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd 
             vT.push_back(a.translation());
             C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
         }
-        myDqs(V, cleanWeights, vQ, vT, V_new);
+        myDqs(V, cleanWeights, vQ, vT, U);
     }
+}
+
+void PhantomAnimator::Animate(RotationList vQ, MatrixXd &V_new)
+{
+    vector<Vector3d> vT;
+    igl::forward_kinematics(C_calib,BE,P,vQ,vQ,vT);
+
+    MatrixXd C_new = C_calib;
+    for (int i = 0; i < BE.rows(); i++)
+    {
+        Affine3d a;
+        a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C_calib.row(BE(i, 0)).transpose()));
+        vT.push_back(a.translation());
+        C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
+    }
+    myDqs(V_calib, cleanWeights, vQ, vT, V_new);
 }
 
 bool PhantomAnimator::ReadProfileData(string fileName)

@@ -43,12 +43,14 @@ public:
     bool ReadFiles(string prefix);
     bool Initialize();
     string CalibrateTo(string name);
-    void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, MatrixXd &V_new, bool calibChk = true);
+    void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool calibChk = true);
+    void Animate(RotationList vQ, MatrixXd &V_new);
 
     void GetMeshes(MatrixXd &_V, MatrixXi &_F, MatrixXd &_C, MatrixXi &_BE){
         _V = V; _F = F; _C = C; _BE = BE;
     }
     MatrixXd GetV(){ return V; }
+    MatrixXd GetU(){ return U; }
     MatrixXi GetF(){ return F; }
     MatrixXd GetC(){ return C; }
     MatrixXd GetC_calib(){ return C_calib; }
@@ -82,11 +84,12 @@ public:
 
 //variables
 private:
-    MatrixXd C, V, W, Wj;
+    MatrixXd C, V, U, W, Wj;
     MatrixXi BE, T, F;
     VectorXi P;
     MatrixXd V_calib, C_calib;
-    vector<int> eye2ply;
+    vector<int> eyeIDs;
+    // vector<int> eye2ply;
     RotationList alignRot;
     vector<map<int, double>> cleanWeights;
 

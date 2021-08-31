@@ -29,11 +29,12 @@ int main(int argc, char **argv)
     }
 
     //phantom animator
-    PhantomAnimator *phantom = new PhantomAnimator(config.getPhantomFile());
+    PhantomAnimator *phantom = new PhantomAnimator("./phantoms/"+config.getPhantomFile());
     phantom->Initialize();
   
     //libigl viewer
     Viewer *viewer = new Viewer(phantom, config.getIpAdress(), config.getPortNum());
+    if(argc==2) viewer->SetRecordFile(string(argv[1]));
     viewer->SetIsoCenter(config.getIsoCenter());
     viewer->SetMeshes(config.getCArmFile(), config.getPatientFile(), config.getGlassFile());
     viewer->SetCores();

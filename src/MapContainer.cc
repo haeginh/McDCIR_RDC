@@ -1,34 +1,39 @@
 #include "MapContainer.hh"
 
-MapContainer::MapContainer(){
+MapContainer::MapContainer()
+: i(30), j(60), k(60) //X-decalcomanie
+{
+    SetIJK(30, 60, 60);
+    isoCenter  = Vector3d(0,150,150); //isocenter when doseMap generated. (grid center)
+    
+    doseMapS.resize(i*j*k);
+    doseMapL.resize(i*j*k);
 
+    ReadMapList();
+    //read default map
+    ReadMap("../4_map_gen/doseMaps/0.map");
 }
 
-void MapContainer::ReadMaps(){
+void MapContainer::ReadMapList(){
     //read map list
     ifstream ifsList("./doseMaps/list.txt");
     int mapID,mapkVp,mapRot; double mapDAP;
-    typedef tuple<int, int> MAPIDX;
-    map<MAPIDX, int> mapList;
-    map<int, double> mapDAPs;
     while(ifsList>>mapID>>mapkVp>>mapRot>>mapDAP){
         mapList[MAPIDX(mapkVp, mapRot)] = mapID;
         mapDAPs[mapID] = mapDAP*1.e-12;
     }
-    //read default map
-    vector<double> doseMapS0, doseMapL0;
-    int ijk[3] = {60,60,60};
-    doseMapS0.resize(ijk[0]*ijk[1]*ijk[2]);
-    doseMapL0.resize(ijk[0]*ijk[1]*ijk[2]);
-    Vector3d isoCenter = Vector3d(0,0,60); // data_iso
-    Vector3d isoRelat  = Vector3d(-150,-150,0)-Vector3d(0,0,60); //isocenter when doseMap generated. (gridstartPos - map_iso)
-    Vector3d gridStart = isoRelat+isoCenter; // isocenter + isorelat
-    double DAPperNPS = mapDAPs[0];
-    ifstream ifsMap("./doseMaps/0_conf.map", ios::binary);
-    ifsMap.read((char*) &doseMapS0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
-    ifsMap.read((char*) &doseMapL0[0], ijk[0]*ijk[1]*ijk[2]*sizeof(double));
+}
+
+void MapContainer::ReadMap(string name)
+{
+    // Vector3d isoCenter = Vector3d(0,0,60); // data_iso
+    // gridStart = isoRelat+isoCenter; // isocenter + isorelat
+    invDAP = 1./mapDAPs[0];
+    ifstream ifsMap(name, ios::binary);
+    ifsMap.read((char*) &doseMapS[0], i*j*k*sizeof(double));
+    ifsMap.read((char*) &doseMapL[0], i*j*k*sizeof(double));
     ifsMap.close();
-    double maxSkin0 = *max_element(doseMapS0.begin(),doseMapS0.end());
+    maxSkin = *max_element(doseMapS.begin(),doseMapS.end());
 
     static char rMaxChar[100]("");
     static char aMaxChar[100]("1");
