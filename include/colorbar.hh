@@ -33,6 +33,7 @@ void texture_from_colormap(const Eigen::MatrixXd &rgb, GLuint & id)
   glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+static float maxVal[2] ={0,0};
 class ColorbarPlugin {
 public:
     ColorbarPlugin(igl::ColorMapType type, int _num_steps=21){
@@ -40,7 +41,9 @@ public:
         init_colormap();
         num_steps = _num_steps;
     }
-    void draw_colorbar(float maxVal[2]) const;
+    void draw_colorbar() const;
+    // void SetMaxVal_Rate(float val){maxVal[0]=val;}
+    // void SetMaxVal_Acc(float val){maxVal[1]=val;}
 protected:
     void init_colormap();
 
@@ -57,9 +60,8 @@ void ColorbarPlugin::init_colormap() {
     texture_from_colormap(rgb, id);
     colormaps_ = id;
 }
-
 // Draws the actual colorbar with min/max values
-void ColorbarPlugin::draw_colorbar(float maxVal[2]) const
+void ColorbarPlugin::draw_colorbar() const
 {
     float w = 20;
     float h = 200;

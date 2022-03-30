@@ -1,4 +1,6 @@
 #include "PhantomAnimator.hh"
+#include <igl/winding_number.h>
+#include <igl/signed_distance.h>
 PhantomAnimator::PhantomAnimator() {}
 
 PhantomAnimator::PhantomAnimator(string prefix)
@@ -12,136 +14,139 @@ bool PhantomAnimator::ReadFiles(string prefix)
     cout << "Read " + prefix + ".tgf" << endl;
     igl::readTGF("./phantoms/AM.tgf", C, BE);
     igl::readPLY(prefix + ".ply", V, F);
+    VectorXd::Index idx;
+    (V.rowwise() - RowVector3d(-3.41681, -75.74244, -10.19256)).rowwise().squaredNorm().minCoeff(&idx);
+    rightEye = idx;
+    (V.rowwise() - RowVector3d(4.27999, -76.86851, -9.92753)).rowwise().squaredNorm().minCoeff(&idx);
+    leftEye = idx;
+
+    igl::readPLY(prefix + "_apron.ply", V_apron, F_apron);
+    U = V;
+    U_apron = V_apron;
+    // VectorXi WN;
+    // MatrixXd V_normal;
+    // igl::per_vertex_normals(V, F, V_normal);
+    VectorXd S;
+    VectorXi I;
+    MatrixXd C, N_tmp;
+    igl::signed_distance(V, V_apron, F_apron, igl::SIGNED_DISTANCE_TYPE_PSEUDONORMAL, S, I, C, N_tmp);
+    // igl::winding_number(V_apron, F_apron, V-V_normal, WN);
+    vector<int> outside;
+    for(int i=0;i<S.rows();i++)
+        if(S(i)>0) outside.push_back(i);
+    outApron.resize(outside.size());
+    outApron = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(outside.data(), outside.size());
+    apronMask = ArrayXd::Zero(V.rows());
+    VectorXd ones = VectorXd::Ones(outApron.rows());
+    igl::slice_into(ones, outApron, apronMask);
+
+    // igl::SignedDistanceType type = igl::SIGNED_DISTANCE_TYPE_PSEUDONORMAL;
+    // igl::signed_distance(V,V_apron,F_apron,type,S,I,C,N);
+
+    MatrixXd W, W_apron;    
+    igl::readDMAT(prefix + ".W", W);
+    igl::readDMAT(prefix + ".Wj", Wj);
+    igl::readDMAT(prefix + "_apron.W", W_apron);
+    igl::readDMAT(prefix + "_apron.Wj", Wj_apron);
 
     //perform BBW
-    if ((!igl::readDMAT(prefix + ".W", W)) || (!igl::readDMAT(prefix + ".Wj", Wj)))
-    {
-        W.resize(V.rows(), BE.rows());
-        Wj.resize(V.rows(), C.rows() - 1);
-        MatrixXd boneP = GenerateBonePoints(C, BE, 1.);
-        MatrixXd V1(V.rows() + boneP.rows(), 3);
-        V1 << V, boneP;
-        MatrixXd VT, WT_j, WT;
-        MatrixXi TT, FT;
-        cout << "<Tetrahedralization>" << endl;
-        igl::copyleft::tetgen::tetrahedralize(V1, F, "pYq", VT, TT, FT);
+    // if ((!igl::readDMAT(prefix + ".W", W)) || (!igl::readDMAT(prefix + ".Wj", Wj)))
+    // {
+    //     W.resize(V.rows(), BE.rows());
+    //     Wj.resize(V.rows(), C.rows() - 1);
+    //     MatrixXd boneP = GenerateBonePoints(C, BE, 1.);
+    //     MatrixXd V1(V.rows() + boneP.rows(), 3);
+    //     V1 << V, boneP;
+    //     MatrixXd VT, WT_j, WT;
+    //     MatrixXi TT, FT;
+    //     cout << "<Tetrahedralization>" << endl;
+    //     igl::copyleft::tetgen::tetrahedralize(V1, F, "pYq", VT, TT, FT);
+    //     cout << "<Calculate Joint Weights>" << endl;
+    //     MatrixXd C1 = C.block(0, 0, C.rows() - 1, 3);
+    //     if (!CalculateScalingWeights(C1, VT, TT, WT_j))
+    //         return EXIT_FAILURE;
+    //     igl::normalize_row_sums(WT_j, WT_j);
 
-        cout << "<Calculate Joint Weights>" << endl;
-        MatrixXd C1 = C.block(0, 0, C.rows() - 1, 3);
-        if (!CalculateScalingWeights(C1, VT, TT, WT_j))
-            return EXIT_FAILURE;
-        igl::normalize_row_sums(WT_j, WT_j);
+    //     cout << "<Calculate Bone Weights>" << endl;
+    //     MatrixXd bc;
+    //     VectorXi b;
+    //     igl::boundary_conditions(VT, TT, C, VectorXi(), BE, MatrixXi(), b, bc);
+    //     cout << bc.rows() << " " << bc.cols() << endl;
+    //     igl::BBWData bbw_data;
+    //     bbw_data.active_set_params.max_iter = 10;
+    //     bbw_data.verbosity = 2;
+    //     if (!igl::bbw(VT, TT, b, bc, bbw_data, WT))
+    //         return EXIT_FAILURE;
+    //     igl::normalize_row_sums(WT, WT);
 
-        cout << "<Calculate Bone Weights>" << endl;
-        MatrixXd bc;
-        VectorXi b;
-        igl::boundary_conditions(VT, TT, C, VectorXi(), BE, MatrixXi(), b, bc);
-        cout << bc.rows() << " " << bc.cols() << endl;
-        igl::BBWData bbw_data;
-        bbw_data.active_set_params.max_iter = 10;
-        bbw_data.verbosity = 2;
-        if (!igl::bbw(VT, TT, b, bc, bbw_data, WT))
-            return EXIT_FAILURE;
-        igl::normalize_row_sums(WT, WT);
-
-        //matching between tetra & ply
-        cout << "matching between tetra & ply.." << flush;
-        auto grid = GenerateGrid(VT);
-        int count(0);
-        for (int i = 0; i < V.rows(); i++)
-        {
-            int x = floor(V(i, 0) + 0.5);
-            int y = floor(V(i, 1) + 0.5);
-            int z = floor(V(i, 2) + 0.5);
-            auto key = make_tuple(x, y, z);
-            for (int n : grid[key])
-            {
-                if (fabs(V(n, 0) - VT(i, 0)) > 0.01)
-                    continue;
-                if (fabs(V(n, 1) - VT(i, 1)) > 0.01)
-                    continue;
-                if (fabs(V(n, 2) - VT(i, 2)) > 0.01)
-                    continue;
-                W.row(i) = WT.row(n);
-                Wj.row(i) = WT_j.row(n);
-                cout << "\rmatching between tetra & ply.." << ++count << "/" << V.rows() << flush;
-                break;
-            }
-        }
-        cout << endl;
-        igl::writeDMAT(prefix + ".W", W, false);
-        igl::writeDMAT(prefix + ".Wj", Wj, false);
-    }
+    //     //matching between tetra & ply
+    //     cout << "matching between tetra & ply.." << flush;
+    //     auto grid = GenerateGrid(VT);
+    //     int count(0);
+    //     for (int i = 0; i < V.rows(); i++)
+    //     {
+    //         int x = floor(V(i, 0) + 0.5);
+    //         int y = floor(V(i, 1) + 0.5);
+    //         int z = floor(V(i, 2) + 0.5);
+    //         auto key = make_tuple(x, y, z);
+    //         for (int n : grid[key])
+    //         {
+    //             if (fabs(V(n, 0) - VT(i, 0)) > 0.01)
+    //                 continue;
+    //             if (fabs(V(n, 1) - VT(i, 1)) > 0.01)
+    //                 continue;
+    //             if (fabs(V(n, 2) - VT(i, 2)) > 0.01)
+    //                 continue;
+    //             W.row(i) = WT.row(n);
+    //             Wj.row(i) = WT_j.row(n);
+    //             cout << "\rmatching between tetra & ply.." << ++count << "/" << V.rows() << flush;
+    //             break;
+    //         }
+    //     }
+    //     cout << endl;
+    //     igl::writeDMAT(prefix + ".W", W, false);
+    //     igl::writeDMAT(prefix + ".Wj", Wj, false);
+    // }
 
     //eye part
-    VectorXd data = VectorXd::Zero(Wj.rows());
-    for(int i=0;i<Wj.rows();i++)
-    {
-        // if(Wj(i, 22)>0.8 || Wj(i, 23)>0.8 )
-        // {
-        //     eyeIDs.push_back(i);
-        //     if(Wj(i, 22)>0.8)data(i) = Wj(i, 22)-0.8;
-        //     if(Wj(i, 23)>0.8)data(i) = Wj(i, 23)-0.8;
-        // }
-        // else 
-        if((C.row(23)-V.row(i)).squaredNorm()<10)
-        {
-            eyeIDs.push_back(i);
-            data(i) = -(C.row(23)-V.row(i)).squaredNorm()+10;
-        }
-        else if((C.row(22)-V.row(i)).squaredNorm()<10)
-        {
-            eyeIDs.push_back(i);
-            data(i) = -(C.row(22)-V.row(i)).squaredNorm()+10;
-        }
-
-    }
-
-    // MatrixXd V_eye;
-    // MatrixXi F_eye;
-    // if (!igl::readPLY(prefix + "_eye.ply", V_eye, F_eye))
+    // VectorXd data = VectorXd::Zero(Wj.rows());
+    // double sum(0);
+    // for(int i=0;i<Wj.rows();i++)
     // {
-    //     cout << "there is no " + prefix + "_eye.ply!!" << endl;
-    // }
-    // map<tuple<int, int, int>, vector<int>> grid = GenerateGrid(V);
-
-    // for (int i = 0; i < V_eye.rows(); i++)
-    // {
-    //     double x = V_eye(i, 0);
-    //     double y = V_eye(i, 1);
-    //     double z = V_eye(i, 2);
-    //     auto ijk = make_tuple(floor(x + 0.5), floor(y + 0.5), floor(z + 0.5));
-    //     for (int n : grid[ijk])
+    //     // if(Wj(i, 22)>0.8 || Wj(i, 23)>0.8 )
+    //     // {
+    //     //     eyeIDs.push_back(i);
+    //     //     if(Wj(i, 22)>0.8)data(i) = Wj(i, 22)-0.8;
+    //     //     if(Wj(i, 23)>0.8)data(i) = Wj(i, 23)-0.    double epsilon(0.01);
+    //     // }
+    //     // else 
+    //     if((C.row(23)-V.row(i)).squaredNorm()<10)
     //     {
-    //         if (fabs(x - V(n, 0)) > 0.001)
-    //             continue;
-    //         if (fabs(y - V(n, 1)) > 0.001)
-    //             continue;
-    //         if (fabs(z - V(n, 2)) > 0.001)
-    //             continue;
-    //         eye2ply.push_back(n);
-    //         break;
+    //         lensWeight[i] = -(C.row(23)-V.row(i)).squaredNorm()+10;
+    //         sum += lensWeight[i];
+    //         // eyeIDs.push_back(i);
+    //         // data(i) = -(C.row(23)-V.row(i)).squaredNorm()+10;
+    //     }
+    //     else if((C.row(22)-V.row(i)).squaredNorm()<10)
+    //     {
+    //         lensWeight[i] = -(C.row(22)-V.row(i)).squaredNorm()+10;
+    //         sum += lensWeight[i];
+    //         // eyeIDs.push_back(i);
+    //         // data(i) = -(C.row(22)-V.row(i)).squaredNorm()+10;
     //     }
     // }
+    // for(auto &iter:lensWeight) iter.second /= sum;
 
+    VectorXd F_area;
+    igl::doublearea(V,F,F_area);
+    W_avgSkin = ArrayXd::Zero(V.rows());
+       for(int i=0;i<F.rows();i++){
+        for(int j=0;j<3;j++)
+            W_avgSkin(F(i,j)) +=  F_area(i);
+    }
+    W_avgSkin = W_avgSkin/W_avgSkin.sum();
 
-    // vector<vector<int>> eyeFaces;
-    // for (int i = 0; i < F_eye.rows(); i++)
-    // {
-    //     vector<int> face = {eye2ply[F_eye(i, 0)], eye2ply[F_eye(i, 1)], eye2ply[F_eye(i, 2)]};
-    //     sort(face.begin(), face.end());
-    //     eyeFaces.push_back(face);
-    // }
-    // vector<int> eyeFaceIDs;
-    // for (int i = 0; i < F.rows(); i++)
-    // {
-    //     vector<int> face = {F(i, 0), F(i, 1), F(i, 2)};
-    //     sort(face.begin(), face.end());
-    //     if (find(eyeFaces.begin(), eyeFaces.end(), face) != eyeFaces.end())
-    //         eyeFaceIDs.push_back(i);
-    // }
-
-    double epsilon(1e-5);
+    double epsilon(0.01);
     for (int i = 0; i < W.rows(); i++)
     {
         double sum(0);
@@ -156,6 +161,22 @@ bool PhantomAnimator::ReadFiles(string prefix)
         for (auto &iter : vertexWeight)
             iter.second /= sum;
         cleanWeights.push_back(vertexWeight);
+    }
+
+    for (int i = 0; i < W_apron.rows(); i++)
+    {
+        double sum(0);
+        map<int, double> vertexWeight;
+        for (int j = 0; j < W_apron.cols(); j++)
+        {
+            if (W_apron(i, j) < epsilon)
+                continue;
+            vertexWeight[j] = W_apron(i, j);
+            sum += W_apron(i, j);
+        }
+        for (auto &iter : vertexWeight)
+            iter.second /= sum;
+        cleanWeightsApron.push_back(vertexWeight);
     }
 
     return true;
@@ -241,6 +262,7 @@ bool PhantomAnimator::Initialize()
     cout << "done" << endl;
     V_calib = V;
     C_calib = C;
+    V_calib_apron = V_apron;
     return true;
 }
 
@@ -280,6 +302,12 @@ string PhantomAnimator::CalibrateTo(string name)
     cout << Wj.rows() << "*" << Wj.cols() << endl;
     cout << jointTrans.rows() << "*" << jointTrans.cols() << endl;
     V_calib = V + Wj * jointTrans.block(0, 0, C.rows() - 1, 3);
+    
+    cout<<V_apron.rows()<<" "<<V_apron.cols()<<endl;
+    cout<<Wj_apron.rows()<<" "<<Wj_apron.cols()<<endl;
+    cout<<C.rows() - 1<<endl;
+    
+    V_calib_apron = V_apron + Wj_apron * jointTrans.block(0, 0, C.rows() - 1, 3);
     //MatrixXd jt = jointTrans.block(0,0,C.rows()-1,3);
     return ss.str();
 }
@@ -300,6 +328,7 @@ void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd 
             C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
         }
         myDqs(V_calib, cleanWeights, vQ, vT, U);
+        myDqs(V_calib_apron, cleanWeightsApron, vQ, vT, U_apron);
     }
     else
     {
@@ -313,6 +342,7 @@ void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd 
             C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
         }
         myDqs(V, cleanWeights, vQ, vT, U);
+        myDqs(V_apron, cleanWeightsApron, vQ, vT, U_apron);
     }
 }
 

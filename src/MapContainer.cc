@@ -1,17 +1,20 @@
 #include "MapContainer.hh"
 
 MapContainer::MapContainer()
-: i(30), j(60), k(60) //X-decalcomanie
+: i(80), j(80), k(60) //X-decalcomanie
+// : i(30), j(60), k(60) //X-decalcomanie
 {
-    SetIJK(30, 60, 60);
-    isoCenter  = Vector3d(0,150,150); //isocenter when doseMap generated. (grid center)
+    baseIdx = (i*j + j + 1)*k*0.5;
+    // SetIJK(30, 60, 60);
+    // isoCenter  = Vector3d(0,150,150); //isocenter when doseMap generated. (grid center)
     
     doseMapS.resize(i*j*k);
     doseMapL.resize(i*j*k);
 
     ReadMapList();
     //read default map
-    ReadMap("../4_map_gen/doseMaps/0.map");
+    ReadMap("../McDCIR_PDC_map/doseMaps/200_200_150/ISO_100.map");
+    // ReadMap("../4_map_gen/doseMaps/0.map");
 }
 
 void MapContainer::ReadMapList(){
@@ -30,10 +33,10 @@ void MapContainer::ReadMap(string name)
     // gridStart = isoRelat+isoCenter; // isocenter + isorelat
     invDAP = 1./mapDAPs[0];
     ifstream ifsMap(name, ios::binary);
-    ifsMap.read((char*) &doseMapS[0], i*j*k*sizeof(double));
-    ifsMap.read((char*) &doseMapL[0], i*j*k*sizeof(double));
+    ifsMap.read((char*) &doseMapS(0), i*j*k*sizeof(double));
+    ifsMap.read((char*) &doseMapL(0), i*j*k*sizeof(double));
     ifsMap.close();
-    maxSkin = *max_element(doseMapS.begin(),doseMapS.end());
+    maxSkin = doseMapS.maxCoeff();
 
     static char rMaxChar[100]("");
     static char aMaxChar[100]("1");

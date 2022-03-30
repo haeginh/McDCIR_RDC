@@ -193,7 +193,7 @@ void myDqs(
 //  assert(W.cols() == (int)vQ.size());
 //  assert(W.cols() == (int)vT.size());
   // resize output
-  U.resizeLike(V);
+//   U.resizeLike(V);
 
   // Convert quats + trans into dual parts
   vector<Eigen::Quaterniond> vD(vQ.size());
@@ -208,7 +208,7 @@ void myDqs(
 
   // Loop over vertices
   const int nv = V.rows();
-#pragma omp parallel for if (nv>10000)
+ #pragma omp parallel for if (nv>1000)
   for(int i = 0;i<nv;i++)
   {
     Eigen::Quaterniond b0(0,0,0,0);
@@ -233,17 +233,20 @@ void myDqs(
             be.coeffs() += iter.second * vD[iter.first].coeffs();
         }
     }
-    Eigen::Quaterniond ce = be;
-    ce.coeffs() /= b0.norm();
-    Eigen::Quaterniond c0 = b0;
-    c0.coeffs() /= b0.norm();
+    // Eigen::Quaterniond ce = be;
+    // ce.coeffs() /= b0.norm();
+    // Eigen::Quaterniond c0 = b0;
+    // c0.coeffs() /= b0.norm();
+    double tmp = 1/b0.norm();
+    be.coeffs() *= tmp;
+    b0.coeffs() *= tmp;
     // See algorithm 1 in "Geometric skinning with approximate dual quaternion
     // blending" by Kavan et al
     Vector3d v = V.row(i);
-    Vector3d d0 = c0.vec();
-    Vector3d de = ce.vec();
-    Eigen::Quaterniond::Scalar a0 = c0.w();
-    Eigen::Quaterniond::Scalar ae = ce.w();
+    Vector3d d0 = b0.vec();
+    Vector3d de = be.vec();
+    Eigen::Quaterniond::Scalar a0 = b0.w();
+    Eigen::Quaterniond::Scalar ae = be.w();
     U.row(i) =  v + 2*d0.cross(d0.cross(v) + a0*v) + 2*(a0*de - ae*d0 + d0.cross(de));
   }
 

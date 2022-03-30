@@ -16,6 +16,7 @@ endif()
 
 # libigl
 option(LIBIGL_WITH_OPENGL            "Use OpenGL"         ON)
+option(LIBIGL_WITH_EMBREE            "Use embree"         ON)
 option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
 option(LIBIGL_WITH_OPENGL_GLFW_IMGUI "Use imgui"           ON)
 option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
@@ -41,5 +42,6 @@ target_link_libraries(DCIR_RDC
     igl::core
     igl::opengl
     igl::opengl_glfw_imgui
+    igl::embree
     igl::tetgen
     )

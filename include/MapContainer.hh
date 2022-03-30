@@ -18,19 +18,24 @@ class MapContainer{
     int GetI(){return i;}
     int GetJ(){return j;}
     int GetK(){return k;}
-    double GetSkinDose(int idx){return doseMapS[idx];}
-    double GetLensDose(int idx){return doseMapL[idx];}
+    int GetIdxBase(){return baseIdx;}
+    
+    void GetSkinDoseMap(VectorXd& _doseMapS) {_doseMapS = doseMapS;}
+    // double GetSkinDose(int idx){return doseMapS(idx);}
+    double GetLensDose(int idx){return doseMapL(idx);}
     double GetMaxSkin(){return maxSkin;}
     double GetInvDAPperNPS(){return invDAP;}
-    Vector3d GetIsoCenter(){return isoCenter;}
+    // Vector3d GetIsoCenter(){return isoCenter;}
     private:
     //variables
-    int i, j, k;
-    vector<double> doseMapS, doseMapL;
+    int i, j, k, baseIdx;
+    VectorXd doseMapS, doseMapL;
+    // vector<double> doseMapS, doseMapL;
     double maxSkin, invDAP;
+    int leftE, rightE;
     map<MAPIDX, int> mapList;
     map<int, double> mapDAPs;
-    Vector3d isoCenter;
+    // sVector3d isoCenter;
 };
 
 #endif

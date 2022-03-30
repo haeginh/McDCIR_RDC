@@ -55,7 +55,14 @@ public:
     MatrixXd GetC(){ return C; }
     MatrixXd GetC_calib(){ return C_calib; }
     MatrixXi GetBE(){ return BE; }
+    ArrayXd GetWSkin(){return W_avgSkin;}
+    MatrixXd GetUapron(){return U_apron;}
+    VectorXi GetOutApron(){return outApron;}
+    ArrayXd GetApronMask(){return apronMask;}
+    MatrixXi GetFapron(){return F_apron;}
+    // map<int, double> GetWLens(){return lensWeight;}
     RotationList GetAlignRot() {return alignRot;}
+    void GetEyeIdx(int &R, int&L){R = rightEye; L = leftEye;}
    
 public:
     bool ReadProfileData(string fileName);
@@ -84,16 +91,21 @@ public:
 
 //variables
 private:
-    MatrixXd C, V, U, W, Wj;
-    MatrixXi BE, T, F;
+    MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
+    MatrixXi BE, T, F, F_apron;
     VectorXi P;
-    MatrixXd V_calib, C_calib;
-    vector<int> eyeIDs;
+    ArrayXd W_avgSkin;
+    // map<int, double> lensWeight;
+    MatrixXd V_calib, C_calib, V_calib_apron;
+    int rightEye, leftEye;
+    // vector<int> eyeIDs;
     // vector<int> eye2ply;
     RotationList alignRot;
-    vector<map<int, double>> cleanWeights;
+    vector<map<int, double>> cleanWeights, cleanWeightsApron;
 
     //tmp
+    VectorXi outApron;
+    ArrayXd apronMask;
     map<int, double> lengths;
 };
 
