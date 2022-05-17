@@ -3,7 +3,8 @@
 #include <functional>
 
 #include "PhantomAnimator.hh"
-#include "Viewer.hh"
+// #include "Viewer.hh"
+#include "RDCWindow.hh"
 #include "MapContainer.hh"
 #include "Config.hh"
 #define PI 3.14159265358979323846
@@ -21,6 +22,7 @@ typedef Triplet<double> T;
 
 int main(int argc, char **argv)
 {
+
     Config config;
     if(!config.loadConfig("config.txt"))
     {
@@ -31,14 +33,18 @@ int main(int argc, char **argv)
     //phantom animator
     PhantomAnimator *phantom = new PhantomAnimator("./phantoms/"+config.getPhantomFile());
     phantom->Initialize();
-  
+
+    RDCWindow window = RDCWindow::Instance();
+    window.Initialize();
+    window.Launch();
+
     //libigl viewer
-    Viewer *viewer = new Viewer(phantom, config.getIpAdress(), config.getPortNum());
-    if(argc==2) viewer->SetRecordFile(string(argv[1]));
-    viewer->SetIsoCenter(config.getIsoCenter());
-    viewer->SetMeshes(config.getCArmFile(), config.getPatientFile(), config.getGlassFile());
-    viewer->SetCores();
-    viewer->Launch();
+    // Viewer *viewer = new Viewer(phantom, config.getIpAdress(), config.getPortNum());
+    // if(argc==2) viewer->SetRecordFile(string(argv[1]));
+    // viewer->SetIsoCenter(config.getIsoCenter());
+    // viewer->SetMeshes(config.getCArmFile(), config.getPatientFile(), config.getGlassFile());
+    // viewer->SetCores();
+    // viewer->Launch();
 
     return EXIT_SUCCESS;
 }

@@ -15,6 +15,7 @@ if (OPENMP_FOUND)
 endif()
 
 # libigl
+#option(LIBIGL_USE_STATIC_LIBRARY     "Use libIGL as static library" ON)
 option(LIBIGL_WITH_OPENGL            "Use OpenGL"         ON)
 option(LIBIGL_WITH_EMBREE            "Use embree"         ON)
 option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
