@@ -4,31 +4,6 @@
 #include <functional>
 
 #include "bodytracking.hh"
-//#include "colorbar.hh"
-// #include <igl/opengl/glfw/Viewer.h>
-// #include <igl/opengl/glfw/imgui/ImGuiMenu.h>
-// #include <igl/opengl/glfw/imgui/ImGuiHelpers.h>
-// #include <imgui/imgui.h>
-// #include <igl/readTGF.h>
-// #include <igl/writeTGF.h>
-// #include <igl/readDMAT.h>
-// #include <igl/writeDMAT.h>
-// #include <igl/writeMESH.h>
-// #include <igl/readMESH.h>
-// #include <igl/readPLY.h>
-// #include <igl/directed_edge_parents.h>
-// #include <igl/copyleft/tetgen/tetrahedralize.h>
-// #include <igl/boundary_conditions.h>
-// #include <igl/directed_edge_parents.h>
-// #include <igl/directed_edge_orientations.h>
-// #include <igl/deform_skeleton.h>
-// #include <igl/forward_kinematics.h>
-// #include <igl/doublearea.h>
-// #include <igl/dqs.h>
-// #include <igl/unproject_onto_mesh.h>
-// #include <igl/Timer.h>
-// #include <igl/mat_max.h>
-
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
 #include <Eigen/SparseCore>
@@ -36,16 +11,16 @@
 
 #include "ClientSocket.hh"
 #include "GlassTracker.hh"
-#define PORT 30303
 #define BE_NUM 22
 #define C_NUM 24
 
-//#define TEST
+// #define TEST
+#define DISPLAY
 extern Rect cropRect;
 void PrintUsage()
 {
     cout << "<Usage>" << endl;
-    cout << "./2_tracker [ip] [tracking options]" << endl;
+    cout << "./2_tracker [ip] [port] [tracking options]" << endl;
     cout << "<tracking options>" << endl;
     cout << "-m motion, -g glass, -b bed" << endl;
     exit(1);
@@ -58,43 +33,31 @@ typedef Triplet<double> T;
 
 int main(int argc, char **argv)
 {
-    string detParm("detector_params.yml");
-    string camParm("camera2160.yml");
+    string dir = getenv("DCIR_TRACKER_DIR_PATH");
+    string detParm(dir + "/detector_params.yml");
+    string camParm(dir + "/kinect2160.yml");
     GlassTracker glassTracker;
     glassTracker.SetScalingFactor(0.3);
     if (argc < 3)
         PrintUsage();
-    int option(0);
-
-    //trackin option configuration
-    for (int i = 2; i < argc; i++)
+    int option = atoi(argv[3]);
+    if (option & 4)
     {
-        if (string(argv[i]) == "-m")
-            option = option | 8; // 1000
-        else if (string(argv[i]) == "-g")
+        if (!glassTracker.ReadDetectorParameters(detParm))
         {
-            option = option | 4; // 0100
-            if (!glassTracker.ReadDetectorParameters(detParm))
-            {
-                cerr << "Check detector parmeter file! (" << detParm << ")" << endl;
-                return 1;
-            }
-            if (!glassTracker.ReadCameraParameters(camParm))
-            {
-                array<double, 187> pack;
-
-                cerr << "Check camera parmeter file! (" << camParm << ")" << endl;
-                return 1;
-            }
+            cerr << "Check detector parmeter file! (" << detParm << ")" << endl;
+            return 1;
         }
-        else if (string(argv[i]) == "-b")
-            option = option | 2; // 0010
+        if (!glassTracker.ReadCameraParameters(camParm))
+        {
+            cerr << "Check camera parmeter file! (" << camParm << ")" << endl;
+            return 1;
+        }
     }
 
     //connection to server
 #ifndef TEST
-    string ip(argv[1]);
-    ClientSocket socket(ip, PORT);
+    ClientSocket socket(string(argv[1]), atoi(argv[2]));
     string msg;
     array<double, 187> pack;
     socket >> msg;
@@ -102,9 +65,14 @@ int main(int argc, char **argv)
 
     //read sync data
     string dump;
-    ifstream ifs("sync.txt");
+    ifstream ifs(dir + "/sync.txt");
     ifs >> dump >> pack[1] >> pack[2] >> pack[3] >> pack[4];
     ifs >> dump >> pack[5] >> pack[6] >> pack[7];
+
+    Eigen::Affine3d aff = Eigen::Affine3d::Identity();
+    aff.rotate(Quaterniond(pack[4], pack[1], pack[2], pack[3]).normalized().toRotationMatrix().transpose());
+    aff.translate(-Vector3d(pack[5], pack[6], pack[7]));
+
     ifs.close();
     pack[0] = option;
     socket.SendDoubleBuffer(pack.data(), 8);
@@ -113,14 +81,17 @@ int main(int argc, char **argv)
     //recieve alignRot/BE
     RotationList alignRot;
     MatrixXi BE(BE_NUM, 2);
-    socket.RecvDoubleBuffer(pack.data(), BE_NUM * 6);
-    for (int i = 0; i < BE_NUM; i++)
+    if (option & 8)
     {
-        alignRot.push_back(Quaterniond(pack[i * 6], pack[i * 6 + 1], pack[i * 6 + 2], pack[i * 6 + 3]));
-        BE.row(i) << (int)pack[i * 6 + 4], (int)pack[i * 6 + 5];
+        socket.RecvDoubleBuffer(pack.data(), BE_NUM * 6);
+        for (int i = 0; i < BE_NUM; i++)
+        {
+            alignRot.push_back(Quaterniond(pack[i * 6], pack[i * 6 + 1], pack[i * 6 + 2], pack[i * 6 + 3]));
+            BE.row(i) << (int)pack[i * 6 + 4], (int)pack[i * 6 + 5];
+        }
     }
-
     socket << "success!";
+
 #endif
     // joint number conv.
     vector<int> i2k = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24};
@@ -134,6 +105,7 @@ int main(int argc, char **argv)
 
     // Start camera. Make sure depth camera is enabled.
     k4a_device_configuration_t deviceConfig = get_default_config();
+    deviceConfig.camera_fps = K4A_FRAMES_PER_SECOND_15;
     VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
 
     // Get calibration information
@@ -146,7 +118,8 @@ int main(int argc, char **argv)
     // Create Body Tracker
     k4abt_tracker_t tracker = nullptr;
     k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
-    tracker_config.processing_mode = K4ABT_TRACKER_PROCESSING_MODE_GPU_CUDA;
+    // tracker_config.processing_mode = K4ABT_TRACKER_PROCESSING_MODE_GPU_CUDA;
+    tracker_config.processing_mode = K4ABT_TRACKER_PROCESSING_MODE_GPU_CUDA ;
     VERIFY(k4abt_tracker_create(&sensorCalibration, tracker_config, &tracker), "Body tracker initialization failed!");
 
     int signal(-1);
@@ -256,12 +229,15 @@ int main(int argc, char **argv)
     cout << "ready" << endl;
     vector<int> poseJoints = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24, 8, 15, 21, 25, 28, 30};
     bool calib(true);
+
+#ifdef DISPLAY
     if (option & 8)
     {
         window3d.Create("Motion Capture", sensorCalibration);
         window3d.SetCloseCallback(CloseCallback);
         window3d.SetKeyCallback(ProcessKey);
     }
+#endif
 
     //variables
     Mat color;
@@ -328,7 +304,9 @@ int main(int argc, char **argv)
             k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0
             if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
             {
+#ifdef DISPLAY
                 VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight);
+#endif
                 if (k4abt_frame_get_num_bodies(bodyFrame))
                 {
 #ifndef TEST
@@ -359,9 +337,12 @@ int main(int argc, char **argv)
                 }
                 k4abt_frame_release(bodyFrame);
             }
+#ifdef DISPLAY
             window3d.SetLayout3d(s_layoutMode);
             window3d.SetJointFrameVisualization(s_visualizeJointFrame);
             window3d.Render();
+#endif
+
         }
 #ifndef TEST
         // for(int i=0;i<375;i++) cout<<i<<": "<<pack_run[i]<<endl;

@@ -18,7 +18,7 @@ int main(int argc, char **argv)
 {
     //trackin option configuration3
     string detParm("detector_params.yml");
-    string camParm("camera2160.yml");
+    string camParm("kinect3072.yml");
     if (argc != 2)
         PrintUsage();
 
@@ -27,7 +27,13 @@ int main(int argc, char **argv)
     VERIFY(k4a_device_open(0, &device), "Open K4A Device failed!");
 
     // Start camera. Make sure depth camera is enabled.
-    k4a_device_configuration_t deviceConfig = get_default_config();
+    k4a_device_configuration_t deviceConfig;
+    deviceConfig.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
+    deviceConfig.color_resolution = K4A_COLOR_RESOLUTION_3072P;
+    deviceConfig.depth_delay_off_color_usec = 0;
+    deviceConfig.synchronized_images_only = false;
+    deviceConfig.depth_mode = K4A_DEPTH_MODE_OFF; // No need for depth during calibration
+    deviceConfig.camera_fps = K4A_FRAMES_PER_SECOND_15;
     VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
 
     // Get calibration information

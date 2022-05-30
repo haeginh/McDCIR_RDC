@@ -31,11 +31,13 @@ option(LIBIGL_WITH_OPENGL            "Use OpenGL"         ON)
 # option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
 find_package(LIBIGL REQUIRED QUIET)
 set(LIBIGL_DIR ${LIBIGL_INCLUDE_DIR}/..)
+set(KINECT_DIR "/home/hurel/codes/Azure-Kinect-Samples/body-tracking-samples")
 
 file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cc)
 file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hh)
 include_directories(${PROJECT_SOURCE_DIR}/include
-                    ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/
+                    ${KINECT_DIR}/sample_helper_includes/
+                    ${KINECT_DIR}/sample_helper_libs/window_controller_3d/
                     ${LIBIGL_DIR}/external/
                     ${LIBIGL_DIR}/include/
                     # ${LIBIGL_DIR}/external/libigl-imgui/
@@ -49,21 +51,21 @@ include_directories(${PROJECT_SOURCE_DIR}/include
 add_executable(2_tracker 2_tracker.cc ${sources} ${headers})
 target_link_libraries(2_tracker
     k4a
-    k4arecord
+    #k4arecord
     k4abt
     window_controller_3d::window_controller_3d
     ${OpenCV_LIBS}
     )
 
 ## 3_synchronization
-add_executable(3_synchronization 3_synchronization.cc ${sources} ${headers})
-target_link_libraries(3_synchronization k4a ${OpenCV_LIBS})
+#add_executable(3_synchronization 3_synchronization.cc ${sources} ${headers})
+#target_link_libraries(3_synchronization k4a ${OpenCV_LIBS})
 
 ## 4_camera_calib
-add_executable(4_camera_calib 4_camera_calib.cc ${sources} ${headers})
-target_link_libraries(4_camera_calib k4a ${OpenCV_LIBS})
+#add_executable(4_camera_calib 4_camera_calib.cc ${sources} ${headers})
+#target_link_libraries(4_camera_calib k4a ${OpenCV_LIBS})
 
 ## 5_charuco_gen
-add_executable(5_charuco_gen 5_charuco_gen.cc)
-target_link_libraries(5_charuco_gen ${OpenCV_LIBS})
+#add_executable(5_charuco_gen 5_charuco_gen.cc)
+#target_link_libraries(5_charuco_gen ${OpenCV_LIBS})
 
