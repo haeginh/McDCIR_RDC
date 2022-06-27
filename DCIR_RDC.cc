@@ -31,8 +31,8 @@ int main(int argc, char **argv)
     }
 
     //phantom animator
-    PhantomAnimator *phantom = new PhantomAnimator("./phantoms/"+config.getPhantomFile());
-    phantom->Initialize();
+    // PhantomAnimator *phantom = new PhantomAnimator("./phantoms/"+config.getPhantomFile());
+    PhantomAnimator::Instance().Initialize();
 
     RDCWindow window = RDCWindow::Instance();
     window.Initialize();

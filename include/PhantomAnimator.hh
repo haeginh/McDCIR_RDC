@@ -32,19 +32,24 @@
 #include <Eigen/StdVector>
 #include <Eigen/SparseCore>
 
-class Viewer;
-class PhantomAnimator{
-//functions
-public:
-    PhantomAnimator();
-    PhantomAnimator(string prefix);
-    ~PhantomAnimator();
+static vector<string> BFlist = {"M 12.2 BF%", "M 15.6 BF%", "M 18.9 BF%", "M 22.2 BF%", "M 25.6 BF%", "M 28.9 BF%", "M 32 BF%", "M 32.2 BF%", "M 35.6 BF%", "M 38.9 BF%", "M 42.3 BF%"};
+static vector<string> phantomlist = {"AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM"};
 
-    bool ReadFiles(string prefix);
+// class Viewer;
+class PhantomAnimator{
+public:
+    //singleton
+    static PhantomAnimator &Instance();
+    // PhantomAnimator(string prefix);
+    ~PhantomAnimator(){}
+
+    bool LoadPhantom(string phantomName);
+    bool LoadPhantomWithWeightFiles(string phantomName);
     bool Initialize();
     string CalibrateTo(string name);
     void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool calibChk = true);
     void Animate(RotationList vQ, MatrixXd &V_new);
+
 
     void GetMeshes(MatrixXd &_V, MatrixXi &_F, MatrixXd &_C, MatrixXi &_BE){
         _V = V; _F = F; _C = C; _BE = BE;
@@ -62,16 +67,18 @@ public:
     MatrixXi GetFapron(){return F_apron;}
     // map<int, double> GetWLens(){return lensWeight;}
     RotationList GetAlignRot() {return alignRot;}
-    void GetEyeIdx(int &R, int&L){R = rightEye; L = leftEye;}
    
 public:
+    PhantomAnimator(){
+        ReadProfileData("profile.txt");
+    }
     bool ReadProfileData(string fileName);
     bool WriteProfileData(string fileName);
     int AddProfile(map<int, double> calibLengths, Vector3d eyeL_pos, Vector3d eyeR_pos, string name){
         auto iter = profileIDs.insert(make_pair(name, jointLengths.size()));
         jointLengths.push_back(calibLengths);
-        eyeL_vec.push_back(eyeL_pos);
-        eyeR_vec.push_back(eyeR_pos);
+        // eyeL_vec.push_back(eyeL_pos);
+        // eyeR_vec.push_back(eyeR_pos);
         return distance(profileIDs.begin(), iter.first);
     }
     vector<string> GetProfileNames()
@@ -87,19 +94,16 @@ public:
     }
     map<string, int> profileIDs;
     vector<map<int, double>> jointLengths;
-    vector<Vector3d> eyeR_vec, eyeL_vec;
 
 //variables
-private:
     MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
-    MatrixXi BE, T, F, F_apron;
+    MatrixXi BE, T, F, F_apron;   
+    MatrixXd V_calib, C_calib, V_calib_apron;
+private:
+    // MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
+    // MatrixXi BE, T, F, F_apron;
     VectorXi P;
     ArrayXd W_avgSkin;
-    // map<int, double> lensWeight;
-    MatrixXd V_calib, C_calib, V_calib_apron;
-    int rightEye, leftEye;
-    // vector<int> eyeIDs;
-    // vector<int> eye2ply;
     RotationList alignRot;
     vector<map<int, double>> cleanWeights, cleanWeightsApron;
 

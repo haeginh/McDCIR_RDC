@@ -120,32 +120,32 @@ SparseMatrix<double> GenerateBarySparse(map<int, map<int, double>> &baryCoords, 
     mat.setFromTriplets(triplets.begin(),triplets.end());
     return mat;
 }
-bool CalculateScalingWeights(MatrixXd &C, MatrixXd &V,MatrixXi &T,MatrixXd &W){
-    VectorXi b; b.resize(C.rows());
-    MatrixXd bc = MatrixXd::Zero(C.rows(),C.rows());
-    map<tuple<int,int,int>,vector<int>> grid = GenerateGrid(V);
-    for(int n=0;n<C.rows();n++){
-        int x = floor(C(n,0)+0.5);
-        int y = floor(C(n,1)+0.5);
-        int z = floor(C(n,2)+0.5);
-        auto key = make_tuple(x,y,z);
-        for(int i:grid[key]){
-            if(fabs(C(n,0)-V(i,0))>0.01) continue;
-            if(fabs(C(n,1)-V(i,1))>0.01) continue;
-            if(fabs(C(n,2)-V(i,2))>0.01) continue;
-            b(n) = i;
-            bc(n,n) = 1;
-            break;
-        }
-    }
+// bool CalculateScalingWeights(MatrixXd &C, MatrixXd &V,MatrixXi &T,MatrixXd &W){
+//     VectorXi b; b.resize(C.rows());
+//     MatrixXd bc = MatrixXd::Zero(C.rows(),C.rows());
+//     map<tuple<int,int,int>,vector<int>> grid = GenerateGrid(V);
+//     for(int n=0;n<C.rows();n++){
+//         int x = floor(C(n,0)+0.5);
+//         int y = floor(C(n,1)+0.5);
+//         int z = floor(C(n,2)+0.5);
+//         auto key = make_tuple(x,y,z);
+//         for(int i:grid[key]){
+//             if(fabs(C(n,0)-V(i,0))>0.01) continue;
+//             if(fabs(C(n,1)-V(i,1))>0.01) continue;
+//             if(fabs(C(n,2)-V(i,2))>0.01) continue;
+//             b(n) = i;
+//             bc(n,n) = 1;
+//             break;
+//         }
+//     }
 
-    // compute BBW weights matrix
-    igl::BBWData bbw_data;
-    // only a few iterations for sake of demo
-    bbw_data.active_set_params.max_iter = 10;
-    bbw_data.verbosity = 2;
-    return igl::bbw(V,T,b,bc,bbw_data,W);
-}
+//     // compute BBW weights matrix
+//     igl::BBWData bbw_data;
+//     // only a few iterations for sake of demo
+//     bbw_data.active_set_params.max_iter = 10;
+//     bbw_data.verbosity = 2;
+//     return igl::bbw(V,T,b,bc,bbw_data,W);
+// }
 bool CalculateScalingWeights(MatrixXd &C, MatrixXd &V,MatrixXi &T,MatrixXd &W, vector<int> eyeLV, vector<int> eyeRV){
     VectorXi b; b.resize(C.rows()-3+eyeLV.size()+eyeRV.size());
     MatrixXd bc = MatrixXd::Zero(C.rows()-3+eyeLV.size()+eyeRV.size(),C.rows()-1);
