@@ -54,25 +54,35 @@ bool Communicator::StartServer(int port)
                 socklen_t connectSocketLength = sizeof(connectSocket);
                 getpeername(client_fd, (struct sockaddr*)&clientAddress, &connectSocketLength);
                 // char clientIP[sizeof(clientAddress.sin_addr)+1] = {0};
-                receivedBytes = recvfrom(server_fd, readBuff, 500, 0, (struct sockaddr*)&clientAddress, &client_addr_size);
+                receivedBytes = recvfrom(server_fd, readBuff, 500*4, 0, (struct sockaddr*)&clientAddress, &client_addr_size);
                 if(receivedBytes>0){
                     int id = (int)readBuff[0];
-                    if(this->lastStamp.find(id)==this->lastStamp.end())//for the first time
+                    for(int i=0;i<500;i++) ofs<<readBuff[i]<<"\t";
+         
+                    if(!this->isListening||this->workerData.find(id)==this->workerData.end()){
+                        sendto(server_fd, msg, 4, 0, (struct  sockaddr*)&clientAddress, sizeof(clientAddress));
+                        lastStamp.erase(id);
+                    }
+                    else if(this->lastStamp.find(id)==this->lastStamp.end())//for the first time
                     {
                         // if(this->GetSocketOpt(id)<0) sendto(server_fd, msg, 4, 0, (struct  sockaddr*)&clientAddress, sizeof(clientAddress));
                         cout<<"WORKER"<<id<<": hello!"<<endl;
                         Affine3d aff = Affine3d::Identity();
                         aff.rotate(Quaterniond(readBuff[5], readBuff[2], readBuff[3], readBuff[4]).normalized().toRotationMatrix().transpose());
                         aff.translate(-Vector3d(readBuff[6], readBuff[7], readBuff[8]));
-                        workerData[id] = WORKER(string(inet_ntoa(clientAddress.sin_addr)), (int)readBuff[1], aff);
+                        lastStamp[id] = clock();
+                        get<2>(workerData[id]) = aff;
+                        // workerData[id] = WORKER(string(inet_ntoa(clientAddress.sin_addr)), (int)readBuff[1], aff);
                     }
                     else
                     {
+                        Affine3d glassAff = Affine3d::Identity();
+                        map<int, Body> bodyMap;
+                        // MatrixXd jointC(24, 3);
+                        // RotationList posture(18);
+                        lastStamp[id] = clock();
                         int pos(1);
                         int opt = readBuff[pos++];
-                        Affine3d glassAff = Affine3d::Identity();
-                        MatrixXd jointC(current.jointC.rows(), current.jointC.cols());
-                        RotationList posture(current.posture.size());
                         if(opt & 2)
                         {
                         }
@@ -86,33 +96,36 @@ bool Communicator::StartServer(int port)
                         }
                         if(opt & 8)
                         {
-                            for(int i=0;i<24;i++)
+                            int num = readBuff[pos++];
+                            for(int body=0;body<num;body++)
                             {
-                                jointC(i, 0) = readBuff[pos++];
-                                jointC(i, 1) = readBuff[pos++];
-                                jointC(i, 2) = readBuff[pos++];
+                                int bodyID = readBuff[pos++];
+                                Body bodyStruct;
+                                for(int i=0;i<bodyStruct.posture.size();i++) 
+                                    bodyStruct.posture[i] = get<2>(workerData[readBuff[0]]).rotation() *
+                                                            Quaterniond(readBuff[pos++], readBuff[pos++], readBuff[pos++], readBuff[pos++]); //*   alignRot[i];
+                                for(int i=0;i<24;i++)
+                                {
+                                    bodyStruct.jointC(i, 0) = readBuff[pos++];
+                                    bodyStruct.jointC(i, 1) = readBuff[pos++];
+                                    bodyStruct.jointC(i, 2) = readBuff[pos++];
+                                    // jointC(i, 0) = readBuff[pos++];
+                                    // jointC(i, 1) = readBuff[pos++];
+                                    // jointC(i, 2) = readBuff[pos++];
+                                }
+                                bodyStruct.jointC = (bodyStruct.jointC.rowwise().homogeneous()*get<2>(workerData[readBuff[0]]).matrix().transpose()).rowwise().hnormalized();
+                                bodyMap[bodyID] = bodyStruct;
                             }
-                            jointC = (jointC.rowwise().homogeneous()*get<2>(workerData[readBuff[0]]).matrix().transpose()).rowwise().hnormalized();
-                            RotationList alignRot = PhantomAnimator::Instance().GetAlignRot();
-                            for(int i=0;i<posture.size();i++) posture[i] = get<2>(workerData[readBuff[0]]).rotation() *
-                                                                                  Quaterniond(readBuff[pos++], readBuff[pos++], readBuff[pos++], readBuff[pos++]) * 
-                                                                                  alignRot[i];
                         }
 
                         //change frame data -> TODO: set mutex!!
                         if(opt&4) current.glass_aff = glassAff;
                         if(opt&8){
-                            current.jointC = jointC;
-                            current.posture = posture;
-                            this->lastStamp[id] = clock();
-                        //add new frame only if posture data is IN.
+                            //add new frame only if posture data is IN.
                             RDCWindow::Instance().postureUpdated = true;
+                            current.bodyMap = bodyMap;
                         }
-                    }
-                    if(!this->isListening||this->workerData.find(id)==this->workerData.end()){
-                        sendto(server_fd, msg, 4, 0, (struct  sockaddr*)&clientAddress, sizeof(clientAddress));
-                        lastStamp.erase(id);
-                    }
+                    }                               
                 }
                 timer.stop();
                 double time = timer.getElapsedTime();
@@ -263,9 +276,9 @@ while (client_sockets.size() < clients.size())
 void Communicator::InitializeDataSet()
 {
     current.glass_aff = Affine3d::Identity();
-    current.posture.resize(BE_ROWS);
-    current.jointC.resize(24, 3);
-    current.bodyIn = false;
+    // current.posture.resize(BE_ROWS);
+    // current.jointC.resize(24, 3);
+    // current.bodyIn = false;
 }
 
 Communicator::~Communicator()

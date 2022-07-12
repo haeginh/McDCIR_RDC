@@ -11,13 +11,20 @@
 #define SERVER_IP "192.168.0.100"
 using namespace std;
 typedef tuple<string, int, Eigen::Affine3d> WORKER;
+struct Body
+{
+    clock_t time;
+    RotationList posture = RotationList(18);
+    MatrixXd jointC = MatrixXd::Zero(24, 3);
+};
 
 struct DataSet
 {
     Affine3d glass_aff = Affine3d::Identity();
-    RotationList posture = RotationList(18);
-    bool bodyIn;
-    MatrixXd jointC = MatrixXd::Zero(26, 3);
+    map<int, Body> bodyMap;
+    // RotationList posture = RotationList(18);
+    // bool bodyIn;
+    // MatrixXd jointC = MatrixXd::Zero(24, 3);
 };
 
 class Communicator
@@ -55,8 +62,9 @@ public:
     map<int, WORKER> workerData;
     void StartWorker(string ip, int opt, int port = 22)
     {
+        workerData[nextWorkerID] = WORKER(ip, opt, Affine3d::Identity());
         system(("ssh " +ip+" \"2_tracker "+SERVER_IP+" "+to_string(serverPORT)+" " +to_string(nextWorkerID++) + " " + to_string(opt) + "\" &" ).c_str());
-        // sock_opts[nextWorkerID++] = opt;
+    // sock_opts[nextWorkerID++] = opt;
     }
     void StartWorkers()
     {
@@ -91,7 +99,7 @@ public:
     //         posture[i] = current.posture[i];
     //     jointC = current.jointC;
     // }
-    bool PostureAvailable() { return current.bodyIn; }
+    // bool PostureAvailable() { return current.bodyIn; }
 
     // vector<int> GetCamSock()
     // {

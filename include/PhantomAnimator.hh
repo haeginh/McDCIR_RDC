@@ -45,7 +45,6 @@ public:
 
     bool LoadPhantom(string phantomName);
     bool LoadPhantomWithWeightFiles(string phantomName);
-    bool Initialize();
     string CalibrateTo(string name);
     void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool calibChk = true);
     void Animate(RotationList vQ, MatrixXd &V_new);
@@ -95,17 +94,32 @@ public:
     map<string, int> profileIDs;
     vector<map<int, double>> jointLengths;
 
+    //debug
+    VectorXd GetWeight(int id)
+    {
+        VectorXd Wvec(cleanWeights.size());
+        for(int i=0;i<cleanWeights.size();i++)
+        {
+            if(cleanWeights[i].find(id)==cleanWeights[i].end()) Wvec(i) = 0;
+            else Wvec(i) = cleanWeights[i][id];
+        }
+        return Wvec;
+    }
+
 //variables
     MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
     MatrixXi BE, T, F, F_apron;   
     MatrixXd V_calib, C_calib, V_calib_apron;
 private:
+    bool Initialize();
+
     // MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
     // MatrixXi BE, T, F, F_apron;
     VectorXi P;
     ArrayXd W_avgSkin;
     RotationList alignRot;
     vector<map<int, double>> cleanWeights, cleanWeightsApron;
+    vector<vector<int>> endC;
 
     //tmp
     VectorXi outApron;

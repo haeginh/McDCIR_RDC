@@ -109,8 +109,12 @@ bool PhantomAnimator::LoadPhantom(string _phantom)
     cout << "calculate bone BBW" << endl;
     MatrixXd bc1;
     igl::boundary_conditions(VT, TT, C, VectorXi(), BE, MatrixXi(), b, bc1);
-    bc = MatrixXd::Zero(b.rows(), 17);
-    for(int i=0;i<BE.rows();i++) bc.col(BE(i, 0)) += bc1.col(i);
+    bc.resize(b.rows(), 18);
+    bc = MatrixXd::Zero(b.rows(), 18);
+    for(int i=0;i<BE.rows();i++)
+    {
+        bc.col(BE(i, 0)) += bc1.col(i);
+    }
     if (!igl::bbw(VT, TT, b, bc, bbw_data, WT))
     {cout<<"BBW failed!"<<endl; return false;}
     WT = WT.topRows(V.rows());
@@ -298,13 +302,17 @@ bool PhantomAnimator::LoadPhantomWithWeightFiles(string _phantom)
         cleanWeightsApron.push_back(vertexWeight);
     }
 
+    Initialize();
+
     return true;
 }
-
 bool PhantomAnimator::Initialize()
 {
+    endC.resize(18);
+    for(int i=0;i<BE.rows();i++)
+     endC[BE(i, 0)].push_back(BE(i, 1));
     // additional variables
-    if(BE.rows()==0) igl::readTGF("./phantoms/AM.tgf", C, BE);
+    // if(BE.rows()==0) igl::readTGF("./phantoms/AM.tgf", C, BE);
     igl::directed_edge_parents(BE, P);
 
     // distance to parent joint
@@ -313,11 +321,12 @@ bool PhantomAnimator::Initialize()
 
     // joint number conv.
     vector<int> i2k = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24};
+
     map<int, int> k2i;
     for (size_t i = 0; i < i2k.size(); i++)
         k2i[i2k[i]] = i;
 
-    // preprocessing for KINECT draw_vidata
+    // preprocessing for KINECT data
     map<int, Quaterniond> kinectDataRot;
     vector<int> groups;
     Matrix3d tf2;
@@ -348,14 +357,27 @@ bool PhantomAnimator::Initialize()
         desiredOrt[id] = Vector3d(0, 1, 0);
     desiredOrt[4] = Vector3d(1, 0, 0);
     desiredOrt[11] = Vector3d(-1, 0, 0);
-    for (int i = 0; i < BE.rows(); i++)
+    // for (int i = 0; i < BE.rows(); i++)
+    // {
+    //     if (desiredOrt.find(i2k[BE(i, 0)]) == desiredOrt.end())
+    //         alignRot.push_back(kinectDataRot[i2k[BE(i, 0)]]);
+    //     else
+    //     {
+    //         Vector3d v = (C.row(k2i[i2k[BE(i, 0)] + 1]) - C.row(BE(i, 0))).transpose();
+    //         alignRot.push_back(kinectDataRot[i2k[BE(i, 0)]] * GetRotMatrix(v, desiredOrt[i2k[BE(i, 0)]]));
+    //     }
+    // }
+
+    alignRot.resize(18);
+    for(int i=0;i<alignRot.size();i++)
     {
-        if (desiredOrt.find(i2k[BE(i, 0)]) == desiredOrt.end())
-            alignRot.push_back(kinectDataRot[i2k[BE(i, 0)]]);
+        if (desiredOrt.find(i2k[i]) == desiredOrt.end())
+            alignRot[i] = kinectDataRot[i2k[i]];
         else
         {
-            Vector3d v = (C.row(k2i[i2k[BE(i, 0)] + 1]) - C.row(BE(i, 0))).transpose();
-            alignRot.push_back(kinectDataRot[i2k[BE(i, 0)]] * GetRotMatrix(v, desiredOrt[i2k[BE(i, 0)]]));
+            /////careful!!s
+            Vector3d v = (C.row(i + 1) - C.row(i)).transpose();
+            alignRot[i] = kinectDataRot[i2k[i]] * GetRotMatrix(v, desiredOrt[i2k[i]]);
         }
     }
 
@@ -443,7 +465,7 @@ void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd 
         for (int i = 0; i < BE.rows(); i++)
         {
             Affine3d a;
-            a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C_calib.row(BE(i, 0)).transpose()));
+            a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[BE(i, 0)].matrix() * Translation3d(Vector3d(-C_calib.row(BE(i, 0)).transpose()));
             vT.push_back(a.translation());
             C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
         }
@@ -454,12 +476,17 @@ void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd 
     {
         C_new = C;
         C_new.row(0) = C_disp.row(0); // set root
-        for (int i = 0; i < BE.rows(); i++)
+        for (int i = 0; i < 18;i++)//BE.rows(); i++)
         {
+            // Affine3d a;
+            // a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[BE(i, 0)].matrix() * alignRot[i] * Translation3d(Vector3d(-C.row(BE(i, 0)).transpose()));
+            // vT.push_back(a.translation());
+            // C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
+            vQ[i] = vQ[i] * alignRot[i];
             Affine3d a;
-            a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C.row(BE(i, 0)).transpose()));
+            a = Translation3d(Vector3d(C_new.row(i).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C.row(i).transpose()));
             vT.push_back(a.translation());
-            C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
+            for(int e:endC[i]) C_new.row(e) = a * Vector3d(C_new.row(e));
         }
         myDqs(V, cleanWeights, vQ, vT, U);
         myDqs(V_apron, cleanWeightsApron, vQ, vT, U_apron);
