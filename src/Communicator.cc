@@ -99,7 +99,8 @@ bool Communicator::StartServer(int port)
                             int num = readBuff[pos++];
                             for(int body=0;body<num;body++)
                             {
-                                int bodyID = readBuff[pos++];
+                                //body ID starts from 1. So subtract 1 from all IDs.
+                                int bodyID = readBuff[pos++]-1;
                                 Body bodyStruct;
                                 for(int i=0;i<bodyStruct.posture.size();i++) 
                                     bodyStruct.posture[i] = get<2>(workerData[readBuff[0]]).rotation() *

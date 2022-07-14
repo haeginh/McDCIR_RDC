@@ -17,7 +17,7 @@ public:
     void Initialize();
     void Launch(){
         viewer.launch(true, false, "DCIR System (RDC module)");
-        viewer.selected_data_index = phantom_data;
+        viewer.selected_data_index = phantom_data[bodyID];
     }
     bool PreDrawFunc(igl::opengl::glfw::Viewer &_viewer);
     void AnimateAll(bool anim){
@@ -33,12 +33,16 @@ public:
     igl::opengl::glfw::Viewer viewer;
 
     //data id
-    unsigned int phantom_data, apron_data, extra_data, patient_data, table_data,
+    unsigned int apron_data, patient_data, table_data,
         cArm_data, beam_data, glass_data, phantomAcc_data, grid_data;
+    vector<unsigned int> phantom_data;
+    int mainID(){return phantom_data[bodyID];}
+
+    bool show_C, show_BE;
 
 
 private:
-    RDCWindow():running(false), bodyID(1){}
+    RDCWindow():running(false), bodyID(0){}
     void SetMeshes(string dir);
     igl::opengl::glfw::imgui::ImGuiMenu mainMenu;
     string phantomName;

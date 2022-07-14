@@ -58,9 +58,7 @@ void RDCWindow::Initialize()
         _viewer.core(this->v_right).background_color = Eigen::Vector4f(82. / 255., 82. / 255., 82. / 255., 0.);
 
         //visiblity
-        _viewer.data(this->phantom_data).is_visible = 0;
         _viewer.data(this->apron_data).is_visible = 0;
-        _viewer.data(this->extra_data).is_visible = 0;
         _viewer.data(this->patient_data).is_visible = 0;
         _viewer.data(this->table_data).is_visible = 0;
         _viewer.data(this->cArm_data).is_visible = 0;
@@ -68,10 +66,11 @@ void RDCWindow::Initialize()
         _viewer.data(this->glass_data).is_visible = 0;
         _viewer.data(this->grid_data).is_visible = 0;
         _viewer.data(this->phantomAcc_data).is_visible = 0;
+        for(int id:this->phantom_data)
+            _viewer.data(id).is_visible = 0;
         
-        _viewer.data(this->phantom_data).is_visible |= this->v_left;
-        _viewer.data(this->apron_data).is_visible   |= this->v_left;
-        _viewer.data(this->extra_data).is_visible   |= this->v_left;
+        // _viewer.data(this->phantom_data).is_visible |= this->v_left;
+        // _viewer.data(this->apron_data).is_visible   |= this->v_left;
         _viewer.data(this->patient_data).is_visible |= this->v_left;
         _viewer.data(this->table_data).is_visible   |= this->v_left;
         _viewer.data(this->cArm_data).is_visible    |= this->v_left;
@@ -87,11 +86,11 @@ void RDCWindow::Initialize()
     {
         float phantomViewX = h * 0.35;
         // radiolRate
-        v.core(this->v_left).viewport = Eigen::Vector4f(0, h * 0.29, w - phantomViewX * 2, h * 0.71);
+        v.core(this->v_left).viewport = Eigen::Vector4f(0, 235, w - phantomViewX * 2, h -235);
         // radiolAcc
-        v.core(this->v_middle).viewport = Eigen::Vector4f(w - phantomViewX * 2, h * 0.29, phantomViewX, h * 0.71);
+        v.core(this->v_middle).viewport = Eigen::Vector4f(w - phantomViewX * 2, 235, phantomViewX, h -235);
         // patient
-        v.core(this->v_right).viewport = Eigen::Vector4f(w - phantomViewX, h * 0.29, phantomViewX, h * 0.71);
+        v.core(this->v_right).viewport = Eigen::Vector4f(w - phantomViewX, 235, phantomViewX, h -235);
         return true;
     };
 
@@ -122,40 +121,32 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
         MatrixXi BE(3, 2);
         BE<<0, 1, 0, 2, 0, 3;
         DataSet data = Communicator::Instance().current;
-        _viewer.data(phantom_data).set_edges((CE * data.bodyMap[bodyID].posture[boneID].normalized().matrix().transpose()).rowwise() + data.bodyMap[bodyID].jointC.row(boneID), BE, Matrix3d::Identity());
+        _viewer.data(phantom_data[bodyID]).set_edges((CE * data.bodyMap[bodyID].posture[boneID].normalized().matrix().transpose()).rowwise() + data.bodyMap[bodyID].jointC.row(boneID), BE, Matrix3d::Identity());
     }
     if(_viewer.core(v_left).is_animating){
         DataSet data = Communicator::Instance().current;
         auto phantom  = PhantomAnimator::Instance();
         MatrixXd P, C, V;
         MatrixXi BE, F;
-        for(auto iter:data.bodyMap)
+        int extraID;
+        for(int i=0;i<phantom_data.size();i++)
         {
-            MatrixXd C1;
-            PhantomAnimator::Instance().Animate(iter.second.posture, iter.second.jointC, C1, false);
-            P.conservativeResize(P.rows()+iter.second.jointC.rows(), 3);
-            P.bottomRows(iter.second.jointC.rows()) = iter.second.jointC;
-            BE.conservativeResize(BE.rows()+phantom.BE.rows(), 2);
-            BE.bottomRows(phantom.BE.rows()) = phantom.BE.array() + C.rows();
-            C.conservativeResize(C.rows()+C1.rows(), 3);
-            C.bottomRows(C1.rows()) = C1;
-            if(iter.first == bodyID)
+            if(data.bodyMap.find(i) == data.bodyMap.end())
             {
-                _viewer.data(phantom_data).set_vertices(phantom.U);
-                _viewer.data(phantom_data).compute_normals();
+                _viewer.data(phantom_data[i]).is_visible = 0;
+                continue;
             }
-            else
+            _viewer.data(phantom_data[i]).is_visible |= v_left;
+            phantom.Animate(data.bodyMap[i].posture, data.bodyMap[i].jointC, C, false);
+            _viewer.data(phantom_data[i]).set_vertices(phantom.U);
+            if(i==bodyID)
             {
-                F.conservativeResize(F.rows() + phantom.F.rows(), 3);
-                F.bottomRows(phantom.F.rows()) = phantom.F.array() + V.rows();
-                V.conservativeResize(V.rows() + phantom.U.rows(), 3);
-                V.bottomRows(phantom.U.rows()) = phantom.U;
+                if(show_C) _viewer.data(phantom_data[i]).set_points(data.bodyMap[i].jointC, RowVector3d(0, 0, 1));
+                if(show_BE) _viewer.data(phantom_data[i]).set_edges(C, phantom.BE, RowVector3d(70. / 255., 252. / 255., 167. / 255.));
+                _viewer.data(phantom_data[i]).compute_normals();
+                _viewer.data(phantom_data[i]).set_data(VectorXd::Zero(phantom.U.rows()));
             }
         }
-        _viewer.data(phantom_data).set_edges(C, BE, RowVector3d(70. / 255., 252. / 255., 167. / 255.));
-        _viewer.data(phantom_data).set_points(P, RowVector3d(0, 0, 1));
-        _viewer.data(extra_data).clear();
-        _viewer.data(extra_data).set_mesh(V, F);
     }
 
     return false;  
@@ -165,14 +156,8 @@ void RDCWindow::SetMeshes(string dir)
 {
     //radiologist phantom
     auto phantom  = PhantomAnimator::Instance();
-    viewer.data().set_mesh(phantom.U, phantom.F);
-    phantom_data = viewer.selected_data_index;
-    viewer.append_mesh();
     viewer.data().set_mesh(phantom.U_apron, phantom.F_apron);
     apron_data = viewer.selected_data_index;
-    viewer.append_mesh();
-    viewer.data().set_mesh(phantom.U, phantom.F);
-    extra_data = viewer.selected_data_index;
     viewer.append_mesh();
     viewer.data().set_mesh(phantom.V, phantom.F);
     phantomAcc_data = viewer.selected_data_index;
@@ -218,6 +203,21 @@ void RDCWindow::SetMeshes(string dir)
     viewer.data().show_lines = false;
     glass_data = viewer.selected_data_index;
     viewer.append_mesh();
+    viewer.data().set_mesh(phantom.U, phantom.F);
+    phantom_data.push_back(viewer.selected_data_index);
+    viewer.append_mesh();
+    viewer.data().set_mesh(phantom.U, phantom.F);
+    phantom_data.push_back(viewer.selected_data_index);
+    viewer.append_mesh();
+    viewer.data().set_mesh(phantom.U, phantom.F);
+    phantom_data.push_back(viewer.selected_data_index);
+    viewer.append_mesh();
+    viewer.data().set_mesh(phantom.U, phantom.F);
+    phantom_data.push_back(viewer.selected_data_index);
+    viewer.append_mesh();
+    viewer.data().set_mesh(phantom.U, phantom.F);
+    phantom_data.push_back(viewer.selected_data_index);
+    viewer.append_mesh();
 
     //draw grids
     int n(5);
@@ -241,19 +241,23 @@ void RDCWindow::SetMeshes(string dir)
     grid_data = viewer.selected_data_index;
 
     //viewer settings
-    viewer.data(phantom_data).show_lines = false;
-    viewer.data(phantom_data).show_overlay_depth = false;
-    viewer.data(phantom_data).line_width = 1;
-    viewer.data(phantom_data).point_size = 8;
-    viewer.data(phantom_data).double_sided = false;
-    viewer.data(phantom_data).show_texture = true;
-    viewer.data(phantom_data).show_custom_labels = true;
     viewer.data(apron_data).double_sided = true;
     viewer.data(apron_data).show_lines = false;
     viewer.data(apron_data).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.7));
-    viewer.data(extra_data).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
-    viewer.data(extra_data).show_lines = false;
-    viewer.data(extra_data).double_sided = true;
+    for(int id:phantom_data)
+    {
+        viewer.data(id).double_sided = true;
+        viewer.data(id).show_overlay_depth = false;
+        viewer.data(id).line_width = 1;
+        viewer.data(id).point_size = 8;
+        viewer.data(id).show_texture = true;
+        viewer.data(id).show_lines   = false;
+        viewer.data(id).show_faces   = true;
+        viewer.data(id).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
+        if(id==mainID())
+            viewer.data(id).show_texture = false;
+    }
+
     viewer.data(patient_data).show_lines = true;
     viewer.data(patient_data).show_overlay_depth = false;
     viewer.data(patient_data).show_faces = false;
@@ -341,31 +345,38 @@ void ShowViewOptions(bool *p_open, RDCWindow *_window)
     window_pos = ImVec2(work_pos.x, work_pos.y);
     window_pos_pivot = ImVec2(0.f, 0.f);
     ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
-    ImGui::SetNextWindowSize(ImVec2(work_size.x*0.1, work_size.y*0.702));
+    ImGui::SetNextWindowSize(ImVec2(128, work_size.y-236));
     if(ImGui::Begin("View options", p_open, flags))
     {
         ImGui::BulletText("RADIOLOGIST");
-        static int bodyID(1);
-        ImGui::SetNextItemWidth(work_size.x*0.05);
+        static int bodyID(0);
+        ImGui::SetNextItemWidth(64);
         if(ImGui::InputInt("body ID", &bodyID))
         {
             _window->SetBodyID(bodyID);
+            for(int id:_window->phantom_data)
+            {
+                if(id == _window->mainID())
+                {
+                    _window->viewer.data(id).show_texture = false;
+                    continue;
+                }
+                _window->viewer.data(id).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
+                _window->viewer.data(id).show_texture = true;
+                _window->viewer.data(id).clear_points();
+                _window->viewer.data(id).clear_edges();
+            }
         }
-        static bool radioLine(false), radioFacet(true), radioTri(false);
-        if(ImGui::Checkbox("line", &radioLine))
+        static bool show_C(_window->show_C), show_BE(_window->show_BE);
+        if(ImGui::Checkbox("joint", &show_C))
         {
-            if(radioLine) _window->viewer.data(_window->phantom_data).show_lines = true;
-            else _window->viewer.data(_window->phantom_data).show_lines = false;                 
+            _window->show_C = show_C;
+            if(!show_C) _window->viewer.data(_window->mainID()).clear_points();
         }
-        if(ImGui::Checkbox("facet", &radioFacet))
+        if(ImGui::Checkbox("skeleton", &show_BE))
         {
-            if(radioFacet) _window->viewer.data(_window->phantom_data).show_faces = true;
-            else _window->viewer.data(_window->phantom_data).show_faces = false;                 
-        }
-        if(ImGui::Checkbox("triangle", &radioTri))
-        {
-            if(radioTri) _window->viewer.data(_window->phantom_data).show_texture = true;
-            else _window->viewer.data(_window->phantom_data).show_texture = false;                 
+            _window->show_BE = show_BE;
+            if(!show_BE) _window->viewer.data(_window->mainID()).clear_edges();
         }
         ImGui::BulletText("PATIENT");
         static int patientOpt(1);
@@ -394,7 +405,7 @@ void ShowStatusWindow(bool *p_open)
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(0.f, viewport->WorkPos.y + viewport->WorkSize.y), ImGuiCond_Always, ImVec2(0., 1.f));
-    ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, viewport->WorkSize.y * 0.3f));
+    ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, 235));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(8. / 255., 15. / 255., 26. / 255., 1.0f));
     if (ImGui::Begin("Status", p_open, flags))
     {
@@ -774,16 +785,16 @@ void ShowColorInfoPopUp(bool *p_open)
     int sx(viewport->Size.x), sy(viewport->Size.y);
     float phantomViewX = sy * 0.35;
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.f, 0.f, 0.f, 0.5f));
-    ImGui::SetNextWindowPos(ImVec2(sx - phantomViewX * 2 - 10, sy * 0.71 - 10), ImGuiCond_Always, ImVec2(1.f, 1.f));
+    ImGui::SetNextWindowPos(ImVec2(sx - phantomViewX * 2 - 10, sy - 245), ImGuiCond_Always, ImVec2(1.f, 1.f));
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
     if (ImGui::Begin("RadiolRate_color", p_open, window_flags))
         ColorInfoWindow(0, 10, "uGy/hr");
     ImGui::End();
-    ImGui::SetNextWindowPos(ImVec2(sx - phantomViewX - 10, sy * 0.71 - 10), ImGuiCond_Always, ImVec2(1.f, 1.f));
+    ImGui::SetNextWindowPos(ImVec2(sx - phantomViewX - 10, sy - 245), ImGuiCond_Always, ImVec2(1.f, 1.f));
     if (ImGui::Begin("RadiolAcc_color", p_open, window_flags))
         ColorInfoWindow(3, 20, "uGy");
     ImGui::End();
-    ImGui::SetNextWindowPos(ImVec2(sx - 10, sy * 0.71 - 10), ImGuiCond_Always, ImVec2(1.f, 1.f));
+    ImGui::SetNextWindowPos(ImVec2(sx - 10, sy - 245), ImGuiCond_Always, ImVec2(1.f, 1.f));
     if (ImGui::Begin("Patient_color", p_open, window_flags))
         ColorInfoWindow(10, 50, "mGy");
     ImGui::End();

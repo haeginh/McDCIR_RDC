@@ -72,7 +72,6 @@ bool PhantomAnimator::LoadPhantom(string _phantom)
 
     // calculate weights
     cout << "generate bone points"<<endl;
-    MatrixXd boneP = GenerateBonePoints(C, BE, 1.);
     MatrixXd V1(V.rows()+C.rows(), 3);
     V1<<V, C;
     for(int i=0;i<BE.rows();i++)
