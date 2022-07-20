@@ -20,6 +20,7 @@ struct Body
 
 struct DataSet
 {
+    bool glassChk;
     Affine3d glass_aff = Affine3d::Identity();
     map<int, Body> bodyMap;
     // RotationList posture = RotationList(18);

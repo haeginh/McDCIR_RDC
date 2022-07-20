@@ -12,6 +12,7 @@ RDCWindow &RDCWindow::Instance()
 static void MainMenuBar(RDCWindow *_window);
 static void ShowViewOptions(bool *p_open, RDCWindow *_window);
 static void ShowSettingsWindow(bool *p_open);
+static void ShowManualSettingPopup(bool *p_open, RDCWindow *_window);
 static void ShowStatusWindow(bool *p_open);
 static void DoseResultTab();
 static void DoseGraphTab();
@@ -22,11 +23,6 @@ static void ShowColorInfoPopUp(bool *p_open);
 
 void RDCWindow::Initialize()
 {
-    // MatrixXd V;
-    // MatrixXi F;
-    // igl::readPLY("../glass.ply", V, F);
-    // viewer.data().set_mesh(V, F);
-
     mainMenu.callback_draw_viewer_window = [this]() -> bool
     {
         MainMenuBar(this);
@@ -65,6 +61,7 @@ void RDCWindow::Initialize()
         _viewer.data(this->beam_data).is_visible = 0;
         _viewer.data(this->glass_data).is_visible = 0;
         _viewer.data(this->grid_data).is_visible = 0;
+        _viewer.data(this->axis_data).is_visible = 0;
         _viewer.data(this->phantomAcc_data).is_visible = 0;
         for(int id:this->phantom_data)
             _viewer.data(id).is_visible = 0;
@@ -75,11 +72,12 @@ void RDCWindow::Initialize()
         _viewer.data(this->table_data).is_visible   |= this->v_left;
         _viewer.data(this->cArm_data).is_visible    |= this->v_left;
         _viewer.data(this->beam_data).is_visible    |= this->v_left;
-        _viewer.data(this->glass_data).is_visible   |= this->v_left;
         _viewer.data(this->grid_data).is_visible    |= this->v_left;
         _viewer.data(this->phantomAcc_data).is_visible |= this->v_middle;
 
         _viewer.selected_core_index = this->v_left;
+
+        _viewer.core(this->v_left).set_rotation_type(igl::opengl::ViewerCore::ROTATION_TYPE_TRACKBALL);
         return false;
     };
     viewer.callback_post_resize = [&](igl::opengl::glfw::Viewer &v, int w, int h)
@@ -147,6 +145,14 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
                 _viewer.data(phantom_data[i]).set_data(VectorXd::Zero(phantom.U.rows()));
             }
         }
+        if(data.glassChk)
+        {
+            if(show_leadGlass) _viewer.data(glass_data).is_visible = true;
+            _viewer.data(glass_data).set_vertices((V_glass.rowwise().homogeneous() * data.glass_aff.matrix().transpose()).rowwise().hnormalized());
+            _viewer.data(glass_data).compute_normals();
+        }
+        else
+            _viewer.data(glass_data).is_visible = false;
     }
 
     return false;  
@@ -163,13 +169,12 @@ void RDCWindow::SetMeshes(string dir)
     phantomAcc_data = viewer.selected_data_index;
 
     //read other meshes
-    MatrixXd V_cArm, V_patient, V_table, V_beam, V_glass;
     MatrixXi F_cArm, F_patient, F_glass, F_beam, F_table;
     igl::readPLY(dir + "/c-arm.ply", V_cArm, F_cArm);
     igl::readPLY(dir + "/patient.ply", V_patient, F_patient);
     igl::readPLY(dir + "/table.ply", V_table, F_table);
     igl::readPLY(dir + "/beam.ply", V_beam, F_beam);
-    igl::readPLY(dir + "/glass.ply", V_glass, F_glass);
+    igl::readPLY(dir + "/leadGlass.ply", V_glass, F_glass);
 
     //for shadow factors
     // MatrixXd B_patient0, N_patient0, A_patient0;
@@ -240,6 +245,16 @@ void RDCWindow::SetMeshes(string dir)
     viewer.data().set_edges(V_grid, E_grid, C_grid);
     grid_data = viewer.selected_data_index;
 
+    //axis
+    MatrixXd CE = MatrixXd::Zero(4, 3);
+    CE.bottomRows(3) = Matrix3d::Identity()*50;
+    MatrixXi BE(3, 2);
+    BE<<0, 1, 0, 2, 0, 3;
+    viewer.append_mesh();
+    viewer.data().set_edges(CE, BE, Matrix3d::Identity());
+    viewer.data().line_width = 10;
+    axis_data = viewer.selected_data_index;
+
     //viewer settings
     viewer.data(apron_data).double_sided = true;
     viewer.data(apron_data).show_lines = false;
@@ -272,6 +287,7 @@ void RDCWindow::SetMeshes(string dir)
     viewer.data(cArm_data).set_colors(RowVector4d(0.8, 0.8, 0.8, 1.));
     viewer.data(beam_data).set_colors(RowVector4d(1, 0, 0, 0.2));
     viewer.data(beam_data).show_lines = false;
+    viewer.data(beam_data).show_overlay_depth = false;
     viewer.data(phantomAcc_data).point_size = 4;
     viewer.data(phantomAcc_data).show_lines = false;
     viewer.data(phantomAcc_data).double_sided = false;
@@ -282,6 +298,7 @@ void MainMenuBar(RDCWindow *_window)
     static bool show_status_window = true;
     static bool show_view_options = false;
     static bool show_settings_window = true;
+    static bool show_manual_setting_popup = false;
     static bool show_color_popup = true;
     static bool show_info_popup = false;
     ShowStatusWindow(&show_status_window);
@@ -291,6 +308,8 @@ void MainMenuBar(RDCWindow *_window)
         ShowColorInfoPopUp(&show_color_popup);
     if (show_settings_window)
         ShowSettingsWindow(&show_settings_window);
+    if (show_manual_setting_popup)
+        ShowManualSettingPopup(&show_manual_setting_popup, _window);
     if (show_info_popup)
         ShowProgramInformationPopUp(&show_info_popup);
     if (ImGui::BeginMainMenuBar())
@@ -315,6 +334,10 @@ void MainMenuBar(RDCWindow *_window)
             if (ImGui::MenuItem("open settings", ""))
             {
                 show_settings_window = true;
+            }
+            if (ImGui::MenuItem("manual beam", ""))
+            {
+                show_manual_setting_popup = true;
             }
             ImGui::EndMenu();
         }
@@ -397,6 +420,22 @@ void ShowViewOptions(bool *p_open, RDCWindow *_window)
             _window->viewer.data(_window->patient_data).show_lines = false;
             _window->viewer.data(_window->patient_data).show_faces = true;
         }
+        ImGui::BulletText("MACHINE");
+        static bool show_cArm(true), show_leadGlass(_window->show_leadGlass), show_beam(true), show_grid(true), show_axis(false);
+        if(ImGui::Checkbox("C-arm", &show_cArm))
+            _window->viewer.data(_window->cArm_data).is_visible = show_cArm;
+        if(ImGui::Checkbox("beam", &show_beam))
+            _window->viewer.data(_window->beam_data).is_visible = show_beam;
+        if(ImGui::Checkbox("lead glass", &show_leadGlass))
+        {
+            _window->show_leadGlass = show_leadGlass;
+            _window->viewer.data(_window->glass_data).is_visible = show_leadGlass;
+        }
+        ImGui::BulletText("ACCESSORIES");
+        if(ImGui::Checkbox("grid", &show_grid))
+            _window->viewer.data(_window->grid_data).is_visible = show_grid;
+        if(ImGui::Checkbox("axis", &show_axis))
+            _window->viewer.data(_window->axis_data).is_visible = show_axis;
     }
 }
 
@@ -751,7 +790,7 @@ void ShowSettingsWindow(bool *p_open)
                 if(ImGui::TableNextColumn() && (opt&2)) ImGui::Text("*");
                 if(ImGui::TableNextColumn() && (opt&4)) ImGui::Text("*");
                 if(ImGui::TableNextColumn() && (opt&8)) ImGui::Text("*");
-                if(ImGui::TableNextColumn() && Communicator::Instance().GetDelay(iter.first)<0.01) ImGui::Text("*");
+                if(ImGui::TableNextColumn() && Communicator::Instance().GetDelay(iter.first)<0.1) ImGui::Text("*");
                 if(ImGui::TableNextColumn() && ImGui::SmallButton("delete")) del = iter.first;
                 ImGui::PopID();
             }
@@ -762,6 +801,72 @@ void ShowSettingsWindow(bool *p_open)
         ImGui::PopStyleVar();
     }
     ImGui::End();
+}
+
+void ShowManualSettingPopup(bool *p_open, RDCWindow *_window)
+{
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_AlwaysAutoResize;
+    const ImGuiViewport *viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetItemRectSize().x * 2, -1), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Manual settings", p_open, flags))
+    {
+        static int peakVoltage, rotation, angulation;
+        ImGui::BulletText("C-arm");
+        ImGui::InputInt("kVp", &peakVoltage);
+        if(ImGui::DragInt("RAO(-)/LAO(+)", &rotation, 1, -180, 180))
+        {
+            Matrix3d R = _window->GetCarmRotation(rotation, angulation);
+            _window->viewer.data(_window->cArm_data).set_vertices(_window->V_cArm*R.transpose());
+            _window->viewer.data(_window->beam_data).set_vertices(_window->V_beam*R.transpose());
+            _window->viewer.data(_window->cArm_data).compute_normals();
+            _window->viewer.data(_window->beam_data).compute_normals();
+        }
+        if(ImGui::DragInt("CRAN(-)/CAUD(+)", &angulation, 1, -90, 90))
+        {
+            Matrix3d R = _window->GetCarmRotation(rotation, angulation);
+            _window->viewer.data(_window->cArm_data).set_vertices(_window->V_cArm*R.transpose());
+            _window->viewer.data(_window->beam_data).set_vertices(_window->V_beam*R.transpose());
+            _window->viewer.data(_window->cArm_data).compute_normals();
+            _window->viewer.data(_window->beam_data).compute_normals();
+        }
+        ImGui::BulletText("Glass");
+        static int glassPos[3], glassRot[3];
+        if(ImGui::DragInt3("glass pos.", glassPos))
+        {
+            MatrixXd TT(4, 3);
+            TT.topRows(3) = (AngleAxisd((double)glassRot[0]/180.*igl::PI,Vector3d(1, 0, 0))
+                            *AngleAxisd((double)glassRot[1]/180.*igl::PI,Vector3d(0, 1, 0))
+                            *AngleAxisd((double)glassRot[2]/180.*igl::PI,Vector3d(0, 0, 1))).matrix().transpose();
+            TT.bottomRows(1) << glassPos[0], glassPos[1], glassPos[2];
+            _window->viewer.data(_window->glass_data).set_vertices(_window->V_glass.rowwise().homogeneous()*TT);
+        }
+        if(ImGui::DragInt3("glass rot.", glassRot))
+        {
+            MatrixXd TT(4, 3);
+            TT.topRows(3) = (AngleAxisd((double)glassRot[0]/180.*igl::PI,Vector3d(1, 0, 0))
+                            *AngleAxisd((double)glassRot[1]/180.*igl::PI,Vector3d(0, 1, 0))
+                            *AngleAxisd((double)glassRot[2]/180.*igl::PI,Vector3d(0, 0, 1))).matrix().transpose();
+            TT.bottomRows(1) << glassPos[0], glassPos[1], glassPos[2];
+            _window->viewer.data(_window->glass_data).set_vertices(_window->V_glass.rowwise().homogeneous()*TT);
+        }
+        if(ImGui::Button("  Print glass data (V.rowwise().homogeneous()*TT)  "))
+        {
+            MatrixXd TT(4, 3);
+            TT.topRows(3) = (AngleAxisd((double)glassRot[0]/180.*igl::PI,Vector3d(1, 0, 0))
+                            *AngleAxisd((double)glassRot[1]/180.*igl::PI,Vector3d(0, 1, 0))
+                            *AngleAxisd((double)glassRot[2]/180.*igl::PI,Vector3d(0, 0, 1))).matrix().transpose();
+            TT.bottomRows(1) << glassPos[0], glassPos[1], glassPos[2];
+            cout<<endl<<TT<<endl;
+        }
+        ImGui::BulletText("Bed");
+        static int bedPos[3];
+        if(ImGui::DragInt3("bed rot.", bedPos))
+        {
+            RowVector3d trans(bedPos[0],bedPos[1],bedPos[2]);
+            _window->viewer.data(_window->table_data).set_vertices(_window->V_table.rowwise() + trans);
+            _window->viewer.data(_window->patient_data).set_vertices(_window->V_patient.rowwise() + trans);
+        }        
+    }
 }
 
 void ColorInfoWindow(float min, float max, string unit)

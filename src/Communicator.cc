@@ -83,6 +83,9 @@ bool Communicator::StartServer(int port)
                         lastStamp[id] = clock();
                         int pos(1);
                         int opt = readBuff[pos++];
+                        if(opt & 1)
+                        {
+                        }
                         if(opt & 2)
                         {
                         }
@@ -115,12 +118,17 @@ bool Communicator::StartServer(int port)
                                     // jointC(i, 2) = readBuff[pos++];
                                 }
                                 bodyStruct.jointC = (bodyStruct.jointC.rowwise().homogeneous()*get<2>(workerData[readBuff[0]]).matrix().transpose()).rowwise().hnormalized();
+                                bodyStruct.time = lastStamp[id];
                                 bodyMap[bodyID] = bodyStruct;
                             }
                         }
 
                         //change frame data -> TODO: set mutex!!
-                        if(opt&4) current.glass_aff = glassAff;
+                        if(opt&4) 
+                        {
+                            current.glass_aff = glassAff;
+                            current.glassChk = true;
+                        }
                         if(opt&8){
                             //add new frame only if posture data is IN.
                             RDCWindow::Instance().postureUpdated = true;
