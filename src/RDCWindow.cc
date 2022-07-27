@@ -712,19 +712,55 @@ void ShowSettingsWindow(bool *p_open)
     if (ImGui::Begin("Settings", p_open, flags))
     {
         ImGui::BulletText("Phantom settings");
-        int phantomNum(2);
-        ImGui::Combo("", &phantomNum, BFlist);
-        ImGui::SameLine();
-        if (ImGui::Button("Load Phantom"))
-        {
-            PhantomAnimator::Instance().LoadPhantom("./phantoms/" + phantomlist[phantomNum]);
-        }
         
-        static int profileID(0);
+        // if (ImGui::Button("Load Phantom"))
+        //     PhantomAnimator::Instance().LoadPhantom("./phantoms/" + phantomlist[phantomNum]);
+        
         vector<string> names = PhantomAnimator::Instance().GetProfileNames();
         static vector<string> profileNames(names.size());
         copy(names.begin(), names.end(), profileNames.begin());
-        ImGui::Combo("profile", &profileID, profileNames);
+
+        ImGuiTableFlags flags =  ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_NoBordersInBody;
+            // | ImGuiTableFlags_SizingFixedFit;
+        if (ImGui::BeginTable("phantom settings", 5, flags))
+        {
+            ImGui::TableSetupColumn("#");
+            ImGui::TableSetupColumn("BF%");
+            ImGui::TableSetupColumn("profile");
+            ImGui::TableSetupColumn("color");
+            ImGui::TableSetupColumn("track");
+            ImGui::TableHeadersRow();
+
+            static int bfID[5], profileID[5];
+            static float color[5][5];
+            static bool trackOpt[5];
+            for(int i=0;i<5;i++)
+            {
+                ImGui::PushID(i);
+                ImGui::TableNextRow();
+                if(ImGui::TableNextColumn())  ImGui::Text(std::to_string(i).c_str());
+                if(ImGui::TableNextColumn()) {
+                    ImGui::SetNextItemWidth(60);
+                    ImGui::Combo("BF%", &bfID[i], BFlist);
+                }        
+                if(ImGui::TableNextColumn())  {
+                    ImGui::SetNextItemWidth(60);
+                    ImGui::Combo("profile", &profileID[i], profileNames);
+                }
+                if(ImGui::TableNextColumn())  ImGui::ColorEdit3("", color[i]);
+                if(ImGui::TableNextColumn())  
+                    if(ImGui::Checkbox("", &trackOpt[i])){
+
+                    }
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndTable();
+        static string fileBuff;
+        ImGui::InputText("file name", fileBuff);
+        ImGui::SameLine();
+        ImGui::Button("SAVE");
+
         ImGui::BulletText("Server machine settings");
         static int serverPort(30303);
         ImGui::SetNextItemWidth(ImGui::GetWindowSize().x * 0.4);
@@ -766,10 +802,10 @@ void ShowSettingsWindow(bool *p_open)
                 Communicator::Instance().StartWorker(ip, option);
             }
         }
-        ImGuiTableFlags flags =  ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_NoBordersInBody;
             // | ImGuiTableFlags_SizingFixedFit;
         if (ImGui::BeginTable("worker machines", 8, flags))
         {
+            ImGui::TableSetupColumn("ID");
             ImGui::TableSetupColumn("IP               ");
             // ImGui::TableSetupColumn("port");
             ImGui::TableSetupColumn("ocr");
@@ -784,6 +820,7 @@ void ShowSettingsWindow(bool *p_open)
             {
                 ImGui::PushID(id++);
                 ImGui::TableNextRow();
+                if(ImGui::TableNextColumn()) ImGui::Text(std::to_string(iter.first).c_str());
                 if(ImGui::TableNextColumn()) ImGui::Text(get<0>(iter.second).c_str());
                 int opt = get<1>(iter.second);
                 if(ImGui::TableNextColumn() && (opt&1)) ImGui::Text("*");
@@ -811,7 +848,12 @@ void ShowManualSettingPopup(bool *p_open, RDCWindow *_window)
     if (ImGui::Begin("Manual settings", p_open, flags))
     {
         static int peakVoltage, rotation, angulation;
+        static bool beamOn(false);
         ImGui::BulletText("C-arm");
+        if(ImGui::Checkbox("beam on", &beamOn))
+        {
+            
+        }  
         ImGui::InputInt("kVp", &peakVoltage);
         if(ImGui::DragInt("RAO(-)/LAO(+)", &rotation, 1, -180, 180))
         {
@@ -860,12 +902,12 @@ void ShowManualSettingPopup(bool *p_open, RDCWindow *_window)
         }
         ImGui::BulletText("Bed");
         static int bedPos[3];
-        if(ImGui::DragInt3("bed rot.", bedPos))
+        if(ImGui::DragInt3("bed trans.", bedPos))
         {
             RowVector3d trans(bedPos[0],bedPos[1],bedPos[2]);
             _window->viewer.data(_window->table_data).set_vertices(_window->V_table.rowwise() + trans);
             _window->viewer.data(_window->patient_data).set_vertices(_window->V_patient.rowwise() + trans);
-        }        
+        }      
     }
 }
 

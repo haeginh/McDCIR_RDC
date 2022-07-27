@@ -32,7 +32,7 @@
 #include <Eigen/StdVector>
 #include <Eigen/SparseCore>
 
-static vector<string> BFlist = {"M 12.2 BF%", "M 15.6 BF%", "M 18.9 BF%", "M 22.2 BF%", "M 25.6 BF%", "M 28.9 BF%", "M 32 BF%", "M 32.2 BF%", "M 35.6 BF%", "M 38.9 BF%", "M 42.3 BF%"};
+static vector<string> BFlist = {"M12.2", "M15.6", "M18.9", "M22.2", "M25.6", "M28.9", "M32", "M32.2", "M35.6", "M38.9", "M42.3"};
 static vector<string> phantomlist = {"AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM"};
 
 // class Viewer;
@@ -125,6 +125,9 @@ private:
     VectorXi outApron;
     ArrayXd apronMask;
     map<int, double> lengths;
+
+    // //profile
+    // map<int, >
 };
 
 #endif

@@ -59,7 +59,7 @@ bool Communicator::StartServer(int port)
                     int id = (int)readBuff[0];
                     for(int i=0;i<500;i++) ofs<<readBuff[i]<<"\t";
          
-                    if(!this->isListening||this->workerData.find(id)==this->workerData.end()){
+                    if(!this->isListening||this->workerData.find(id)==this->workerData.end()){ //stop msg
                         sendto(server_fd, msg, 4, 0, (struct  sockaddr*)&clientAddress, sizeof(clientAddress));
                         lastStamp.erase(id);
                     }
