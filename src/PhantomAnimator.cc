@@ -10,11 +10,11 @@
 //     if(!LoadPhantomWithWeightFiles(defaultPhantom)) LoadPhantom(defaultPhantom);
 //     ReadProfileData("profile.txt");
 // }
-PhantomAnimator &PhantomAnimator::Instance()
-{
-    static PhantomAnimator PhantomAnimator;
-    return PhantomAnimator;
-}
+// PhantomAnimator &PhantomAnimator::Instance()
+// {
+//     static PhantomAnimator PhantomAnimator;
+//     return PhantomAnimator;
+// }
 
 bool PhantomAnimator::LoadPhantom(string _phantom)
 {
@@ -407,16 +407,16 @@ bool PhantomAnimator::Initialize()
     return true;
 }
 
-string PhantomAnimator::CalibrateTo(string name)
+bool PhantomAnimator::CalibrateTo(string name)
 {
+    if(profileIDs.find(name)==profileIDs.end()) return false;
     int id = profileIDs[name];
     map<int, double> calibLengths = jointLengths[id];
-    Vector3d eyeL_pos; //= eyeL_vec[id];
-    Vector3d eyeR_pos; //= eyeR_vec[id];
+    RowVector3d eyeL_pos = eyeL_vec[id];
+    RowVector3d eyeR_pos = eyeR_vec[id];
 
     MatrixXd jointTrans = MatrixXd::Zero(C.rows(), 3);
     int headJ(24), eyeLJ(22), eyeRJ(23);
-    stringstream ss;
     for (int i = 0; i < BE.rows(); i++)
     {
         if (calibLengths.find(i) == calibLengths.end())
@@ -427,15 +427,14 @@ string PhantomAnimator::CalibrateTo(string name)
         }
         double ratio = calibLengths[i] / lengths[i];
         cout << i << " : " << lengths[i] << " -> " << calibLengths[i] << " (" << ratio * 100 << " %)" << endl;
-        ss << i << " : " << ratio * 100 << " %" << endl;
         jointTrans.row(BE(i, 1)) = (1 - ratio) * (C.row(BE(i, 0)) - C.row(BE(i, 1)));
         if (P(i) < 0)
             continue;
         jointTrans.row(BE(i, 1)) += jointTrans.row(BE(P(i), 1));
     }
 
-    jointTrans.row(eyeLJ) = C.row(headJ) + jointTrans.row(headJ) + eyeL_pos.transpose() - C.row(eyeLJ);
-    jointTrans.row(eyeRJ) = C.row(headJ) + jointTrans.row(headJ) + eyeR_pos.transpose() - C.row(eyeRJ);
+    jointTrans.row(eyeLJ) = C.row(headJ) + jointTrans.row(headJ) + eyeL_pos - C.row(eyeLJ);
+    jointTrans.row(eyeRJ) = C.row(headJ) + jointTrans.row(headJ) + eyeR_pos - C.row(eyeRJ);
     jointTrans.row(headJ) = MatrixXd::Zero(1, 3);
     jointTrans(headJ, 1) = (jointTrans(eyeLJ, 1) + jointTrans(eyeRJ, 1)) * 0.5;
     C_calib = C + jointTrans;
@@ -450,7 +449,7 @@ string PhantomAnimator::CalibrateTo(string name)
 
     V_calib_apron = V_apron + Wj_apron * jointTrans.block(0, 0, C.rows() - 1, 3);
     // MatrixXd jt = jointTrans.block(0,0,C.rows()-1,3);
-    return ss.str();
+    return true;
 }
 
 void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool calibChk)
@@ -518,16 +517,16 @@ bool PhantomAnimator::ReadProfileData(string fileName)
     }
     profileIDs.clear();
     jointLengths.clear();
-    // eyeR_vec.clear();
-    // eyeL_vec.clear();
+    eyeR_vec.clear();
+    eyeL_vec.clear();
 
     int num;
     ifs >> num;
     string firstLine;
     getline(ifs, firstLine);
     jointLengths.resize(num);
-    // eyeR_vec.resize(num);
-    // eyeL_vec.resize(num);
+    eyeR_vec.resize(num);
+    eyeL_vec.resize(num);
 
     getline(ifs, firstLine);
     stringstream ss(firstLine);
@@ -557,12 +556,12 @@ bool PhantomAnimator::ReadProfileData(string fileName)
         for (int j = 0; j < 3; j++)
         {
             ss1 >> d;
-            // eyeL_vec[i](j) = d;
+            eyeL_vec[i](j) = d;
         }
         for (int j = 0; j < 3; j++)
         {
             ss1 >> d;
-            // eyeR_vec[i](j) = d;
+            eyeR_vec[i](j) = d;
         }
     }
 

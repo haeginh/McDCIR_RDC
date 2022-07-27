@@ -38,14 +38,14 @@ static vector<string> phantomlist = {"AM", "AM", "AM", "AM", "AM", "AM", "AM", "
 // class Viewer;
 class PhantomAnimator{
 public:
-    //singleton
-    static PhantomAnimator &Instance();
-    // PhantomAnimator(string prefix);
+    PhantomAnimator(){
+        ReadProfileData("profile.txt");
+    }
     ~PhantomAnimator(){}
 
     bool LoadPhantom(string phantomName);
     bool LoadPhantomWithWeightFiles(string phantomName);
-    string CalibrateTo(string name);
+    bool CalibrateTo(string name);
     void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool calibChk = true);
     void Animate(RotationList vQ, MatrixXd &V_new);
 
@@ -68,9 +68,7 @@ public:
     RotationList GetAlignRot() {return alignRot;}
    
 public:
-    PhantomAnimator(){
-        ReadProfileData("profile.txt");
-    }
+
     bool ReadProfileData(string fileName);
     bool WriteProfileData(string fileName);
     int AddProfile(map<int, double> calibLengths, Vector3d eyeL_pos, Vector3d eyeR_pos, string name){
@@ -93,6 +91,7 @@ public:
     }
     map<string, int> profileIDs;
     vector<map<int, double>> jointLengths;
+    vector<RowVector3d> eyeL_vec, eyeR_vec;
 
     //debug
     VectorXd GetWeight(int id)
@@ -107,6 +106,9 @@ public:
     }
 
 //variables
+    // MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
+    // MatrixXi BE, T, F, F_apron;   
+    // MatrixXd V_calib, C_calib, V_calib_apron;
     MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
     MatrixXi BE, T, F, F_apron;   
     MatrixXd V_calib, C_calib, V_calib_apron;
@@ -126,7 +128,7 @@ private:
     ArrayXd apronMask;
     map<int, double> lengths;
 
-    // //profile
+    // jp==
     // map<int, >
 };
 

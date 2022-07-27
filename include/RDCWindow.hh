@@ -36,6 +36,10 @@ public:
              AngleAxisd(ang/180.*igl::PI, Vector3d(1, 0, 0))).matrix();
     }
 
+    PhantomAnimator* GetPhantom(int i) {
+        if(i<indivPhantoms.size()) return indivPhantoms[i];
+        else return nullptr;
+    }
     bool running;
     bool postureUpdated;
     igl::opengl::glfw::Viewer viewer;
@@ -52,15 +56,22 @@ public:
     bool show_leadGlass;
     
 private:
-    RDCWindow():running(false), bodyID(0) {}
+    RDCWindow():running(false), bodyID(0) {
+        for(int i=0;i<5;i++)
+        {
+            auto phantom = new PhantomAnimator;
+            indivPhantoms.push_back(phantom);
+        }
+    }
     void SetMeshes(string dir);
     igl::opengl::glfw::imgui::ImGuiMenu mainMenu;
-    string phantomName;
+    // string phantomName;
 
     //view id
     unsigned int v_left, v_middle, v_right;
 
     int bodyID;
+    vector<PhantomAnimator*> indivPhantoms;
 };
 
 #endif

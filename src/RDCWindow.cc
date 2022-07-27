@@ -11,7 +11,7 @@ RDCWindow &RDCWindow::Instance()
 
 static void MainMenuBar(RDCWindow *_window);
 static void ShowViewOptions(bool *p_open, RDCWindow *_window);
-static void ShowSettingsWindow(bool *p_open);
+static void ShowSettingsWindow(bool *p_open, RDCWindow *_window);
 static void ShowManualSettingPopup(bool *p_open, RDCWindow *_window);
 static void ShowStatusWindow(bool *p_open);
 static void DoseResultTab();
@@ -64,7 +64,7 @@ void RDCWindow::Initialize()
         _viewer.data(this->axis_data).is_visible = 0;
         _viewer.data(this->phantomAcc_data).is_visible = 0;
         for(int id:this->phantom_data)
-            _viewer.data(id).is_visible = 0;
+            _viewer.data(id).is_visible = true;
         
         // _viewer.data(this->phantom_data).is_visible |= this->v_left;
         // _viewer.data(this->apron_data).is_visible   |= this->v_left;
@@ -106,13 +106,13 @@ void RDCWindow::Initialize()
         return true;
     };
 }
-static int boneID;
+static int boneID(0);
 static bool showAxis(false);
 bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
 {
     if(showAxis)
     {
-        _viewer.data(phantomAcc_data).set_data(PhantomAnimator::Instance().GetWeight(boneID));
+        _viewer.data(phantomAcc_data).set_data(indivPhantoms[bodyID]->GetWeight(boneID));
 
         MatrixXd CE = MatrixXd::Zero(4, 3);
         CE.bottomRows(3) = Matrix3d::Identity()*10;
@@ -123,7 +123,7 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
     }
     if(_viewer.core(v_left).is_animating){
         DataSet data = Communicator::Instance().current;
-        auto phantom  = PhantomAnimator::Instance();
+        auto phantom  = indivPhantoms[bodyID];
         MatrixXd P, C, V;
         MatrixXi BE, F;
         int extraID;
@@ -135,14 +135,14 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
                 continue;
             }
             _viewer.data(phantom_data[i]).is_visible |= v_left;
-            phantom.Animate(data.bodyMap[i].posture, data.bodyMap[i].jointC, C, false);
-            _viewer.data(phantom_data[i]).set_vertices(phantom.U);
+            phantom->Animate(data.bodyMap[i].posture, data.bodyMap[i].jointC, C, false);
+            _viewer.data(phantom_data[i]).set_vertices(phantom->U);
             if(i==bodyID)
             {
                 if(show_C) _viewer.data(phantom_data[i]).set_points(data.bodyMap[i].jointC, RowVector3d(0, 0, 1));
-                if(show_BE) _viewer.data(phantom_data[i]).set_edges(C, phantom.BE, RowVector3d(70. / 255., 252. / 255., 167. / 255.));
+                if(show_BE) _viewer.data(phantom_data[i]).set_edges(C, phantom->BE, RowVector3d(70. / 255., 252. / 255., 167. / 255.));
                 _viewer.data(phantom_data[i]).compute_normals();
-                _viewer.data(phantom_data[i]).set_data(VectorXd::Zero(phantom.U.rows()));
+                _viewer.data(phantom_data[i]).set_data(VectorXd::Zero(phantom->U.rows()));
             }
         }
         if(data.glassChk)
@@ -161,11 +161,11 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
 void RDCWindow::SetMeshes(string dir)
 {
     //radiologist phantom
-    auto phantom  = PhantomAnimator::Instance();
-    viewer.data().set_mesh(phantom.U_apron, phantom.F_apron);
+    // auto phantom  = indivPhantoms[0];
+    // viewer.data().set_mesh(phantom->U_apron, phantom->F_apron);
     apron_data = viewer.selected_data_index;
     viewer.append_mesh();
-    viewer.data().set_mesh(phantom.V, phantom.F);
+    // viewer.data().set_mesh(phantom->V, phantom->F);
     phantomAcc_data = viewer.selected_data_index;
 
     //read other meshes
@@ -208,19 +208,19 @@ void RDCWindow::SetMeshes(string dir)
     viewer.data().show_lines = false;
     glass_data = viewer.selected_data_index;
     viewer.append_mesh();
-    viewer.data().set_mesh(phantom.U, phantom.F);
+    // viewer.data().set_mesh(phantom->U, phantom->F);
     phantom_data.push_back(viewer.selected_data_index);
     viewer.append_mesh();
-    viewer.data().set_mesh(phantom.U, phantom.F);
+    // viewer.data().set_mesh(phantom->U, phantom->F);
     phantom_data.push_back(viewer.selected_data_index);
     viewer.append_mesh();
-    viewer.data().set_mesh(phantom.U, phantom.F);
+    // viewer.data().set_mesh(phantom->U, phantom->F);
     phantom_data.push_back(viewer.selected_data_index);
     viewer.append_mesh();
-    viewer.data().set_mesh(phantom.U, phantom.F);
+    // viewer.data().set_mesh(phantom->U, phantom->F);
     phantom_data.push_back(viewer.selected_data_index);
     viewer.append_mesh();
-    viewer.data().set_mesh(phantom.U, phantom.F);
+    // viewer.data().set_mesh(phantom->U, phantom->F);
     phantom_data.push_back(viewer.selected_data_index);
     viewer.append_mesh();
 
@@ -307,7 +307,7 @@ void MainMenuBar(RDCWindow *_window)
     if (show_color_popup)
         ShowColorInfoPopUp(&show_color_popup);
     if (show_settings_window)
-        ShowSettingsWindow(&show_settings_window);
+        ShowSettingsWindow(&show_settings_window, _window);
     if (show_manual_setting_popup)
         ShowManualSettingPopup(&show_manual_setting_popup, _window);
     if (show_info_popup)
@@ -704,7 +704,7 @@ void ProgramLogTab()
     }
 }
 
-void ShowSettingsWindow(bool *p_open)
+void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
 {
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_AlwaysAutoResize;
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
@@ -716,12 +716,15 @@ void ShowSettingsWindow(bool *p_open)
         // if (ImGui::Button("Load Phantom"))
         //     PhantomAnimator::Instance().LoadPhantom("./phantoms/" + phantomlist[phantomNum]);
         
-        vector<string> names = PhantomAnimator::Instance().GetProfileNames();
+        vector<string> names = RDCWindow::Instance().GetPhantom(0)->GetProfileNames();
         static vector<string> profileNames(names.size());
         copy(names.begin(), names.end(), profileNames.begin());
 
         ImGuiTableFlags flags =  ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_NoBordersInBody;
             // | ImGuiTableFlags_SizingFixedFit;
+        static int bfID[5], profileID[5];
+        static float color[5][3];
+        static bool trackOpt[5];
         if (ImGui::BeginTable("phantom settings", 5, flags))
         {
             ImGui::TableSetupColumn("#");
@@ -731,12 +734,9 @@ void ShowSettingsWindow(bool *p_open)
             ImGui::TableSetupColumn("track");
             ImGui::TableHeadersRow();
 
-            static int bfID[5], profileID[5];
-            static float color[5][5];
-            static bool trackOpt[5];
             for(int i=0;i<5;i++)
             {
-                ImGui::PushID(i);
+                ImGui::PushID(i*10);
                 ImGui::TableNextRow();
                 if(ImGui::TableNextColumn())  ImGui::Text(std::to_string(i).c_str());
                 if(ImGui::TableNextColumn()) {
@@ -750,16 +750,45 @@ void ShowSettingsWindow(bool *p_open)
                 if(ImGui::TableNextColumn())  ImGui::ColorEdit3("", color[i]);
                 if(ImGui::TableNextColumn())  
                     if(ImGui::Checkbox("", &trackOpt[i])){
-
+                        auto phantom = _window->GetPhantom(i);
+                        phantom->LoadPhantom("./phantoms/" + phantomlist[bfID[i]]);
+                        phantom->CalibrateTo(profileNames[profileID[i]]);
+                        cout<<_window->phantom_data[i]<<endl;
+                        _window->viewer.data(_window->phantom_data[i])
+                        .set_mesh(phantom->V_calib, phantom->F);
                     }
                 ImGui::PopID();
             }
-        }
+        } 
         ImGui::EndTable();
-        static string fileBuff;
-        ImGui::InputText("file name", fileBuff);
+        static string fileBuff("track.data"), loadFile("track.data");
+        ImGui::InputText("read", loadFile);
         ImGui::SameLine();
-        ImGui::Button("SAVE");
+        if(ImGui::Button("LOAD")){
+            ifstream ifs(loadFile);
+            for(int i=0;i<5;i++)
+            {
+                int id;
+                string bfData, profile;
+                ifs>>id>>bfData>>profile
+                   >>color[id][0]>>color[id][1]>>color[id][2];
+                for(int b=0;b<BFlist.size();b++)
+                    if(BFlist[b]==bfData) bfID[i] = b; 
+                for(int p=0;p<profileNames.size();p++)
+                    if(profileNames[p]==profile) profileID[i] = p; 
+            }
+            ifs.close();
+        }
+
+        ImGui::InputText("write", fileBuff);
+        ImGui::SameLine();
+        if(ImGui::Button("SAVE")){
+            ofstream ofs(fileBuff);
+            for(int i=0;i<5;i++)
+                ofs<<i<<"\t"<<BFlist[bfID[i]]<<"\t"<<profileNames[profileID[i]]
+                   <<"\t"<<color[i][0]<<"\t"<<color[i][1]<<"\t"<<color[i][2]<<endl;
+            ofs.close();
+        }
 
         ImGui::BulletText("Server machine settings");
         static int serverPort(30303);

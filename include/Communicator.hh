@@ -8,7 +8,8 @@
 #include <chrono>
 
 #define BE_ROWS 22
-#define SERVER_IP "192.168.0.100"
+// #define SERVER_IP "192.168.0.100"
+#define SERVER_IP "127.0.0.1"
 using namespace std;
 typedef tuple<string, int, Eigen::Affine3d> WORKER;
 struct Body
