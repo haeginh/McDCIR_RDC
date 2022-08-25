@@ -47,23 +47,23 @@ public:
     bool LoadPhantomWithWeightFiles(string phantomName);
     bool CalibrateTo(string name);
     void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool calibChk = true);
-    void Animate(RotationList vQ, MatrixXd &V_new);
+    // void Animate(RotationList vQ, MatrixXd &V_new);
 
 
     void GetMeshes(MatrixXd &_V, MatrixXi &_F, MatrixXd &_C, MatrixXi &_BE){
         _V = V; _F = F; _C = C; _BE = BE;
     }
-    MatrixXd GetV(){ return V; }
-    MatrixXd GetU(){ return U; }
-    MatrixXi GetF(){ return F; }
-    MatrixXd GetC(){ return C; }
-    MatrixXd GetC_calib(){ return C_calib; }
-    MatrixXi GetBE(){ return BE; }
-    ArrayXd GetWSkin(){return W_avgSkin;}
-    MatrixXd GetUapron(){return U_apron;}
-    VectorXi GetOutApron(){return outApron;}
-    ArrayXd GetApronMask(){return apronMask;}
-    MatrixXi GetFapron(){return F_apron;}
+    // MatrixXd GetV(){ return V; }
+    // MatrixXd GetU(){ return U; }
+    // MatrixXi GetF(){ return F; }
+    // MatrixXd GetC(){ return C; }
+    // MatrixXd GetC_calib(){ return C_calib; }
+    // MatrixXi GetBE(){ return BE; }
+    // ArrayXd GetWSkin(){return W_avgSkin;}
+    // MatrixXd GetUapron(){return U_apron;}
+    // VectorXi GetOutApron(){return outApron;}
+    // ArrayXd GetApronMask(){return apronMask;}
+    // MatrixXi GetFapron(){return F_apron;}
     // map<int, double> GetWLens(){return lensWeight;}
     RotationList GetAlignRot() {return alignRot;}
    
@@ -111,7 +111,7 @@ public:
     // MatrixXd V_calib, C_calib, V_calib_apron;
     MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
     MatrixXi BE, T, F, F_apron;   
-    MatrixXd V_calib, C_calib, V_calib_apron;
+    // MatrixXd V_calib, C_calib, V_calib_apron;
 private:
     bool Initialize();
 
@@ -127,6 +127,11 @@ private:
     VectorXi outApron;
     ArrayXd apronMask;
     map<int, double> lengths;
+
+public:
+    //dose
+    VectorXd accD;
+    void ClearDose(){accD = VectorXd::Zero(V.rows());}
 
     // jp==
     // map<int, >

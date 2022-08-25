@@ -17,7 +17,7 @@
 // }
 
 bool PhantomAnimator::LoadPhantom(string _phantom)
-{
+{  
     //try to load phantom with weight files
     //if it fails, generate weight files
     if(LoadPhantomWithWeightFiles(_phantom)) return true;
@@ -307,6 +307,7 @@ bool PhantomAnimator::LoadPhantomWithWeightFiles(string _phantom)
 }
 bool PhantomAnimator::Initialize()
 {
+    endC.clear();
     endC.resize(18);
     for(int i=0;i<BE.rows();i++)
      endC[BE(i, 0)].push_back(BE(i, 1));
@@ -401,9 +402,9 @@ bool PhantomAnimator::Initialize()
     // W_Lens = W_Lens.array() / W_Lens.sum();
 
     cout << "done" << endl;
-    V_calib = V;
-    C_calib = C;
-    V_calib_apron = V_apron;
+    // V_calib = V;
+    // C_calib = C;
+    // V_calib_apron = V_apron;
     return true;
 }
 
@@ -437,17 +438,17 @@ bool PhantomAnimator::CalibrateTo(string name)
     jointTrans.row(eyeRJ) = C.row(headJ) + jointTrans.row(headJ) + eyeR_pos - C.row(eyeRJ);
     jointTrans.row(headJ) = MatrixXd::Zero(1, 3);
     jointTrans(headJ, 1) = (jointTrans(eyeLJ, 1) + jointTrans(eyeRJ, 1)) * 0.5;
-    C_calib = C + jointTrans;
+    C = C + jointTrans;
 
     cout << Wj.rows() << "*" << Wj.cols() << endl;
     cout << jointTrans.rows() << "*" << jointTrans.cols() << endl;
-    V_calib = V + Wj * jointTrans.block(0, 0, C.rows() - 1, 3);
+    V = V + Wj * jointTrans.block(0, 0, C.rows() - 1, 3);
 
     cout << V_apron.rows() << " " << V_apron.cols() << endl;
     cout << Wj_apron.rows() << " " << Wj_apron.cols() << endl;
     cout << C.rows() - 1 << endl;
 
-    V_calib_apron = V_apron + Wj_apron * jointTrans.block(0, 0, C.rows() - 1, 3);
+    V_apron = V_apron + Wj_apron * jointTrans.block(0, 0, C.rows() - 1, 3);
     // MatrixXd jt = jointTrans.block(0,0,C.rows()-1,3);
     return true;
 }
@@ -456,22 +457,22 @@ void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd 
 {
     vector<Vector3d> vT;
 
-    if (calibChk)
-    {
-        C_new = C_calib;
-        C_new.row(0) = C_disp.row(0); // set root
-        for (int i = 0; i < BE.rows(); i++)
-        {
-            Affine3d a;
-            a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[BE(i, 0)].matrix() * Translation3d(Vector3d(-C_calib.row(BE(i, 0)).transpose()));
-            vT.push_back(a.translation());
-            C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
-        }
-        myDqs(V_calib, cleanWeights, vQ, vT, U);
-        myDqs(V_calib_apron, cleanWeightsApron, vQ, vT, U_apron);
-    }
-    else
-    {
+    // if (calibChk)
+    // {
+    //     C_new = C_calib;
+    //     C_new.row(0) = C_disp.row(0); // set root
+    //     for (int i = 0; i < BE.rows(); i++)
+    //     {
+    //         Affine3d a;
+    //         a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[BE(i, 0)].matrix() * Translation3d(Vector3d(-C_calib.row(BE(i, 0)).transpose()));
+    //         vT.push_back(a.translation());
+    //         C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
+    //     }
+    //     myDqs(V_calib, cleanWeights, vQ, vT, U);
+    //     myDqs(V_calib_apron, cleanWeightsApron, vQ, vT, U_apron);
+    // }
+    // else
+    // {
         C_new = C;
         C_new.row(0) = C_disp.row(0); // set root
         for (int i = 0; i < 18;i++)//BE.rows(); i++)
@@ -488,24 +489,24 @@ void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd 
         }
         myDqs(V, cleanWeights, vQ, vT, U);
         myDqs(V_apron, cleanWeightsApron, vQ, vT, U_apron);
-    }
+    // }
 }
 
-void PhantomAnimator::Animate(RotationList vQ, MatrixXd &V_new)
-{
-    vector<Vector3d> vT;
-    igl::forward_kinematics(C_calib, BE, P, vQ, vQ, vT);
+// void PhantomAnimator::Animate(RotationList vQ, MatrixXd &V_new)
+// {
+//     vector<Vector3d> vT;
+//     igl::forward_kinematics(C_calib, BE, P, vQ, vQ, vT);
 
-    MatrixXd C_new = C_calib;
-    for (int i = 0; i < BE.rows(); i++)
-    {
-        Affine3d a;
-        a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C_calib.row(BE(i, 0)).transpose()));
-        vT.push_back(a.translation());
-        C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
-    }
-    myDqs(V_calib, cleanWeights, vQ, vT, V_new);
-}
+//     MatrixXd C_new = C_calib;
+//     for (int i = 0; i < BE.rows(); i++)
+//     {
+//         Affine3d a;
+//         a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C_calib.row(BE(i, 0)).transpose()));
+//         vT.push_back(a.translation());
+//         C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
+//     }
+//     myDqs(V_calib, cleanWeights, vQ, vT, V_new);
+// }
 
 bool PhantomAnimator::ReadProfileData(string fileName)
 {
