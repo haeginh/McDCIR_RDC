@@ -97,7 +97,6 @@ void VisualizeResult(k4abt_frame_t bodyFrame, Window3dWrapper& window3d, int dep
             {
                 const k4a_float3_t& jointPosition = body.skeleton.joints[joint].position;
                 const k4a_quaternion_t& jointOrientation = body.skeleton.joints[joint].orientation;
-
                 window3d.AddJoint(
                     jointPosition,
                     jointOrientation,

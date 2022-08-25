@@ -1,5 +1,6 @@
 #include "GlassTracker.hh"
 #include <opencv2/core/eigen.hpp>
+#include <igl/slice.h>
 
 bool clicked;
 Point2i P1, P2;
@@ -12,6 +13,7 @@ GlassTracker::GlassTracker()
 {
     dictionary = aruco::generateCustomDictionary(6, 4, 2);
     params = aruco::DetectorParameters::create();
+    //marker position (relative position-based methodology)
     coeffX = {15, -1, -15, 15, -1, -15};
     coeffY = {-10, -10, -10, 10, 10, 10};
 }

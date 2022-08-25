@@ -3,6 +3,7 @@
 
 #include <map>
 #include <opencv2/aruco.hpp>
+#include <igl/readDMAT.h>
 #include "Kinect2OpenCV.hh"
 #include "functions.hh"
 
@@ -37,11 +38,13 @@ class GlassTracker
     map<int, vector<Point2f>> corner_cumul;
     Vec3d tvec_cumul;
     Eigen::Quaterniond q_cumul;
+    Eigen::Vector3d t_cumul;
     int cumulCount;
     vector<double> coeffX;
     vector<double> coeffY;
     float markerLength; 
 
     float sf;
+
 };
 #endif
