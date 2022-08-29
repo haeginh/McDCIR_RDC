@@ -34,18 +34,19 @@ typedef Triplet<double> T;
 
 int main(int argc, char **argv)
 {
-    // exceptions
-    string dir = getenv("DCIR_TRACKER_DIR_PATH");
-    if (dir.empty())
-    {
-        cout << "WORKER: please check environment variable DCIR_TRACKER_DIR_PATH!" << endl;
-        return 1;
-    }
     int id = atoi(argv[3]);
     int opt = atoi(argv[4]);
     if (opt != 1 && opt & 1)
     {
         cout << "WORKER: OCR and KINECT based tracking options cannot selected at the same time" << endl;
+        return 1;
+    }
+
+    // exceptions
+    string dir = getenv("DCIR_TRACKER_DIR_PATH");
+    if (dir.empty())
+    {
+        cout << "WORKER: please check environment variable DCIR_TRACKER_DIR_PATH!" << endl;
         return 1;
     }
     // connection to server
