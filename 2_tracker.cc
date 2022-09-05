@@ -3,6 +3,8 @@
 #include <functions.hh>
 #include <functional>
 
+#include "OCR_main.hh"
+
 #include "bodytracking.hh"
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
@@ -15,6 +17,7 @@
 #define C_NUM 24
 
 // #define TEST
+// #define OCR_SETTINGS
 #define ABT_DISPLAY
 #define GLASS_DISPLAY
 extern Rect cropRect;
@@ -41,14 +44,19 @@ int main(int argc, char **argv)
         cout << "WORKER: OCR and KINECT based tracking options cannot selected at the same time" << endl;
         return 1;
     }
-
-    // exceptions
-    string dir = getenv("DCIR_TRACKER_DIR_PATH");
+    // environment variable check
+    string dir, envV;
+    if (opt & 1)
+        envV = "DCIR_OCR_DIR_PATH";
+    else
+        envV = "DCIR_TRACKER_DIR_PATH";
+    dir = getenv(envV.c_str());
     if (dir.empty())
     {
-        cout << "WORKER: please check environment variable DCIR_TRACKER_DIR_PATH!" << endl;
+        cout << "WORKER: please check environment variable " + envV << endl;
         return 1;
     }
+
     // connection to server
     int client_socket;
     struct sockaddr_in serverAddress;
@@ -57,6 +65,53 @@ int main(int argc, char **argv)
     sendBuff[0] = id;
     sendBuff[1] = opt;
     char recvBuff[4];
+
+    // --OCR
+    if (opt & 1)
+    {
+        OcrMain ocr_main(dir);
+        if (!getenv("DCIR_OCR_VIDEO"))
+            ocr_main.SetSource(SOURCE::CAPTUREBOARD);
+        else
+            ocr_main.SetSource(SOURCE::VIDEO, string(getenv("DCIR_OCR_VIDEO")));
+        ocr_main.Initialize("config_video2.yml");
+
+        //for settings
+#ifdef OCR_SETTINGS
+        ocr_main.RenderForSetting();
+        ocr_main.RenderForLearning();
+        return 0;
+#endif
+        // ssize_t sentBytes;
+
+        memset(&serverAddress, 0, sizeof(serverAddress));
+        serverAddress.sin_family = AF_INET;
+        serverAddress.sin_addr.s_addr = inet_addr(argv[1]);
+        serverAddress.sin_port = htons(atoi(argv[2]));
+
+        if ((client_socket = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+        {
+            cout << "WORKER: socket generation failed" << endl;
+            return false;
+        }
+        else
+            cout << "WORKER: socket generation -> success!" << endl;
+        struct timeval optVal = {0, 50};
+        int optLen = sizeof(optVal);
+        setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &optVal, optLen);
+        // first msg.
+
+        while (1)
+        {
+            sendto(client_socket, sendBuff, 500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
+            if (!ocr_main.Render(&sendBuff[2]))
+                break;
+        }
+        return 0;
+    }
+
+    // --KINECT connected functions
+    // exceptions
 
     // read sync data
     string dump;
@@ -74,47 +129,40 @@ int main(int argc, char **argv)
     GlassTracker glassTracker;
     // body tracker variable
     vector<int> poseJoints = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24, 8, 15, 21, 25, 28, 30};
-    
-    if (opt == 1) // OCR tracker
-    {
-        // OCR initialization
-    }
-    else // KINECT tracker
-    {
-        // Start camera
-        VERIFY(k4a_device_open(0, &device), "Open K4A Device failed!");
 
-        // Start camera. Make sure depth camera is enabled.
-        k4a_device_configuration_t deviceConfig = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
-        deviceConfig.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-        deviceConfig.color_resolution = K4A_COLOR_RESOLUTION_2160P;
-        deviceConfig.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED; // No need for depth during calibration
-        deviceConfig.camera_fps = K4A_FRAMES_PER_SECOND_15;     // Don't use all USB bandwidth
-        deviceConfig.synchronized_images_only = true;
-        VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
-        cout << "WORKER" << id << ": KINECT turned on" << endl;
-        // Get calibration information
-        VERIFY(k4a_device_get_calibration(device, deviceConfig.depth_mode, deviceConfig.color_resolution, &sensorCalibration),
-               "Get depth camera calibration failed!");
-        depthWidth = sensorCalibration.depth_camera_calibration.resolution_width;
-        depthHeight = sensorCalibration.depth_camera_calibration.resolution_height;
-        //tracker
-        k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
-        tracker_config.processing_mode = K4ABT_TRACKER_PROCESSING_MODE_GPU_CUDA;
-        VERIFY(k4abt_tracker_create(&sensorCalibration, tracker_config, &tracker), "Body tracker initialization failed!");
-        if (opt & 4)
+    // Start camera
+    VERIFY(k4a_device_open(0, &device), "Open K4A Device failed!");
+
+    // Start camera. Make sure depth camera is enabled.
+    k4a_device_configuration_t deviceConfig = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
+    deviceConfig.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
+    deviceConfig.color_resolution = K4A_COLOR_RESOLUTION_2160P;
+    deviceConfig.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED; // No need for depth during calibration
+    deviceConfig.camera_fps = K4A_FRAMES_PER_SECOND_15;     // Don't use all USB bandwidth
+    deviceConfig.synchronized_images_only = true;
+    VERIFY(k4a_device_start_cameras(device, &deviceConfig), "Start K4A cameras failed!");
+    cout << "WORKER" << id << ": KINECT turned on" << endl;
+    // Get calibration information
+    VERIFY(k4a_device_get_calibration(device, deviceConfig.depth_mode, deviceConfig.color_resolution, &sensorCalibration),
+           "Get depth camera calibration failed!");
+    depthWidth = sensorCalibration.depth_camera_calibration.resolution_width;
+    depthHeight = sensorCalibration.depth_camera_calibration.resolution_height;
+    // tracker
+    k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
+    tracker_config.processing_mode = K4ABT_TRACKER_PROCESSING_MODE_GPU_CUDA;
+    VERIFY(k4abt_tracker_create(&sensorCalibration, tracker_config, &tracker), "Body tracker initialization failed!");
+    if (opt & 4)
+    {
+        glassTracker.SetScalingFactor(0.3);
+        if (!glassTracker.ReadDetectorParameters(dir + "/detector_params.yml"))
         {
-            glassTracker.SetScalingFactor(0.3);
-            if (!glassTracker.ReadDetectorParameters(dir + "/detector_params.yml"))
-            {
-                cerr << "Check detector parmeter file! (" << dir + "/kinect2160.yml)" << endl;
-                return 1;
-            }
-            if (!glassTracker.ReadCameraParameters(dir + "/kinect2160.yml"))
-            {
-                cerr << "Check camera parmeter file! (" << dir + "/kinect2160.yml)" << endl;
-                return 1;
-            }
+            cerr << "Check detector parmeter file! (" << dir + "/kinect2160.yml)" << endl;
+            return 1;
+        }
+        if (!glassTracker.ReadCameraParameters(dir + "/kinect2160.yml"))
+        {
+            cerr << "Check camera parmeter file! (" << dir + "/kinect2160.yml)" << endl;
+            return 1;
         }
     }
 
@@ -135,7 +183,7 @@ int main(int argc, char **argv)
     int optLen = sizeof(optVal);
     setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &optVal, optLen);
     // first msg.
-    sendto(client_socket, sendBuff, 500*4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
+    sendto(client_socket, sendBuff, 500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
 
 #ifdef ABT_DISPLAY
     Window3dWrapper window3d;
@@ -148,114 +196,111 @@ int main(int argc, char **argv)
 #endif
     // main loop
     Mat color;
-    vector<int> kinectData = {0, 1, 2, 4, 5, 6, 8, 26, 11, 12, 13, 15, 18, 19, 20, 22, 23, 24, 9, 16, 21, 25, 28, 30}; //first 18 belongs to bone data
+    vector<int> kinectData = {0, 1, 2, 4, 5, 6, 8, 26, 11, 12, 13, 15, 18, 19, 20, 22, 23, 24, 9, 16, 21, 25, 28, 30}; // first 18 belongs to bone data
     while (1)
     {
         int capture_opt(0);
-        if (opt == 1)
+
+        k4a_capture_t sensorCapture = nullptr;
+        k4a_wait_result_t getCaptureResult = k4a_device_get_capture(device, &sensorCapture, 0);
+        int pos(2);
+        if (getCaptureResult == K4A_WAIT_RESULT_FAILED)
         {
-            // OCR
+            std::cout << "Get img capture returned error: " << getCaptureResult << std::endl;
+            break;
         }
-        else
+        else if (getCaptureResult == K4A_WAIT_RESULT_TIMEOUT)
+            continue;
+
+        if (opt & 2) // bed tracking
         {
-            k4a_capture_t sensorCapture = nullptr;
-            k4a_wait_result_t getCaptureResult = k4a_device_get_capture(device, &sensorCapture, 0);
-            int pos(2);
-            if (getCaptureResult == K4A_WAIT_RESULT_FAILED)
+        }
+        if (opt & 4) // glass tracking
+        {
+            k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
+            color = color_to_opencv(color_img);
+            k4a_image_release(color_img);
+            glassTracker.SetNewFrame(color);
+            Quaterniond q;
+            Eigen::Vector3d t;
+            bool detected = glassTracker.ProcessCurrentFrame(q, t);
+            glassTracker.Render(detected);
+            if (detected)
             {
-                std::cout << "Get img capture returned error: " << getCaptureResult << std::endl;
+                capture_opt |= 4;
+                sendBuff[pos++] = (float)q.w();
+                sendBuff[pos++] = (float)q.x();
+                sendBuff[pos++] = (float)q.y();
+                sendBuff[pos++] = (float)q.z();
+                sendBuff[pos++] = (float)t(0);
+                sendBuff[pos++] = (float)t(1);
+                sendBuff[pos++] = (float)t(2);
+            }
+        }
+        if (opt & 8) // body tracking
+        {
+            k4a_wait_result_t queueCaptureResult = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 0);
+            if (queueCaptureResult == K4A_WAIT_RESULT_FAILED)
+            {
+                std::cout << "Error! Add capture to tracker process queue failed!" << std::endl;
                 break;
             }
-            else if (getCaptureResult == K4A_WAIT_RESULT_TIMEOUT)
-                continue;
 
-            if (opt & 2) // bed tracking
+            k4abt_frame_t bodyFrame = nullptr;
+            k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0
+            if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
             {
-            }
-            if (opt & 4) // glass tracking
-            {
-                k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
-                color = color_to_opencv(color_img);
-                k4a_image_release(color_img);
-                glassTracker.SetNewFrame(color);
-                Quaterniond q;
-                Eigen::Vector3d t;
-                bool detected = glassTracker.ProcessCurrentFrame(q, t);
-                glassTracker.Render(detected);
-                if (detected)
-                {
-                    capture_opt |= 4;
-                    sendBuff[pos++] = (float)q.w();
-                    sendBuff[pos++] = (float)q.x();
-                    sendBuff[pos++] = (float)q.y();
-                    sendBuff[pos++] = (float)q.z();
-                    sendBuff[pos++] = (float)t(0);
-                    sendBuff[pos++] = (float)t(1);
-                    sendBuff[pos++] = (float)t(2);
-                }
-            }
-            if (opt & 8) // body tracking
-            {
-                k4a_wait_result_t queueCaptureResult = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 0);
-                if (queueCaptureResult == K4A_WAIT_RESULT_FAILED)
-                {
-                    std::cout << "Error! Add capture to tracker process queue failed!" << std::endl;
+#ifdef ABT_DISPLAY
+                if (!s_isRunning)
                     break;
-                }
-
-                k4abt_frame_t bodyFrame = nullptr;
-                k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0
-                if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
+                VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight);
+#endif
+                int num = k4abt_frame_get_num_bodies(bodyFrame);
+                // num = num > 5 ? 5 : num;
+                if (num)
                 {
-#ifdef ABT_DISPLAY
-                    if(!s_isRunning) break;
-                    VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight);
-#endif
-                    int num = k4abt_frame_get_num_bodies(bodyFrame);
-                    num = num>5? 5 : num;
-                    if(num) 
-                    {
-                        capture_opt |= 8;
-                        sendBuff[pos++] = num;
-                    }
-                    for(int i=0;i<num;i++)
-                    {
-                        sendBuff[pos++] = k4abt_frame_get_body_id(bodyFrame, i);
-                        k4abt_body_t body;
-                        k4abt_frame_get_body_skeleton(bodyFrame, i, &body.skeleton);
-                        for (int i = 0; i < 18; i++)
-                        {
-                            k4a_quaternion_t q = body.skeleton.joints[kinectData[i]].orientation;
-                            // Quaterniond q1 = Quaterniond(q.wxyz.y, q.wxyz.z, q.wxyz.w, q.wxyz.x);// * alignRot[i];
-                            // q1.normalize();
-                            sendBuff[pos++] = q.wxyz.z;
-                            sendBuff[pos++] = q.wxyz.y;
-                            sendBuff[pos++] = q.wxyz.x;
-                            sendBuff[pos++] = q.wxyz.w;
-                        }
-                        for (int i:kinectData)
-                        {
-                            // sendBuff[pos++] = 0;
-                            // if (body.skeleton.joints[i].confidence_level == K4ABT_JOINT_CONFIDENCE_MEDIUM)
-                            //     sendBuff[pos] = 1;
-                            sendBuff[pos++] = body.skeleton.joints[i].position.xyz.x * 0.1;
-                            sendBuff[pos++] = body.skeleton.joints[i].position.xyz.y * 0.1;
-                            sendBuff[pos++] = body.skeleton.joints[i].position.xyz.z * 0.1;
-                        }                        
-                    }
-                    k4abt_frame_release(bodyFrame);
+                    capture_opt |= 8;
+                    sendBuff[pos++] = num;
                 }
-#ifdef ABT_DISPLAY
-                window3d.SetLayout3d(s_layoutMode);
-                window3d.SetJointFrameVisualization(s_visualizeJointFrame);
-                window3d.Render();
-#endif
+                for (int i = 0; i < num; i++)
+                {
+                    sendBuff[pos++] = k4abt_frame_get_body_id(bodyFrame, i);
+                    k4abt_body_t body;
+                    k4abt_frame_get_body_skeleton(bodyFrame, i, &body.skeleton);
+                    for (int i = 0; i < 18; i++)
+                    {
+                        k4a_quaternion_t q = body.skeleton.joints[kinectData[i]].orientation;
+                        // Quaterniond q1 = Quaterniond(q.wxyz.y, q.wxyz.z, q.wxyz.w, q.wxyz.x);// * alignRot[i];
+                        // q1.normalize();
+                        sendBuff[pos++] = q.wxyz.z;
+                        sendBuff[pos++] = q.wxyz.y;
+                        sendBuff[pos++] = q.wxyz.x;
+                        sendBuff[pos++] = q.wxyz.w;
+                    }
+                    for (int i : kinectData)
+                    {
+                        // sendBuff[pos++] = 0;
+                        // if (body.skeleton.joints[i].confidence_level == K4ABT_JOINT_CONFIDENCE_MEDIUM)
+                        //     sendBuff[pos] = 1;
+                        sendBuff[pos++] = body.skeleton.joints[i].position.xyz.x * 0.1;
+                        sendBuff[pos++] = body.skeleton.joints[i].position.xyz.y * 0.1;
+                        sendBuff[pos++] = body.skeleton.joints[i].position.xyz.z * 0.1;
+                    }
+                }
+                k4abt_frame_release(bodyFrame);
             }
-            if(sensorCapture) k4a_capture_release(sensorCapture);
+#ifdef ABT_DISPLAY
+            window3d.SetLayout3d(s_layoutMode);
+            window3d.SetJointFrameVisualization(s_visualizeJointFrame);
+            window3d.Render();
+#endif
         }
+        if (sensorCapture)
+            k4a_capture_release(sensorCapture);
+
         sendBuff[1] = capture_opt;
         server_addr_size = sizeof(serverAddress);
-        sendto(client_socket, sendBuff, 500*4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
+        sendto(client_socket, sendBuff, 500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
         if (recvfrom(client_socket, recvBuff, 4, 0, (struct sockaddr *)&serverAddress, &server_addr_size) > 0)
         {
             cout << "WORKER: server says - " << recvBuff << endl;

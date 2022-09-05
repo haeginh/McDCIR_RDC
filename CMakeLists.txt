@@ -57,6 +57,10 @@ target_link_libraries(2_tracker
     ${OpenCV_LIBS}
     )
 
+## ocr_setting
+# add_executable(ocr_setting ocr_setting.cc ${sources} ${headers})
+# target_link_libraries(ocr_setting ${OpenCV_LIBS})
+
 ## 3_synchronization
 #add_executable(3_synchronization 3_synchronization.cc ${sources} ${headers})
 #target_link_libraries(3_synchronization k4a ${OpenCV_LIBS})
