@@ -48,7 +48,11 @@ public:
         else
             return nullptr;
     }
-    bool beamOn;
+    // bool beamOn;
+    bool useManualBeam;
+    bool recording;
+    int loadNum;
+    vector<vector<float>> recordData;
     bool postureUpdated;
     igl::opengl::glfw::Viewer viewer;
 
@@ -89,6 +93,7 @@ public:
         B_patient1 = igl::slice(B_patient1, sourceIdx, 1);
         N_patient1 = igl::slice(N_patient, sourceIdx, 1);
         A_patient1 = igl::slice(A_patient, sourceIdx, 1);
+     
         // A_patient1 = A_patient1/A_patient1.sum(); 
     }
 
@@ -187,10 +192,21 @@ public:
         return (((1. / grid) * sph).array() + 0.5).floor();
     }
 
+    int maxNumPeople;
+    int dataSize;
+    // bool connectPDC;
+    clock_t lastFrameT;
+    // thread PDCsender;
+    // void SendPDCData();
+    // int PDCprocess;
+    // clock_t lastFrameT_PDC;
 private:
-    RDCWindow() : beamOn(false), bodyID(0)
+    RDCWindow() : maxNumPeople(5), bodyID(0), recording(false), loadNum(-1), show_beam(true), show_leadGlass(true)
     {
-        for (int i = 0; i < 5; i++)
+        if(getenv("DCIR_MAX_NUM_OF_PEOPLE")) 
+            maxNumPeople = atoi(getenv("DCIR_MAX_NUM_OF_PEOPLE"));
+        dataSize = 18+maxNumPeople*145;
+        for (int i = 0; i < maxNumPeople; i++)
         {
             auto phantom = new PhantomAnimator;
             indivPhantoms.push_back(phantom);
@@ -207,6 +223,10 @@ private:
     int bodyID;
     vector<PhantomAnimator *> indivPhantoms;
     MapContainer *mapContainer;
+
+    //something else
+    vector<float> SetAframeData(DataSet data, float frameTimeInMSEC);
+    DataSet ReadAframeData(vector<float> frameData);
 };
 
 #endif

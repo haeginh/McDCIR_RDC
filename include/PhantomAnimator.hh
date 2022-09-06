@@ -46,9 +46,10 @@ public:
     bool LoadPhantom(string phantomName);
     bool LoadPhantomWithWeightFiles(string phantomName);
     bool CalibrateTo(string name);
+    void Clear(){V.resize(0, 0);}
+
     void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool calibChk = true);
     // void Animate(RotationList vQ, MatrixXd &V_new);
-
 
     void GetMeshes(MatrixXd &_V, MatrixXi &_F, MatrixXd &_C, MatrixXi &_BE){
         _V = V; _F = F; _C = C; _BE = BE;
@@ -67,8 +68,6 @@ public:
     // map<int, double> GetWLens(){return lensWeight;}
     RotationList GetAlignRot() {return alignRot;}
    
-public:
-
     bool ReadProfileData(string fileName);
     bool WriteProfileData(string fileName);
     int AddProfile(map<int, double> calibLengths, Vector3d eyeL_pos, Vector3d eyeR_pos, string name){

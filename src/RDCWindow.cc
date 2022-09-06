@@ -10,6 +10,7 @@ RDCWindow &RDCWindow::Instance()
 }
 
 static void MainMenuBar(RDCWindow *_window);
+static void ShowMachineStatus(bool *p_open);
 static void ShowViewOptions(bool *p_open, RDCWindow *_window);
 static void ShowSettingsWindow(bool *p_open, RDCWindow *_window);
 static void ShowManualSettingPopup(bool *p_open, RDCWindow *_window);
@@ -102,13 +103,19 @@ void RDCWindow::Initialize()
     viewer.callback_post_draw = [&](igl::opengl::glfw::Viewer &_viewer) -> bool
     {
         // to prevent program to be idle
-        if (RDCWindow::Instance().beamOn)
-            _viewer.core(0).is_animating = true;
-        else
-            _viewer.core(0).is_animating = false;
+        // if (RDCWindow::Instance().beamOn)
+        _viewer.core(0).is_animating = true;
+        // else
+        //     _viewer.core(0).is_animating = false;
         // _viewer.core().is_animating = true;
         return true;
     };
+
+    // set everything always animating
+    viewer.core(0).is_animating = true;
+    viewer.core(v_left).is_animating = true;
+    viewer.core(v_middle).is_animating = true;
+    viewer.core(v_right).is_animating = true;
 }
 static int boneID(0);
 static bool showAxis(false);
@@ -125,23 +132,97 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
         DataSet data = Communicator::Instance().current;
         _viewer.data(phantom_data[bodyID]).set_edges((CE * data.bodyMap[bodyID].posture[boneID].normalized().matrix().transpose()).rowwise() + data.bodyMap[bodyID].jointC.row(boneID), BE, Matrix3d::Identity());
     }
+    DataSet data = Communicator::Instance().current;
+    if (loadNum >= 0)
+    {
+        if (loadNum == recordData.size())
+        {
+            loadNum = -1;
+            return false;
+        }
+        data = ReadAframeData(recordData[loadNum++]);
+        data.beamOn = true;
+    }
+
+    float frameTimeInMSEC(0);
+    if (data.beamOn || useManualBeam)
+    {
+        if (lastFrameT > 0)
+            frameTimeInMSEC = float(data.time - lastFrameT) / CLOCKS_PER_SEC * 1000;
+        lastFrameT = data.time;
+        if (recording)
+            recordData.push_back(SetAframeData(data, frameTimeInMSEC));
+    }
+    else if (lastFrameT > 0) // last frame
+    {
+        frameTimeInMSEC = data.time - lastFrameT;
+        lastFrameT = -1;
+        if (recording)
+        {
+            recordData.push_back(SetAframeData(data, frameTimeInMSEC));
+            recordData.back().push_back(0); //last frame flag
+        }
+
+    }
+
     if (_viewer.core(v_left).is_animating)
     {
-        DataSet data = Communicator::Instance().current;
+        // machine
+        if (!useManualBeam)
+        {
+            _viewer.data(patient_data).set_vertices(V_patient.rowwise() + data.bed.cast<double>());
+            _viewer.data(table_data).set_vertices(V_table.rowwise() + data.bed.cast<double>());
+            SetMap(data.kVp, data.cArm(0), data.cArm(1));
+            SetDAP(data.dap);
+            MatrixXf rot = GetCarmRotation(data.cArm(0), data.cArm(1));
+            _viewer.data(cArm_data).set_vertices(V_cArm * rot.cast<double>().transpose());
+            _viewer.data(beam_data).set_vertices(V_beam * rot.cast<double>().transpose());
+            _viewer.data(cArm_data).compute_normals();
+            _viewer.data(beam_data).compute_normals();
+            CalculateSourceFacets(data.bed, rot);
+            _viewer.data(patient_data).set_points(B_patient1.cast<double>(), RowVector3d(1, 0, 0));
+            if (data.glassChk)
+            {
+                if (show_leadGlass)
+                    _viewer.data(glass_data).is_visible |= v_left;
+                _viewer.data(glass_data).set_vertices((V_glass.rowwise().homogeneous() * data.glass_aff.matrix().transpose()).rowwise().hnormalized());
+                _viewer.data(glass_data).compute_normals();
+            }
+            else
+                _viewer.data(glass_data).is_visible = 0;
+        }
+
+        if (!data.beamOn && !useManualBeam)
+        {
+            _viewer.data(patient_data).set_visible(false, v_left);
+            return false;
+        }
+        _viewer.data(patient_data).set_visible(show_beam, v_left);
+        if (!data.bodyMap.size())
+            return false;
+
         MatrixXd P, C, V;
         MatrixXi BE, F;
         int extraID;
-
         // posture deformation
         for (auto iter : data.bodyMap)
-            indivPhantoms[iter.first]
-                ->Animate(iter.second.posture, iter.second.jointC, C, false);           
+            if (indivPhantoms[iter.first]->V.rows() > 0)
+                indivPhantoms[iter.first]
+                    ->Animate(iter.second.posture, iter.second.jointC, C, false);
         // shadow generation
-        igl::embree::EmbreeIntersector ei;
-        MatrixXf totalV = InitTree(ei, data.bodyMap);
-        VectorXd dose = GenerateShadow(ei, totalV);
-        // dose calculation
-        SetDose(totalV, dose);
+        // igl::embree::EmbreeIntersector ei;
+        // MatrixXf totalV = InitTree(ei, data.bodyMap);
+        // VectorXd dose = VectorXd::Zero(totalV.rows());
+        // if(B_patient1.rows()&& (data.beamOn||useManualBeam))
+        // {
+        //     dose = GenerateShadow(ei, totalV);
+        //     SetDose(totalV, dose);
+        //     // cout<<dose.maxCoeff()<<endl;
+        // }
+        // else if(data.beamOn||useManualBeam) // to-do
+        // {
+
+        // }
 
         // visualization
         for (int i = 0, vNum = 0; i < phantom_data.size(); i++)
@@ -153,7 +234,7 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
             }
             _viewer.data(phantom_data[i]).is_visible |= v_left;
             _viewer.data(phantom_data[i]).set_vertices(indivPhantoms[i]->U);
-            indivPhantoms[i]->accD += dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1);
+            // indivPhantoms[i]->accD += dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1);
             if (i == bodyID)
             {
                 if (show_C)
@@ -161,21 +242,12 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
                 if (show_BE)
                     _viewer.data(phantom_data[i]).set_edges(C, indivPhantoms[i]->BE, RowVector3d(70. / 255., 252. / 255., 167. / 255.));
 
-                _viewer.data(phantom_data[i]).set_data(dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1));
+                // _viewer.data(phantom_data[i]).set_data(dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1));
                 _viewer.data(phantom_data[i]).compute_normals();
-                _viewer.data(phantomAcc_data).set_data(indivPhantoms[i]->accD);
+                // _viewer.data(phantomAcc_data).set_data(indivPhantoms[i]->accD);
             }
             vNum += indivPhantoms[i]->U.rows();
         }
-        if (data.glassChk)
-        {
-            if (show_leadGlass)
-                _viewer.data(glass_data).is_visible |= v_left;
-            _viewer.data(glass_data).set_vertices((V_glass.rowwise().homogeneous() * data.glass_aff.matrix().transpose()).rowwise().hnormalized());
-            _viewer.data(glass_data).compute_normals();
-        }
-        else
-            _viewer.data(glass_data).is_visible = 0;
     }
 
     return false;
@@ -234,7 +306,7 @@ void RDCWindow::SetMeshes(string dir)
     glass_data = viewer.selected_data_index;
     viewer.append_mesh();
 
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < maxNumPeople; i++)
     {
         phantom_data.push_back(viewer.selected_data_index);
         viewer.append_mesh();
@@ -271,9 +343,9 @@ void RDCWindow::SetMeshes(string dir)
     viewer.data().line_width = 10;
     axis_data = viewer.selected_data_index;
 
-    //sphere
+    // sphere
     viewer.append_mesh();
-    viewer.data().set_mesh(V_sphere*20, F_sphere);
+    viewer.data().set_mesh(V_sphere * 20, F_sphere);
     viewer.data().show_faces = false;
     viewer.data().show_lines = true;
     viewer.data().line_width = 1;
@@ -330,6 +402,8 @@ void MainMenuBar(RDCWindow *_window)
     static bool show_manual_setting_popup = false;
     static bool show_color_popup = true;
     static bool show_info_popup = false;
+    static bool show_machine_popup = false;
+    static bool connect_PDC = true;
     ShowStatusWindow(&show_status_window);
     if (show_view_options)
         ShowViewOptions(&show_view_options, _window);
@@ -341,16 +415,16 @@ void MainMenuBar(RDCWindow *_window)
         ShowManualSettingPopup(&show_manual_setting_popup, _window);
     if (show_info_popup)
         ShowProgramInformationPopUp(&show_info_popup);
+    if (show_machine_popup)
+        ShowMachineStatus(&show_machine_popup);
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::BeginMenu("View"))
         {
-            if (ImGui::MenuItem("show view options", "", &show_view_options))
-                ;
-            if (ImGui::MenuItem("show color bar", "", &show_color_popup))
-                ;
-            if (ImGui::MenuItem("show info.", "", &show_info_popup))
-                ;
+            ImGui::MenuItem("show machine status", "", &show_machine_popup);
+            ImGui::MenuItem("show view options", "", &show_view_options);
+            ImGui::MenuItem("show color bar", "", &show_color_popup);
+            ImGui::MenuItem("show info.", "", &show_info_popup);
             if (ImGui::BeginMenu("show bone weight."))
             {
                 ImGui::Checkbox("show axis and weight", &showAxis);
@@ -373,36 +447,195 @@ void MainMenuBar(RDCWindow *_window)
             }
             ImGui::EndMenu();
         }
+        static int pdcProcess(0), pdcDataSize(0);
+        static thread pdcSender;
         if (ImGui::BeginMenu("Export"))
         {
+            static string name;
+            ImGui::SetNextItemWidth(110);
+            ImGui::InputText("", name);
+            ImGui::SameLine();
+            if (ImGui::Button("export"))
+            {
+                if (_window->recording)
+                    cout << "stop recording first" << endl;
+                else
+                {
+                    ofstream ofs(name, ios::binary);
+                    for (auto frame : _window->recordData)
+                        ofs.write((char *)frame.data(), _window->dataSize * sizeof(float));
+                    ofs.close();
+                    _window->recordData.clear();
+                    cout << name << " recorded!" << endl;
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("load"))
+            {
+                if (_window->loadNum < 0)
+                {
+                    if (_window->recording)
+                        cout << "recording is on currently!!" << endl;
+                    else
+                    {
+                        ifstream ifs(name, ios::binary);
+                        if (!ifs.is_open())
+                            cout << name << " is not open!" << endl;
+                        vector<float> frameData(_window->dataSize);
+                        while (ifs.read((char *)frameData.data(), _window->dataSize * sizeof(float)))
+                            _window->recordData.push_back(frameData);
+                        ifs.close();
+                        if (_window->recordData.size())
+                            _window->loadNum = 0;
+                    }
+                }
+                else
+                {
+                    _window->recordData.clear();
+                    _window->loadNum = -1;
+                }
+            }
+            static int pdcFrameT(500);
+            ImGui::InputInt("ms",&pdcFrameT, 100);
+            ImGui::SameLine();
+            if(ImGui::Button("Send to NAS"))
+            {
+                if(pdcSender.joinable())
+                {
+                    cout<<"wait for pevious sender!"<<endl;
+                } 
+                else
+                {
+                    vector<vector<float>> data;
+                    float time(0);
+                    for(auto frame:_window->recordData)
+                    {
+                        time+= frame[0];
+                        if((frame.size()>_window->dataSize)||(time>pdcFrameT)) //last frame || time>min. frame time
+                        {
+                            frame[0] = time;
+                            data.push_back(frame);
+                            time = 0;
+                        }
+                    }
+                    pdcDataSize = data.size();
+                    pdcSender = thread(
+                        [& pdcProcess](vector<vector<float>> _data){
+                            //open
+                            for(int i=0;i<_data.size();i++)
+                            {
+                                sleep(1);
+                                //send
+                                pdcProcess = i+1;
+                            }
+                            //close
+                            return;
+                        }
+                    , data);
+                }
+                    // _window->PDCsender->
+
+            }
             ImGui::EndMenu();
         }
-        if (ImGui::Checkbox("beamOn", &RDCWindow::Instance().beamOn))
+        // if (ImGui::Checkbox("beamOn", &RDCWindow::Instance().beamOn))
+        // {
+        //     if (RDCWindow::Instance().beamOn)
+        //     {
+        //         _window->viewer.core(0).is_animating = true;
+        //         _window->viewer.core(_window->v_left).is_animating = true;
+        //         _window->viewer.core(_window->v_middle).is_animating = true;
+        //         _window->viewer.core(_window->v_right).is_animating = true;
+        //         _window->viewer.data(_window->beam_data).set_visible(_window->show_beam, _window->v_left);
+        //         _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
+
+        //     }
+        //     else
+        //     {
+        //         _window->viewer.core(0).is_animating = false;
+        //         _window->viewer.core(_window->v_left).is_animating = false;
+        //         _window->viewer.core(_window->v_middle).is_animating = false;
+        //         _window->viewer.core(_window->v_right).is_animating = false;
+        //         _window->viewer.data(_window->beam_data).set_visible(false, _window->v_left);
+        //         _window->viewer.data(_window->patient_data).clear_points();
+        //     }
+        //     // else
+        //     //     RDCWindow::Instance().viewer.core().is_animating = false;
+        // }
+        // ImGui::InputText("",name);
+        if (ImGui::SmallButton("record"))
         {
-            if (RDCWindow::Instance().beamOn)
+            _window->loadNum = -1;
+            _window->recording = !_window->recording;
+        }
+        if (_window->recordData.size() &&  (!_window->recording))
+        {
+            if (ImGui::SmallButton("replay"))
             {
-                _window->viewer.core(0).is_animating = true;
-                _window->viewer.core(_window->v_left).is_animating = true;
-                _window->viewer.core(_window->v_middle).is_animating = true;
-                _window->viewer.core(_window->v_right).is_animating = true;
-                _window->viewer.data(_window->beam_data).set_visible(_window->show_beam, _window->v_left);
-                _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
-                
+                if (_window->loadNum < 0)
+                    _window->loadNum = 0;
+                else
+                    _window->loadNum = -1;
             }
+            if (ImGui::SmallButton("clear"))
+            {
+                _window->recordData.clear();
+            }
+        }
+        if (_window->recording)
+            ImGui::Text("recording #%d..", _window->recordData.size());
+        else if (_window->loadNum >= 0)
+            ImGui::Text("loading %d/%d..", _window->loadNum, _window->recordData.size());
+        if(pdcSender.joinable())
+        {
+            if(pdcProcess<pdcDataSize)
+                ImGui::Text(" sending PDC data %d/%d..", pdcProcess, pdcDataSize);
             else
             {
-                _window->viewer.core(0).is_animating = false;
-                _window->viewer.core(_window->v_left).is_animating = false;
-                _window->viewer.core(_window->v_middle).is_animating = false;
-                _window->viewer.core(_window->v_right).is_animating = false;
-                _window->viewer.data(_window->beam_data).set_visible(false, _window->v_left);
-                _window->viewer.data(_window->patient_data).clear_points();
+                pdcSender.join();
+                pdcDataSize = 0;
+                pdcProcess = 0;
+                cout<<"PDC sender joined"<<endl;
             }
-            // else
-            //     RDCWindow::Instance().viewer.core().is_animating = false;
         }
         ImGui::EndMainMenuBar();
     }
+}
+
+void ShowMachineStatus(bool *p_open)
+{
+    const ImGuiViewport *viewport = ImGui::GetMainViewport();
+    int sx(viewport->Size.x), sy(viewport->Size.y);
+    float phantomViewX = sy * 0.35;
+    // ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.f, 0.f, 0.f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(110, -1));
+    ImGui::SetNextWindowPos(ImVec2(sx - phantomViewX * 2 - 10, viewport->WorkPos.y + 10), ImGuiCond_Always, ImVec2(1.f, 0.f));
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
+    if (ImGui::Begin("machine state", p_open, window_flags))
+    {
+        DataSet data = Communicator::Instance().current;
+        if (ImGui::CollapsingHeader("C-arm    ", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            if (data.beamOn)
+                ImGui::Text("BEAM ON");
+            else
+                ImGui::Text("BEAM OFF");
+            ImGui::Text("volt.:  %d kVp", (int)data.kVp);
+            ImGui::Text("curr.:  %.1f mA", data.mA);
+            ImGui::Text("DAP  :  %.2f Gycm2/s", data.dap);
+            ImGui::Text("rot  :  %d deg.", (int)data.cArm(0));
+            ImGui::Text("ang  :  %d deg.", (int)data.cArm(1));
+            ImGui::Text("SID  :  %d cm", (int)data.cArm(2));
+        }
+        if (ImGui::CollapsingHeader("Bed    ", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Text("long. :  %d cm", (int)data.bed(0));
+            ImGui::Text("lat.  :  %d cm", (int)data.bed(1));
+            ImGui::Text("height:  %d cm", (int)data.bed(2));
+        }
+    }
+    ImGui::End();
+    // ImGui::PopStyleColor();
 }
 
 void ShowViewOptions(bool *p_open, RDCWindow *_window)
@@ -423,7 +656,7 @@ void ShowViewOptions(bool *p_open, RDCWindow *_window)
         ImGui::SetNextItemWidth(64);
         if (ImGui::InputInt("body ID", &bodyID))
         {
-            bodyID = bodyID % 5;
+            bodyID = bodyID % _window->maxNumPeople;
             _window->SetBodyID(bodyID);
             for (int id : _window->phantom_data)
             {
@@ -500,9 +733,8 @@ void ShowViewOptions(bool *p_open, RDCWindow *_window)
         if (ImGui::Checkbox("sphere", &show_sphere))
             _window->viewer.data(_window->sphere_data).set_visible(show_sphere, _window->v_left);
         ImGui::SetNextItemWidth(64);
-        if(ImGui::DragInt("sphere R", &sphereR, 0.5))
-            _window->viewer.data(_window->sphere_data).set_vertices(_window->V_sphere*sphereR);
-
+        if (ImGui::DragInt("sphere R", &sphereR, 0.5))
+            _window->viewer.data(_window->sphere_data).set_vertices(_window->V_sphere * sphereR);
     }
     ImGui::End();
 }
@@ -790,9 +1022,9 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
 
         ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_NoBordersInBody;
         // | ImGuiTableFlags_SizingFixedFit;
-        static int bfID[5], profileID[5];
-        static float color[5][3];
-        static bool trackOpt[5];
+        static int bfID[20], profileID[20];
+        static float color[20][3];
+        static bool trackOpt[20];
         if (ImGui::BeginTable("phantom settings", 5, flags))
         {
             ImGui::TableSetupColumn("#");
@@ -802,7 +1034,7 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
             ImGui::TableSetupColumn("track");
             ImGui::TableHeadersRow();
 
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < _window->maxNumPeople; i++)
             {
                 ImGui::PushID(i * 10);
                 ImGui::TableNextRow();
@@ -824,9 +1056,9 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
                     if (ImGui::Checkbox("", &trackOpt[i]))
                     {
                         int id = _window->phantom_data[i];
+                        auto phantom = _window->GetPhantom(i);
                         if (trackOpt[i])
                         {
-                            auto phantom = _window->GetPhantom(i);
                             phantom->LoadPhantom("./phantoms/" + phantomlist[bfID[i]]);
                             phantom->ClearDose();
                             if (profileNames[profileID[i]] != "original")
@@ -848,6 +1080,7 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
                         }
                         else
                         {
+                            phantom->Clear();
                             _window->viewer.data(id).is_visible = false;
                         }
                     }
@@ -861,7 +1094,7 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
         if (ImGui::Button("LOAD"))
         {
             ifstream ifs(loadFile);
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < _window->maxNumPeople; i++)
             {
                 int id;
                 string bfData, profile;
@@ -986,11 +1219,15 @@ void ShowManualSettingPopup(bool *p_open, RDCWindow *_window)
         static float dap;
         static int kvp(80), rotation(0), angulation(0);
         static int bedPos[3];
+        static bool useManualBeam(false);
         Matrix3f rot = Matrix3f::Identity();
         ImGui::BulletText("C-arm");
         ImGui::SameLine();
         if (ImGui::Button("Set beam"))
             _window->SetMap(kvp, rotation, angulation);
+        ImGui::SameLine();
+        if (ImGui::Checkbox("use manual beam", &useManualBeam))
+            _window->useManualBeam = useManualBeam;
         if (ImGui::InputFloat("DAP(Gycm2)", &dap, 1))
             _window->SetDAP(dap);
 
@@ -1003,8 +1240,8 @@ void ShowManualSettingPopup(bool *p_open, RDCWindow *_window)
             _window->viewer.data(_window->cArm_data).compute_normals();
             _window->viewer.data(_window->beam_data).compute_normals();
             _window->CalculateSourceFacets(RowVector3f(bedPos[0], bedPos[1], bedPos[2]), rot);
-            if (RDCWindow::Instance().beamOn)
-                _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
+            // if (RDCWindow::Instance().beamOn)
+            _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
         }
         if (ImGui::DragInt("CRAN(-) / CAUD(+)", &angulation, 1, -90, 90))
         {
@@ -1014,8 +1251,8 @@ void ShowManualSettingPopup(bool *p_open, RDCWindow *_window)
             _window->viewer.data(_window->cArm_data).compute_normals();
             _window->viewer.data(_window->beam_data).compute_normals();
             _window->CalculateSourceFacets(RowVector3f(bedPos[0], bedPos[1], bedPos[2]), rot);
-            if (RDCWindow::Instance().beamOn)
-                _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
+            // if (RDCWindow::Instance().beamOn)
+            _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
         }
         ImGui::BulletText("Glass");
         static int glassPos[3], glassRot[3];
@@ -1048,8 +1285,8 @@ void ShowManualSettingPopup(bool *p_open, RDCWindow *_window)
             _window->viewer.data(_window->table_data).set_vertices(_window->V_table.rowwise() + trans);
             _window->viewer.data(_window->patient_data).set_vertices(_window->V_patient.rowwise() + trans);
             _window->CalculateSourceFacets(RowVector3f(bedPos[0], bedPos[1], bedPos[2]), rot.cast<float>());
-            if (RDCWindow::Instance().beamOn)
-                _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
+            // if (RDCWindow::Instance().beamOn)
+            _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
         }
     }
     ImGui::End();
@@ -1117,3 +1354,105 @@ void ShowProgramInformationPopUp(bool *p_open)
     }
     ImGui::End();
 }
+
+vector<float> RDCWindow::SetAframeData(DataSet data, float frameTimeInMSEC)
+{
+    vector<float> frameData(dataSize, 0);
+    frameData[0] = frameTimeInMSEC;
+    frameData[1] = data.kVp;
+    frameData[2] = data.mA;
+    frameData[3] = data.dap;
+    frameData[4] = data.cArm(0);
+    frameData[5] = data.cArm(1);
+    frameData[6] = data.cArm(2);
+    frameData[7] = data.bed(0);
+    frameData[8] = data.bed(1);
+    frameData[9] = data.bed(2);
+    frameData[10] = data.glassChk;
+    Quaterniond q(data.glass_aff.rotation());
+    frameData[11] = q.x();
+    frameData[12] = q.y();
+    frameData[13] = q.z();
+    frameData[14] = q.w();
+    frameData[15] = data.glass_aff.translation().x();
+    frameData[16] = data.glass_aff.translation().y();
+    frameData[17] = data.glass_aff.translation().z();
+    int pos = 18;
+    for (int i = 0; i < maxNumPeople; i++)
+    {
+        if (data.bodyMap.find(i) == data.bodyMap.end())
+            continue;
+        int num = pos + i * 145;
+        frameData[num++] = 1;
+        for (int b = 0; b < data.bodyMap[i].posture.size(); b++)
+        {
+            frameData[num++] = data.bodyMap[i].posture[b].x();
+            frameData[num++] = data.bodyMap[i].posture[b].y();
+            frameData[num++] = data.bodyMap[i].posture[b].z();
+            frameData[num++] = data.bodyMap[i].posture[b].w();
+        }
+        for (int c = 0; c < data.bodyMap[i].jointC.rows(); c++)
+        {
+            frameData[num++] = data.bodyMap[i].jointC(c, 0);
+            frameData[num++] = data.bodyMap[i].jointC(c, 1);
+            frameData[num++] = data.bodyMap[i].jointC(c, 2);
+        }
+    }
+    return frameData;
+}
+
+DataSet RDCWindow::ReadAframeData(vector<float> frameData)
+{
+    DataSet data;
+    if ((frameData.size() != dataSize) && (frameData.size() != dataSize+1))
+    {
+        cout << "Wrong frame data size!" << endl;
+        return data;
+    }
+    data.time = frameData[0];
+    data.kVp = frameData[1];
+    data.mA = frameData[2];
+    data.dap = frameData[3];
+    data.cArm(0) = frameData[4];
+    data.cArm(1) = frameData[5];
+    data.cArm(2) = frameData[6];
+    data.bed(0) = frameData[7];
+    data.bed(1) = frameData[8];
+    data.bed(2) = frameData[9];
+    data.glassChk = frameData[10];
+    Affine3d glassAff = Affine3d::Identity();
+    glassAff.rotate(Quaterniond(frameData[11], frameData[12], frameData[13], frameData[14]));
+    glassAff.translate(Vector3d(frameData[15], frameData[16], frameData[17]));
+    data.glass_aff = glassAff;
+    int pos = 18;
+    for (int i = 0; i < 5; i++)
+    {
+        int num = pos + i * 145;
+        if (!frameData[num++])
+            continue;
+        for (int b = 0; b < data.bodyMap[i].posture.size(); b++)
+        {
+            data.bodyMap[i].posture[b].x() = frameData[num++];
+            data.bodyMap[i].posture[b].y() = frameData[num++];
+            data.bodyMap[i].posture[b].z() = frameData[num++];
+            data.bodyMap[i].posture[b].w() = frameData[num++];
+        }
+        for (int c = 0; c < data.bodyMap[i].jointC.rows(); c++)
+        {
+            data.bodyMap[i].jointC(c, 0) = frameData[num++];
+            data.bodyMap[i].jointC(c, 1) = frameData[num++];
+            data.bodyMap[i].jointC(c, 2) = frameData[num++];
+        }
+    }
+    return data;
+}
+
+// void RDCWindow::SendPDCData()
+// {
+//     for(PDCprocess=0;PDCprocess<recordData.size();PDCprocess++)
+//     {
+//         cout<<PDCprocess<<endl;
+//         // sleep(0.4);
+//     }
+//     return;
+// }

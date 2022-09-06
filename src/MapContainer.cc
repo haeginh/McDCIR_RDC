@@ -1,6 +1,7 @@
 #include "MapContainer.hh"
 #include <igl/slice.h>
 #include <igl/Timer.h>
+#include <iomanip>
 
 MapContainer::MapContainer()
 :dap(0.02), mapDir("./doseMaps/"), specDir("../McDCIR_PDC_map/spectra/")
@@ -59,6 +60,7 @@ void MapContainer::ReadSpectrum(string name)
 		}
 	}
 	ifs.close();
+    cout<<skinMap.maxCoeff()<<endl;
     skinMap *= factorInv;
     lensMap *= factorInv;
     return;
@@ -87,6 +89,7 @@ bool MapContainer::SetCArm(int kVp, int rot, int ang)
 
     if(rot0!=rot1 || ang0!=ang1) //if rotation changes
     {
+        cout<<"ROT "<<setw(5)<<rot1<<" ANG "<<setw(5)<<ang1<<setw(5)<<kVp1<<" kVp"<<endl;
         rot0=rot1; ang0=ang1; kVp0=kVp1;
         for(int i=0;i<10;i++)
         {
@@ -99,6 +102,7 @@ bool MapContainer::SetCArm(int kVp, int rot, int ang)
     }
     else if(kVp0!=kVp1) //if peak volatage changes only
     {
+        cout<<"ROT "<<setw(5)<<rot1<<" ANG "<<setw(5)<<ang1<<setw(5)<<kVp1<<" kVp"<<endl;
         kVp0=kVp1;
         ReadSpectrum(specDir + to_string(kVp0)+".spec");
     }

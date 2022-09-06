@@ -8,13 +8,13 @@
 #include <chrono>
 
 #define BE_ROWS 22
-// #define SERVER_IP "192.168.0.100"
-#define SERVER_IP "127.0.0.1"
+#define SERVER_IP "192.168.0.100"
+// #define SERVER_IP "127.0.0.1"
 using namespace std;
 typedef tuple<string, int, Eigen::Affine3d> WORKER;
 struct Body
 {
-    clock_t time;
+    // clock_t time;
     RotationList posture = RotationList(18);
     MatrixXd jointC = MatrixXd::Zero(24, 3);
 };
@@ -24,6 +24,14 @@ struct DataSet
     bool glassChk;
     Affine3d glass_aff = Affine3d::Identity();
     map<int, Body> bodyMap;
+    RowVector3f cArm; // rot, ang, sid
+    RowVector3f bed; // long, lat, height
+    int kVp;
+    float mA;
+    int FD;
+    float dap;
+    bool beamOn;
+    clock_t time;
     // RotationList posture = RotationList(18);
     // bool bodyIn;
     // MatrixXd jointC = MatrixXd::Zero(24, 3);
@@ -65,14 +73,15 @@ public:
     void StartWorker(string ip, int opt, int port = 22)
     {
         workerData[nextWorkerID] = WORKER(ip, opt, Affine3d::Identity());
-        system(("ssh " +ip+" \"2_tracker "+SERVER_IP+" "+to_string(serverPORT)+" " +to_string(nextWorkerID++) + " " + to_string(opt) + "\" &" ).c_str());
+        // system(("ssh " +ip+" \"2_tracker "+SERVER_IP+" "+to_string(serverPORT)+" " +to_string(nextWorkerID++) + " " + to_string(opt) + "\" &" ).c_str());
+        system(("ssh " +ip+" \"screen -dr dcir -X screen 2_tracker "+SERVER_IP+" "+to_string(serverPORT)+" " +to_string(nextWorkerID++) + " " + to_string(opt) + "\" &" ).c_str());
     // sock_opts[nextWorkerID++] = opt;
     }
     void StartWorkers()
     {
         for(auto iter:workerData)
         {
-            system(("ssh " +get<0>(iter.second)+" \"2_tracker "+SERVER_IP+" "+to_string(serverPORT)+" " +to_string(iter.first)  + " " + to_string(get<1>(iter.second)) + "\" &" ).c_str());
+            system(("ssh " +get<0>(iter.second)+" \"screen -dr dcir -X screen 2_tracker "+SERVER_IP+" "+to_string(serverPORT)+" " +to_string(iter.first)  + " " + to_string(get<1>(iter.second)) + "\" &" ).c_str());
         }
     }
     int GetWorkerNum() { return workerData.size(); }

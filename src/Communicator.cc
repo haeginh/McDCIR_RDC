@@ -67,10 +67,13 @@ bool Communicator::StartServer(int port)
                     {
                         // if(this->GetSocketOpt(id)<0) sendto(server_fd, msg, 4, 0, (struct  sockaddr*)&clientAddress, sizeof(clientAddress));
                         cout<<"WORKER"<<id<<": hello!"<<endl;
+                        lastStamp[id] = clock();
+                        if((int)readBuff[1]&1) continue;
+                        
+                        //for KINECT-connected programs
                         Affine3d aff = Affine3d::Identity();
                         aff.rotate(Quaterniond(readBuff[5], readBuff[2], readBuff[3], readBuff[4]).normalized().toRotationMatrix().transpose());
                         aff.translate(-Vector3d(readBuff[6], readBuff[7], readBuff[8]));
-                        lastStamp[id] = clock();
                         get<2>(workerData[id]) = aff;
                         // workerData[id] = WORKER(string(inet_ntoa(clientAddress.sin_addr)), (int)readBuff[1], aff);
                     }
@@ -81,10 +84,18 @@ bool Communicator::StartServer(int port)
                         // MatrixXd jointC(24, 3);
                         // RotationList posture(18);
                         lastStamp[id] = clock();
+                        current.time = lastStamp[id];
                         int pos(1);
                         int opt = readBuff[pos++];
                         if(opt & 1)
                         {
+                            current.cArm = RowVector3f(readBuff[pos+0],readBuff[pos+1],readBuff[pos+5]);
+                            current.bed = RowVector3f(readBuff[pos+2],readBuff[pos+3],readBuff[pos+4]);
+                            current.kVp = readBuff[pos+9];
+                            current.mA = readBuff[pos+10];
+                            current.FD = readBuff[pos+6];
+                            current.dap = readBuff[pos+11];
+                            current.beamOn = (bool) readBuff[pos+12];
                         }
                         if(opt & 2)
                         {
@@ -93,8 +104,8 @@ bool Communicator::StartServer(int port)
                         {   
                             Quaterniond q(readBuff[pos++], readBuff[pos++], readBuff[pos++], readBuff[pos++]);
                             Vector3d t(readBuff[pos++], readBuff[pos++], readBuff[pos++]);
-                            glassAff.translate(t);
                             glassAff.rotate(q);
+                            glassAff.translate(t);
                             glassAff = get<2>(workerData[readBuff[0]]) * glassAff;
                         }
                         if(opt & 8)
@@ -118,7 +129,7 @@ bool Communicator::StartServer(int port)
                                     // jointC(i, 2) = readBuff[pos++];
                                 }
                                 bodyStruct.jointC = (bodyStruct.jointC.rowwise().homogeneous()*get<2>(workerData[readBuff[0]]).matrix().transpose()).rowwise().hnormalized();
-                                bodyStruct.time = lastStamp[id];
+                                // bodyStruct.time = lastStamp[id];
                                 bodyMap[bodyID] = bodyStruct;
                             }
                         }

@@ -9,6 +9,7 @@
 #include "Config.hh"
 #define PI 3.14159265358979323846
 
+//SET MAXIMUM NUMBER OF PEOPLE BY ENV "DCIR_MAX_NUM_OF_PEOPLE"
 void PrintUsage()
 {
     cout << "<Usage>" << endl;
