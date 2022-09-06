@@ -1,0 +1,8 @@
+portNumber 30303
+IpAdress localhost
+phantomFile AM_2
+patientFile patient.ply
+cArmFile c-arm.ply
+glassFile glass.ply
+isoCenter    112    80 113.5
+#isoCenter    100    100 90.5
