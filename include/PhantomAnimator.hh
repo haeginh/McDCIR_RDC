@@ -129,8 +129,31 @@ private:
 
 public:
     //dose
-    VectorXd accD;
-    void ClearDose(){accD = VectorXd::Zero(V.rows());}
+    VectorXd accD, rateD; //Gy, Gy/s
+    void SetDose(VectorXd _doseRate, double mSec){
+        rateD = _doseRate / mSec * 1000; 
+        accD += _doseRate * mSec * 0.001;
+    }
+    double GetAvgSkinDoseRate(){
+        if(rateD.rows()>0) return (rateD.array()*W_avgSkin).sum();
+        else return 0;
+    }
+    double GetAvgAccSkinDose(){
+        if(accD.rows()>0) return (accD.array()*W_avgSkin).sum();
+        else return 0;
+    }
+    double GetMaxSkinDoseRate(){
+        if(rateD.rows()>0) return rateD.maxCoeff();
+        else return 0;
+    }
+    double GetMaxAccSkinDose(){
+        if(accD.rows()>0) return accD.maxCoeff();
+        else return 0;
+    }
+    void ClearDose(){
+        accD = VectorXd::Zero(V.rows());
+        rateD = accD;
+    }
 
     // jp==
     // map<int, >

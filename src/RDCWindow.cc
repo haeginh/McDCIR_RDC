@@ -1,6 +1,7 @@
 #include "RDCWindow.hh"
 #include <igl/readPLY.h>
 #include <external/imgui/backends/imgui_impl_glfw.h>
+#include <implot.h>
 #include <igl/Timer.h>
 
 RDCWindow &RDCWindow::Instance()
@@ -10,12 +11,12 @@ RDCWindow &RDCWindow::Instance()
 }
 
 static void MainMenuBar(RDCWindow *_window);
-static void ShowMachineStatus(bool *p_open);
+static void ShowMachineStatus(bool *p_open, RDCWindow *_window);
 static void ShowViewOptions(bool *p_open, RDCWindow *_window);
 static void ShowSettingsWindow(bool *p_open, RDCWindow *_window);
 static void ShowManualSettingPopup(bool *p_open, RDCWindow *_window);
-static void ShowStatusWindow(bool *p_open);
-static void DoseResultTab();
+static void ShowStatusWindow(bool *p_open, RDCWindow *_window);
+static void DoseResultTab(RDCWindow *_window);
 static void DoseGraphTab();
 static void ProgramLogTab();
 static void ShowProgramInformationPopUp(bool *p_open);
@@ -121,128 +122,133 @@ static int boneID(0);
 static bool showAxis(false);
 bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
 {
-    if (showAxis)
-    {
-        _viewer.data(phantomAcc_data).set_data(indivPhantoms[bodyID]->GetWeight(boneID));
+    if(stop) return false;
+    // if (showAxis)
+    // {
+    //     _viewer.data(phantomAcc_data).set_data(indivPhantoms[bodyID]->GetWeight(boneID));
 
-        MatrixXd CE = MatrixXd::Zero(4, 3);
-        CE.bottomRows(3) = Matrix3d::Identity() * 10;
-        MatrixXi BE(3, 2);
-        BE << 0, 1, 0, 2, 0, 3;
-        DataSet data = Communicator::Instance().current;
-        _viewer.data(phantom_data[bodyID]).set_edges((CE * data.bodyMap[bodyID].posture[boneID].normalized().matrix().transpose()).rowwise() + data.bodyMap[bodyID].jointC.row(boneID), BE, Matrix3d::Identity());
-    }
-    DataSet data = Communicator::Instance().current;
-    if (loadNum >= 0)
+    //     MatrixXd CE = MatrixXd::Zero(4, 3);
+    //     CE.bottomRows(3) = Matrix3d::Identity() * 10;
+    //     MatrixXi BE(3, 2);
+    //     BE << 0, 1, 0, 2, 0, 3;
+    //     DataSet data = Communicator::Instance().current;
+    //     _viewer.data(phantom_data[bodyID]).set_edges((CE * data.bodyMap[bodyID].posture[boneID].normalized().matrix().transpose()).rowwise() + data.bodyMap[bodyID].jointC.row(boneID), BE, Matrix3d::Identity());
+    // }
+    float frameTimeInMSEC(0);
+    if (loadNum >= 0) // loading
     {
         if (loadNum == recordData.size())
         {
             loadNum = -1;
             return false;
         }
-        data = ReadAframeData(recordData[loadNum++]);
-        data.beamOn = true;
+        currentFrame = ReadAframeData(recordData[loadNum++]);
+        frameTimeInMSEC = currentFrame.time;
+        // currentFrame.beamOn = true;
     }
-
-    float frameTimeInMSEC(0);
-    if (data.beamOn || useManualBeam)
-    {
-        if (lastFrameT > 0)
-            frameTimeInMSEC = float(data.time - lastFrameT) / CLOCKS_PER_SEC * 1000;
-        lastFrameT = data.time;
-        if (recording)
-            recordData.push_back(SetAframeData(data, frameTimeInMSEC));
-    }
-    else if (lastFrameT > 0) // last frame
-    {
-        frameTimeInMSEC = data.time - lastFrameT;
-        lastFrameT = -1;
-        if (recording)
+    else{ //not loading
+        currentFrame = Communicator::Instance().current;
+        if (currentFrame.beamOn || useManualBeam)
         {
-            recordData.push_back(SetAframeData(data, frameTimeInMSEC));
-            recordData.back().push_back(0); //last frame flag
+            if (lastFrameT > 0)
+                frameTimeInMSEC = float(currentFrame.time - lastFrameT) / CLOCKS_PER_SEC * 1000;
+            lastFrameT = currentFrame.time;
+            if (recording)
+                recordData.push_back(SetAframeData(currentFrame, frameTimeInMSEC));
         }
-
+        else if (lastFrameT > 0) // last frame
+        {
+            frameTimeInMSEC = currentFrame.time - lastFrameT;
+            lastFrameT = -1;
+            if (recording)
+            {
+                recordData.push_back(SetAframeData(currentFrame, frameTimeInMSEC));
+                recordData.back().push_back(0); // last frame flag
+            }
+        }
     }
+
 
     if (_viewer.core(v_left).is_animating)
     {
         // machine
         if (!useManualBeam)
         {
-            _viewer.data(patient_data).set_vertices(V_patient.rowwise() + data.bed.cast<double>());
-            _viewer.data(table_data).set_vertices(V_table.rowwise() + data.bed.cast<double>());
-            SetMap(data.kVp, data.cArm(0), data.cArm(1));
-            SetDAP(data.dap);
-            MatrixXf rot = GetCarmRotation(data.cArm(0), data.cArm(1));
+            _viewer.data(patient_data).set_vertices(V_patient.rowwise() + currentFrame.bed.cast<double>());
+            _viewer.data(table_data).set_vertices(V_table.rowwise() + currentFrame.bed.cast<double>());
+            SetMap(currentFrame.kVp, currentFrame.cArm(0), currentFrame.cArm(1));
+            // SetDAP(currentFrame.dap);
+            MatrixXf rot = GetCarmRotation(currentFrame.cArm(0), currentFrame.cArm(1));
             _viewer.data(cArm_data).set_vertices(V_cArm * rot.cast<double>().transpose());
             _viewer.data(beam_data).set_vertices(V_beam * rot.cast<double>().transpose());
             _viewer.data(cArm_data).compute_normals();
             _viewer.data(beam_data).compute_normals();
-            CalculateSourceFacets(data.bed, rot);
+            CalculateSourceFacets(currentFrame.bed, rot);
             _viewer.data(patient_data).set_points(B_patient1.cast<double>(), RowVector3d(1, 0, 0));
-            if (data.glassChk)
+            if (currentFrame.glassChk)
             {
                 if (show_leadGlass)
                     _viewer.data(glass_data).is_visible |= v_left;
-                _viewer.data(glass_data).set_vertices((V_glass.rowwise().homogeneous() * data.glass_aff.matrix().transpose()).rowwise().hnormalized());
+                _viewer.data(glass_data).set_vertices((V_glass.rowwise().homogeneous() * currentFrame.glass_aff.matrix().transpose()).rowwise().hnormalized());
                 _viewer.data(glass_data).compute_normals();
             }
             else
                 _viewer.data(glass_data).is_visible = 0;
         }
+        else currentFrame.dap = manualDAP;
 
-        if (!data.beamOn && !useManualBeam)
+        if (!currentFrame.beamOn && !useManualBeam)
         {
             _viewer.data(patient_data).set_visible(false, v_left);
             return false;
         }
         _viewer.data(patient_data).set_visible(show_beam, v_left);
-        if (!data.bodyMap.size())
+        if (!currentFrame.bodyMap.size())
             return false;
 
         MatrixXd P, C, V;
         MatrixXi BE, F;
         int extraID;
         // posture deformation
-        for (auto iter : data.bodyMap)
+        for (auto iter : currentFrame.bodyMap)
             if (indivPhantoms[iter.first]->V.rows() > 0)
                 indivPhantoms[iter.first]
                     ->Animate(iter.second.posture, iter.second.jointC, C, false);
         // shadow generation
-        // igl::embree::EmbreeIntersector ei;
-        // MatrixXf totalV = InitTree(ei, data.bodyMap);
-        // VectorXd dose = VectorXd::Zero(totalV.rows());
-        // if(B_patient1.rows()&& (data.beamOn||useManualBeam))
-        // {
-        //     dose = GenerateShadow(ei, totalV);
-        //     SetDose(totalV, dose);
-        //     // cout<<dose.maxCoeff()<<endl;
-        // }
+        igl::embree::EmbreeIntersector ei;
+        MatrixXf totalV = InitTree(ei, currentFrame.bodyMap);
+        VectorXd dose = VectorXd::Zero(totalV.rows());
+        if (B_patient1.rows() && (currentFrame.beamOn || useManualBeam))
+        {
+            dose = GenerateShadow(ei, totalV);
+            SetDoseRate(totalV, dose, currentFrame.dap);
+            // cout<<dose.maxCoeff()<<endl;
+        }
         // else if(data.beamOn||useManualBeam) // to-do
         // {
 
         // }
 
-        // visualization
+        // visualization & dose calculation
         for (int i = 0, vNum = 0; i < phantom_data.size(); i++)
         {
-            if (data.bodyMap.find(i) == data.bodyMap.end())
+            if (currentFrame.bodyMap.find(i) == currentFrame.bodyMap.end())
             {
                 _viewer.data(phantom_data[i]).is_visible = 0;
                 continue;
             }
+            indivPhantoms[i]->SetDose(dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1), frameTimeInMSEC);
             _viewer.data(phantom_data[i]).is_visible |= v_left;
             _viewer.data(phantom_data[i]).set_vertices(indivPhantoms[i]->U);
             // indivPhantoms[i]->accD += dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1);
             if (i == bodyID)
             {
                 if (show_C)
-                    _viewer.data(phantom_data[i]).set_points(data.bodyMap[i].jointC, RowVector3d(0, 0, 1));
+                    _viewer.data(phantom_data[i]).set_points(currentFrame.bodyMap[i].jointC, RowVector3d(0, 0, 1));
                 if (show_BE)
                     _viewer.data(phantom_data[i]).set_edges(C, indivPhantoms[i]->BE, RowVector3d(70. / 255., 252. / 255., 167. / 255.));
 
-                // _viewer.data(phantom_data[i]).set_data(dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1));
+                _viewer.data(phantom_data[i]).set_data(indivPhantoms[i]->rateD);
                 _viewer.data(phantom_data[i]).compute_normals();
                 // _viewer.data(phantomAcc_data).set_data(indivPhantoms[i]->accD);
             }
@@ -404,7 +410,7 @@ void MainMenuBar(RDCWindow *_window)
     static bool show_info_popup = false;
     static bool show_machine_popup = false;
     static bool connect_PDC = true;
-    ShowStatusWindow(&show_status_window);
+    ShowStatusWindow(&show_status_window, _window);
     if (show_view_options)
         ShowViewOptions(&show_view_options, _window);
     if (show_color_popup)
@@ -416,7 +422,7 @@ void MainMenuBar(RDCWindow *_window)
     if (show_info_popup)
         ShowProgramInformationPopUp(&show_info_popup);
     if (show_machine_popup)
-        ShowMachineStatus(&show_machine_popup);
+        ShowMachineStatus(&show_machine_popup, _window);
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::BeginMenu("View"))
@@ -496,22 +502,22 @@ void MainMenuBar(RDCWindow *_window)
                 }
             }
             static int pdcFrameT(500);
-            ImGui::InputInt("ms",&pdcFrameT, 100);
+            ImGui::InputInt("ms", &pdcFrameT, 100);
             ImGui::SameLine();
-            if(ImGui::Button("Send to NAS"))
+            if (ImGui::Button("Send to NAS"))
             {
-                if(pdcSender.joinable())
+                if (pdcSender.joinable())
                 {
-                    cout<<"wait for pevious sender!"<<endl;
-                } 
+                    cout << "wait for pevious sender!" << endl;
+                }
                 else
                 {
                     vector<vector<float>> data;
                     float time(0);
-                    for(auto frame:_window->recordData)
+                    for (auto frame : _window->recordData)
                     {
-                        time+= frame[0];
-                        if((frame.size()>_window->dataSize)||(time>pdcFrameT)) //last frame || time>min. frame time
+                        time += frame[0];
+                        if ((frame.size() > _window->dataSize) || (time > pdcFrameT)) // last frame || time>min. frame time
                         {
                             frame[0] = time;
                             data.push_back(frame);
@@ -520,21 +526,21 @@ void MainMenuBar(RDCWindow *_window)
                     }
                     pdcDataSize = data.size();
                     pdcSender = thread(
-                        [& pdcProcess](vector<vector<float>> _data){
-                            //open
-                            for(int i=0;i<_data.size();i++)
+                        [&pdcProcess](vector<vector<float>> _data)
+                        {
+                            // open
+                            for (int i = 0; i < _data.size(); i++)
                             {
                                 sleep(1);
-                                //send
-                                pdcProcess = i+1;
+                                // send
+                                pdcProcess = i + 1;
                             }
-                            //close
+                            // close
                             return;
-                        }
-                    , data);
+                        },
+                        data);
                 }
-                    // _window->PDCsender->
-
+                // _window->PDCsender->
             }
             ImGui::EndMenu();
         }
@@ -563,12 +569,15 @@ void MainMenuBar(RDCWindow *_window)
         //     //     RDCWindow::Instance().viewer.core().is_animating = false;
         // }
         // ImGui::InputText("",name);
+        if(!_window->stop)
+            {if (ImGui::SmallButton("stop")) _window->stop = true;}
+        else {if (ImGui::SmallButton(" run ")) _window->stop = false;}
         if (ImGui::SmallButton("record"))
         {
             _window->loadNum = -1;
             _window->recording = !_window->recording;
         }
-        if (_window->recordData.size() &&  (!_window->recording))
+        if (_window->recordData.size() && (!_window->recording))
         {
             if (ImGui::SmallButton("replay"))
             {
@@ -582,27 +591,29 @@ void MainMenuBar(RDCWindow *_window)
                 _window->recordData.clear();
             }
         }
-        if (_window->recording)
+        if (_window->stop)
+            ImGui::Text("program paused");
+        else if (_window->recording)
             ImGui::Text("recording #%d..", _window->recordData.size());
         else if (_window->loadNum >= 0)
             ImGui::Text("loading %d/%d..", _window->loadNum, _window->recordData.size());
-        if(pdcSender.joinable())
+        if (pdcSender.joinable())
         {
-            if(pdcProcess<pdcDataSize)
+            if (pdcProcess < pdcDataSize)
                 ImGui::Text(" sending PDC data %d/%d..", pdcProcess, pdcDataSize);
             else
             {
                 pdcSender.join();
                 pdcDataSize = 0;
                 pdcProcess = 0;
-                cout<<"PDC sender joined"<<endl;
+                cout << "PDC sender joined" << endl;
             }
         }
         ImGui::EndMainMenuBar();
     }
 }
 
-void ShowMachineStatus(bool *p_open)
+void ShowMachineStatus(bool *p_open, RDCWindow *_window)
 {
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     int sx(viewport->Size.x), sy(viewport->Size.y);
@@ -613,25 +624,29 @@ void ShowMachineStatus(bool *p_open)
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
     if (ImGui::Begin("machine state", p_open, window_flags))
     {
-        DataSet data = Communicator::Instance().current;
         if (ImGui::CollapsingHeader("C-arm    ", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            if (data.beamOn)
+            if (_window->currentFrame.beamOn)
+            {
                 ImGui::Text("BEAM ON");
+                ImGui::Text("DAP  :  %.2f Gycm2/s", _window->currentFrame.dap);
+            }
             else
+            {
                 ImGui::Text("BEAM OFF");
-            ImGui::Text("volt.:  %d kVp", (int)data.kVp);
-            ImGui::Text("curr.:  %.1f mA", data.mA);
-            ImGui::Text("DAP  :  %.2f Gycm2/s", data.dap);
-            ImGui::Text("rot  :  %d deg.", (int)data.cArm(0));
-            ImGui::Text("ang  :  %d deg.", (int)data.cArm(1));
-            ImGui::Text("SID  :  %d cm", (int)data.cArm(2));
+                ImGui::Text("DAP  :  %.2f Gycm2", _window->currentFrame.dap);
+            }
+            ImGui::Text("volt.:  %d kVp", (int)_window->currentFrame.kVp);
+            ImGui::Text("curr.:  %.1f mA", _window->currentFrame.mA);
+            ImGui::Text("rot  :  %d deg.", (int)_window->currentFrame.cArm(0));
+            ImGui::Text("ang  :  %d deg.", (int)_window->currentFrame.cArm(1));
+            ImGui::Text("SID  :  %d cm", (int)_window->currentFrame.cArm(2));
         }
         if (ImGui::CollapsingHeader("Bed    ", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            ImGui::Text("long. :  %d cm", (int)data.bed(0));
-            ImGui::Text("lat.  :  %d cm", (int)data.bed(1));
-            ImGui::Text("height:  %d cm", (int)data.bed(2));
+            ImGui::Text("long. :  %d cm", (int)_window->currentFrame.bed(0));
+            ImGui::Text("lat.  :  %d cm", (int)_window->currentFrame.bed(1));
+            ImGui::Text("height:  %d cm", (int)_window->currentFrame.bed(2));
         }
     }
     ImGui::End();
@@ -739,7 +754,7 @@ void ShowViewOptions(bool *p_open, RDCWindow *_window)
     ImGui::End();
 }
 
-void ShowStatusWindow(bool *p_open)
+void ShowStatusWindow(bool *p_open, RDCWindow *_window)
 {
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
@@ -750,7 +765,7 @@ void ShowStatusWindow(bool *p_open)
     {
         if (ImGui::BeginTabBar("StatusTabBar", ImGuiTabBarFlags_None))
         {
-            DoseResultTab();
+            DoseResultTab(_window);
             DoseGraphTab();
             ProgramLogTab();
             ImGui::EndTabBar();
@@ -760,46 +775,61 @@ void ShowStatusWindow(bool *p_open)
     ImGui::End();
 }
 
-void DoseResultTab()
+void DoseResultTab(RDCWindow *_window)
 {
     vector<string> radiologistDose = {"Whole skin", "Right hand (palm)", "Left hand (palm)", "PSD", "Lens"};
     vector<string> patientDose = {"Whole skin", "PSD"};
     if (ImGui::BeginTabItem("Dose values"))
     {
-        ImGui::Columns(2, "", false);
+        // ImGui::Columns(2, "", false);
         ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Reorderable;
-        ImGui::BulletText("Radiologist Dose");
-        if (ImGui::BeginTable("radiologist", 3, flags))
+        ImGui::BulletText("Radiologist #%d Dose", _window->bodyID);
+        static int graphOpt(0);
+        if (ImGui::BeginTable("radiologist", 4, flags))
         {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_NoReorder | ImGuiTableColumnFlags_WidthFixed);
             ImGui::TableSetupColumn("Dose Rate (mGy/hr)");
             ImGui::TableSetupColumn("Cumulative Dose (uGy)");
+            ImGui::TableSetupColumn("Graph");
             ImGui::TableHeadersRow();
+            // //set dose
+            //     cout<<4<<endl;
+            auto phantom = _window->GetMainPhantomHandle();
+            vector<double> rateVal = {phantom->GetAvgSkinDoseRate()*1000.*3600., 0, 0, phantom->GetMaxSkinDoseRate()*1000.*3600., 0, 0};
+            vector<double> accVal = {phantom->GetAvgAccSkinDose()*1.e6, 0, 0, phantom->GetMaxAccSkinDose()*1.e6, 0, 0};
             for (size_t row = 0; row < radiologistDose.size(); row++)
             {
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::BulletText(radiologistDose[row].c_str());
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%f", rateVal[row]);
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%f", accVal[row]);
+                ImGui::TableSetColumnIndex(3);
+                ImGui::PushID(row * 10 + 1);
+                ImGui::RadioButton("", &graphOpt, row);
+                ImGui::PopID();
             }
             ImGui::EndTable();
         }
-        ImGui::NextColumn();
-        ImGui::BulletText("Patient Dose");
-        if (ImGui::BeginTable("patient", 3, flags))
-        {
-            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_NoReorder | ImGuiTableColumnFlags_WidthFixed);
-            ImGui::TableSetupColumn("Dose Rate (mGy/hr)");
-            ImGui::TableSetupColumn("Cumulative Dose (uGy)");
-            ImGui::TableHeadersRow();
-            for (size_t row = 0; row < patientDose.size(); row++)
-            {
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::BulletText(patientDose[row].c_str());
-            }
-            ImGui::EndTable();
-        }
-        ImGui::NextColumn();
+        // ImGui::NextColumn();
+        // ImGui::BulletText("Patient Dose");
+        // if (ImGui::BeginTable("patient", 3, flags))
+        // {
+        //     ImGui::TableSetupColumn("", ImGuiTableColumnFlags_NoReorder | ImGuiTableColumnFlags_WidthFixed);
+        //     ImGui::TableSetupColumn("Dose Rate (mGy/hr)");
+        //     ImGui::TableSetupColumn("Cumulative Dose (uGy)");
+        //     ImGui::TableHeadersRow();
+        //     for (size_t row = 0; row < patientDose.size(); row++)
+        //     {
+        //         ImGui::TableNextRow();
+        //         ImGui::TableSetColumnIndex(0);
+        //         ImGui::BulletText(patientDose[row].c_str());
+        //     }
+        //     ImGui::EndTable();
+        // }
+        // ImGui::NextColumn();
         ImGui::EndTabItem();
     }
 }
@@ -1229,7 +1259,7 @@ void ShowManualSettingPopup(bool *p_open, RDCWindow *_window)
         if (ImGui::Checkbox("use manual beam", &useManualBeam))
             _window->useManualBeam = useManualBeam;
         if (ImGui::InputFloat("DAP(Gycm2)", &dap, 1))
-            _window->SetDAP(dap);
+            _window->manualDAP = dap;
 
         ImGui::InputInt("peak voltage (kVp)", &kvp, 5);
         if (ImGui::DragInt("RAO(-) / LAO(+)", &rotation, 1, -180, 180))
@@ -1404,7 +1434,7 @@ vector<float> RDCWindow::SetAframeData(DataSet data, float frameTimeInMSEC)
 DataSet RDCWindow::ReadAframeData(vector<float> frameData)
 {
     DataSet data;
-    if ((frameData.size() != dataSize) && (frameData.size() != dataSize+1))
+    if ((frameData.size() != dataSize) && (frameData.size() != dataSize + 1))
     {
         cout << "Wrong frame data size!" << endl;
         return data;

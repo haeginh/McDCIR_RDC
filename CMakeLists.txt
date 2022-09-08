@@ -27,7 +27,9 @@ set(LIBIGL_DIR ${LIBIGL_INCLUDE_DIR}/..)
 
 file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cc)
 file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hh)
+file(GLOB plotSource ${PROJECT_SOURCE_DIR}/implot-master/*.cpp)
 include_directories(${PROJECT_SOURCE_DIR}/include
+                    ${PROJECT_SOURCE_DIR}/implot-master
                     ${LIBIGL_DIR}
                     ${LIBIGL_DIR}/external
                     ${LIBIGL_DIR}/external/libigl-imgui/
@@ -37,7 +39,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include
                     ${LIBIGL_DIR}/external/glad/include
                     )
 
-add_executable(DCIR_RDC DCIR_RDC.cc ${sources} ${headers})
+add_executable(DCIR_RDC DCIR_RDC.cc ${sources} ${headers} ${plotSource})
 # Dependencies of this library
 target_link_libraries(DCIR_RDC
     igl::core

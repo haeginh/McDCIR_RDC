@@ -49,6 +49,7 @@ public:
             return nullptr;
     }
     // bool beamOn;
+    DataSet currentFrame;
     bool useManualBeam;
     bool recording;
     int loadNum;
@@ -71,11 +72,11 @@ public:
     {
         return mapContainer->SetCArm(kVp, rot, ang);
     }
-    void SetDose(const MatrixXf &U, VectorXd &D)
+    void SetDoseRate(const MatrixXf &U, VectorXd &D, double dap)
     {
-        mapContainer->SetDose(U, D);
+        mapContainer->SetDoseRate(U, D, dap);
     }
-    void SetDAP(double dap) { mapContainer->SetDAP(dap); }
+    // void SetDAP(double dap) { mapContainer->SetDAP(dap); }
     // VectorList accD;
 
     unsigned int v_left, v_middle, v_right;
@@ -200,8 +201,12 @@ public:
     // void SendPDCData();
     // int PDCprocess;
     // clock_t lastFrameT_PDC;
+    int bodyID;
+    double manualDAP;
+    bool stop;
+    PhantomAnimator * GetMainPhantomHandle(){return indivPhantoms[bodyID];}
 private:
-    RDCWindow() : maxNumPeople(5), bodyID(0), recording(false), loadNum(-1), show_beam(true), show_leadGlass(true)
+    RDCWindow() : maxNumPeople(5), bodyID(0), stop(false), recording(false), loadNum(-1), show_beam(true), show_leadGlass(true)
     {
         if(getenv("DCIR_MAX_NUM_OF_PEOPLE")) 
             maxNumPeople = atoi(getenv("DCIR_MAX_NUM_OF_PEOPLE"));
@@ -220,13 +225,13 @@ private:
 
     // view id
 
-    int bodyID;
     vector<PhantomAnimator *> indivPhantoms;
     MapContainer *mapContainer;
 
     //something else
     vector<float> SetAframeData(DataSet data, float frameTimeInMSEC);
     DataSet ReadAframeData(vector<float> frameData);
+
 };
 
 #endif

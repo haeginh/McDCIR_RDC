@@ -18,9 +18,9 @@ class MapContainer{
     void ReadSpectrum(string name);
     bool ReadMap(string name, ArrayXf& _skinMap, ArrayXf& _lensMap);
     bool SetCArm(int kVp, int rot, int ang);
-    void SetDose(const MatrixXf &U, VectorXd &D);
+    void SetDoseRate(const MatrixXf &U, VectorXd &D, double dap);
 
-    void SetDAP(double _dap) {dap = _dap;}
+    // void SetDAP(double _dap) {dap = _dap;}
     // void SetIJK(int _i, int _j, int _k) {i=_i; j=_j; k=_k;}
     // int GetI(){return i;}
     // int GetJ(){return j;}
@@ -50,7 +50,7 @@ class MapContainer{
     ArrayXf skinMap, lensMap;
     Matrix3f cArm_IT;
     
-    double dap;
+    // double dap;
     int rot0, ang0, kVp0;
     map<int, double> spec;
     // vector<double> doseMapS, doseMapL;

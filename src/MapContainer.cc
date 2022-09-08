@@ -4,7 +4,7 @@
 #include <iomanip>
 
 MapContainer::MapContainer()
-:dap(0.02), mapDir("./doseMaps/"), specDir("../McDCIR_PDC_map/spectra/")
+:mapDir("./doseMaps/"), specDir("../McDCIR_PDC_map/spectra/")
 // : i(30), j(60), k(60) //X-decalcomanie
 {
     //GRID INFO.
@@ -111,7 +111,7 @@ bool MapContainer::SetCArm(int kVp, int rot, int ang)
     return true;
 }
 
-void MapContainer::SetDose(const MatrixXf &U, VectorXd &D)
+void MapContainer::SetDoseRate(const MatrixXf &U, VectorXd &D, double dap)
 {
     MatrixXi gridM;
     if(rot0>0) gridM = ((U.rowwise() + base)*cArm_IT*gridConv).array().floor().cast<int>();
@@ -122,5 +122,5 @@ void MapContainer::SetDose(const MatrixXf &U, VectorXd &D)
     }
     ArrayXi idx = gridM.col(0) * numGrid(2) * numGrid(1) + gridM.col(1) * numGrid(2) + gridM.col(2);
     ArrayXi in = ((idx.array()>0) * (idx.array()<totalNum)).cast<int>();
-    D = D.array() * igl::slice(skinMap, idx*in, 1).cast<double>() * in.cast<double>() * dap;
+    D = D.array() * igl::slice(skinMap, idx*in, 1).cast<double>() * in.cast<double>() * dap; //Gy/s
 }
