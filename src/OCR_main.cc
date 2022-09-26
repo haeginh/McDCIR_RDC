@@ -11,14 +11,14 @@ bool OcrMain::SetSource(SOURCE opt, string videoName)
 {
 	source = opt;
 	if (opt == SOURCE::VIDEO)
-		cap = cv::VideoCapture(dir + "/" + videoName);
+		cap = cv::VideoCapture(videoName);
 	// else if(opt == SOURCE::CAPTUREBOARD)
 	//     cap = cv::VideoCapture(0);
 
 	if (!cap.isOpened())
 	{
 		if (opt == SOURCE::VIDEO)
-			cout << "Cannot open " + dir + "/" + videoName << endl;
+			cout << "Cannot open " + videoName << endl;
 		if (opt == SOURCE::CAPTUREBOARD)
 			cout << "Cannot open captureboard" << endl;
 		return false;
@@ -48,27 +48,27 @@ bool OcrMain::Initialize(string configName)
 		cout << config.getBoxFilename() + " is not open!" << endl;
 		return false;
 	}
-	cout << "set to: " << config.getCaptureBoardWidth() << "*" << config.getCaptureBoardHeight() << "(" << config.getCaptureBoardFPS() << "fps)" << endl;
+	cout << "set to: " << config.getCaptureBoardWidth() << "*" << config.getCaptureBoardHeight() << "(default fps)" << endl;
 	// if(source == SOURCE::VIDEO)
 	// {
-	// 	cv::Mat img;
-	//     for (int i = 0;i<60; i++)
-	//     {
-	//     	if (i == 5)
-	//     		cap.set(cv::CAP_PROP_FRAME_WIDTH, config.getCaptureBoardWidth());
-	//     	if (i == 10)
-	//     		cap.set(cv::CAP_PROP_FRAME_HEIGHT, config.getCaptureBoardHeight());
-	//     	if (i == 15)
-	//     		cap.set(cv::CAP_PROP_FPS, config.getCaptureBoardFPS());
+		cv::Mat img;
+	    for (int i = 0;i<50; i++)
+	    {
+	    	if (i == 30)
+	    		cap.set(cv::CAP_PROP_FRAME_WIDTH, config.getCaptureBoardWidth());
+	    	if (i == 40)
+	    		cap.set(cv::CAP_PROP_FRAME_HEIGHT, config.getCaptureBoardHeight());
+	    	// if (i == 50) /////USE DEFAULT!
+	    	// 	cap.set(cv::CAP_PROP_FPS, config.getCaptureBoardFPS());
 
-	//     	if (cap.read(img))
-	//     	{
-	//     		cv::putText(img, "Resolution: " + std::to_string(img.cols) + "x" + std::to_string(img.rows),
-	//     					cv::Point(10, 20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(60000), 1);
-	//     		cv::imshow("sample", img);
-	//     	}
-	//     	char key = cv::waitKey(1);
-	//     }
+	    	if (cap.read(img))
+	    	{
+	    		cv::putText(img, to_string(i)+" | Resolution: " + std::to_string(img.cols) + "x" + std::to_string(img.rows),
+	    					cv::Point(10, 20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(60000), 1);
+	    		cv::imshow("sample", img);
+	    	}
+	    	char key = cv::waitKey(1);
+	    }
 	// }
 	// cv::destroyWindow("sample");
 	proc.SetConfig(config);
@@ -81,11 +81,22 @@ bool OcrMain::Initialize(string configName)
 		cout << "roiBox.size() != roiNames.size()" << endl;
 		roiBox.resize(roiNames.size());
 	}
+	for(int i=0;i<roiBox.size();i++)
+	{
+		auto roi = roiBox[i];
+		if( (0 <= roi.x) && (0 <= roi.width) && (roi.x + roi.width <= img.cols) && (0 <= roi.y) && (0 <= roi.height) && (roi.y + roi.height <= img.rows))
+			continue;
+		cout<<"wrong box#"+to_string(i)<<": "+roiNames[i] + " -> set to default box"<<endl;
+		roiBox[i].x = 0;
+		roiBox[i].width =img.cols;
+		roiBox[i].y = 0;
+		roiBox[i].height = img.rows;
+	}
 	ocr.SetOcrThreshold(config.getOcrThreshold());
 	ocr.initModel();
 	if (!ocr.loadTrainingData(dir + "/data/" + config.getTrainingDataFilename()))
 		cout << "Failed to load OCR training data." << endl;
-	cout << "OCR training data loaded." << endl;
+	else cout << "OCR training data loaded." << endl;
 
 	return true;
 }
@@ -100,7 +111,7 @@ bool OcrMain::Render(float *data)
 	std::vector<cv::Mat> digits;
 	std::vector<cv::Rect> bBoxAll;
 	std::vector<std::string> results;
-	bool fluoChk(false);
+	// bool fluoChk(false);
 	for (size_t i = 0; i < roiBox.size(); i++)
 	{
 		cv::Mat imgCrop = img(roiBox[i]);
@@ -112,20 +123,20 @@ bool OcrMain::Render(float *data)
 		bool success = ocr.recognize(digits, result);
 		if (i < 4)
 			results.push_back(result);
-		else if (i == roiBox.size() - 1)
+		else if (i == roiBox.size() - 1) // beamOn check
 		{
 			if (!result.size())
 				data[i] = 0;
-			else if (fluoChk)
-				data[i] = 1;
+			// else if (fluoChk)
+			// 	data[i] = 1;
 			else
 				data[i] = 2;
 		}
 		else if (success)
 		{
 			data[i] = atof(result.c_str());
-			if (i == 9)
-				fluoChk = success;
+			// if (i == 9)
+				// fluoChk = success;
 		}
 
 		cv::rectangle(imgCopy, roiBox[i], CV_RGB(255, 255, 0), 1);
@@ -140,7 +151,7 @@ bool OcrMain::Render(float *data)
 		// 	cv::waitKey(100);
 	}
 	// option management
-	if (results[0] == "long." || results[2].substr(0, 3) == "lat.") // if first two box shows table options
+	if (results[0].substr(0, 4) == "long" || results[2].substr(0, 3) == "lat") // if first two box shows table options
 	{
 		if (results[1].size())
 			data[2] = atof(results[1].c_str());
@@ -153,9 +164,9 @@ bool OcrMain::Render(float *data)
 			data[0] = atof(results[1].c_str());
 		if (results[3].size())
 			data[1] = atof(results[3].c_str());
-		if (results[0] == "rao")
+		if (results[0] == "rao" || results[0] == "raao")
 			data[0] = -data[0];
-		if (results[2] == "cran")
+		if (results[2] == "cran" || results[2] == "craan")
 			data[1] = -data[1];
 	}
 

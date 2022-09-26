@@ -25,7 +25,7 @@ class GlassTracker
         _color.copyTo(display);
     }
     bool ProcessCurrentFrame(Eigen::Quaterniond &q_current, Eigen::Vector3d &t_current);
-    void Render(bool showResult = true);
+    bool Render(bool showResult = true);
 
     void SetScalingFactor(float s);
 

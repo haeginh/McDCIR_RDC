@@ -110,6 +110,7 @@ char KNearestOcr::recognize(const cv::Mat &img)
 // Recognize a vector of digits.
 bool KNearestOcr::recognize(const std::vector<cv::Mat> &images, std::string &result)
 {
+	if(pModel->empty()) return false;
 	if(images.size()==0) return false;
 	cv::Mat sampleVec;
 	for (cv::Mat img : images)
@@ -153,6 +154,7 @@ void KNearestOcr::initModel()
 
 void KNearestOcr::RecogAndLearn(const std::vector<cv::Mat> &digits)
 {
+	// if(pModel->empty()) return;
 	cv::Mat sampleVec, sampleVec2;
 	for (cv::Mat img : digits)
 		sampleVec.push_back(prepareSample(img));
@@ -233,6 +235,7 @@ void KNearestOcr::RecogAndLearn(const std::vector<cv::Mat> &digits)
 
 bool KNearestOcr::RecogAndLearn(const cv::Mat &digit)
 {
+	// if(pModel->empty()) return false;
 	cv::Mat img(digit);
 	cv::Mat sampleVec;
 	sampleVec = prepareSample(digit);
@@ -267,9 +270,9 @@ bool KNearestOcr::RecogAndLearn(const cv::Mat &digit)
 				std::cout << "skip this data" << std::endl;
 				return true;
 			}
-			else if (key == 27)
+			else if (key == 27) //esc
 				return false;
-			else if (key != 13)
+			else if (key != 13) //enter
 			{
 				std::cout << "add new data: " << (char)key << std::endl;
 				resultData[0] = key;

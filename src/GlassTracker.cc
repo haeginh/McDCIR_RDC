@@ -14,8 +14,10 @@ GlassTracker::GlassTracker()
     dictionary = aruco::generateCustomDictionary(6, 4, 2);
     params = aruco::DetectorParameters::create();
     //marker position (relative position-based methodology)
-    coeffX = {15, -1, -15, 15, -1, -15};
-    coeffY = {-10, -10, -10, 10, 10, 10};
+    // coeffX = {15, -1, -15, 15, -1, -15};
+    // coeffY = {-10, -10, -10, 10, 10, 10};
+    coeffX = {25, 25, 18, -25, -18};
+    coeffY = {-27, 0, 33, 0, -33};
 }
 
 GlassTracker::~GlassTracker()
@@ -183,7 +185,7 @@ bool GlassTracker::ProcessCurrentFrame(Eigen::Quaterniond &q_current, Eigen::Vec
     return true;
 }
 
-void GlassTracker::Render(bool showResult)
+bool GlassTracker::Render(bool showResult)
 {
     setMouseCallback("Glass Tracker", onMouseCropImage, &display);
     if (clicked)
@@ -199,6 +201,7 @@ void GlassTracker::Render(bool showResult)
     }
     imshow("Glass Tracker", display);
     waitKey(1);
+    return (getWindowProperty("Glass Tracker", WND_PROP_AUTOSIZE) == 1);
 }
 
 void GlassTracker::SetScalingFactor(float s)

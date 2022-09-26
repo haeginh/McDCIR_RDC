@@ -17,7 +17,7 @@
 #define C_NUM 24
 
 // #define TEST
-// #define OCR_SETTINGS
+#define OCR_SETTINGS
 #define ABT_DISPLAY
 #define GLASS_DISPLAY
 extern Rect cropRect;
@@ -74,7 +74,8 @@ int main(int argc, char **argv)
             ocr_main.SetSource(SOURCE::CAPTUREBOARD);
         else
             ocr_main.SetSource(SOURCE::VIDEO, string(getenv("DCIR_OCR_VIDEO")));
-        ocr_main.Initialize("config_video2.yml");
+        // ocr_main.Initialize("config_video2.yml");
+        ocr_main.Initialize("config_20220914_ocr.yml");
 
         //for settings
 #ifdef OCR_SETTINGS
@@ -129,6 +130,10 @@ int main(int argc, char **argv)
     GlassTracker glassTracker;
     // body tracker variable
     vector<int> poseJoints = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24, 8, 15, 21, 25, 28, 30};
+    map<int, map<int, int>> colorIdx;
+    colorIdx[2][1] = 127;
+    colorIdx[2][3] = 2;
+    int colorMargin(10);
 
     // Start camera
     VERIFY(k4a_device_open(0, &device), "Open K4A Device failed!");
@@ -147,10 +152,12 @@ int main(int argc, char **argv)
            "Get depth camera calibration failed!");
     depthWidth = sensorCalibration.depth_camera_calibration.resolution_width;
     depthHeight = sensorCalibration.depth_camera_calibration.resolution_height;
+  
     // tracker
     k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
     tracker_config.processing_mode = K4ABT_TRACKER_PROCESSING_MODE_GPU_CUDA;
     VERIFY(k4abt_tracker_create(&sensorCalibration, tracker_config, &tracker), "Body tracker initialization failed!");
+  
     if (opt & 4)
     {
         glassTracker.SetScalingFactor(0.3);
@@ -171,7 +178,7 @@ int main(int argc, char **argv)
     serverAddress.sin_family = AF_INET;
     serverAddress.sin_addr.s_addr = inet_addr(argv[1]);
     serverAddress.sin_port = htons(atoi(argv[2]));
-
+  
     if ((client_socket = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
     {
         cout << "WORKER: socket generation failed" << endl;
@@ -184,7 +191,7 @@ int main(int argc, char **argv)
     setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &optVal, optLen);
     // first msg.
     sendto(client_socket, sendBuff, 500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
-
+  
 #ifdef ABT_DISPLAY
     Window3dWrapper window3d;
     if (opt & 8)
@@ -197,13 +204,14 @@ int main(int argc, char **argv)
     // main loop
     Mat color;
     vector<int> kinectData = {0, 1, 2, 4, 5, 6, 8, 26, 11, 12, 13, 15, 18, 19, 20, 22, 23, 24, 9, 16, 21, 25, 28, 30}; // first 18 belongs to bone data
+    map<int, pair<int, int>> givenIDs; //pair<num, count>
     while (1)
     {
         int capture_opt(0);
 
         k4a_capture_t sensorCapture = nullptr;
         k4a_wait_result_t getCaptureResult = k4a_device_get_capture(device, &sensorCapture, 0);
-        int pos(2);
+
         if (getCaptureResult == K4A_WAIT_RESULT_FAILED)
         {
             std::cout << "Get img capture returned error: " << getCaptureResult << std::endl;
@@ -212,19 +220,21 @@ int main(int argc, char **argv)
         else if (getCaptureResult == K4A_WAIT_RESULT_TIMEOUT)
             continue;
 
+        k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
+        color = color_to_opencv(color_img);
+        k4a_image_release(color_img);
+        int pos(2);
+
         if (opt & 2) // bed tracking
         {
         }
         if (opt & 4) // glass tracking
         {
-            k4a_image_t color_img = k4a_capture_get_color_image(sensorCapture);
-            color = color_to_opencv(color_img);
-            k4a_image_release(color_img);
             glassTracker.SetNewFrame(color);
             Quaterniond q;
             Eigen::Vector3d t;
             bool detected = glassTracker.ProcessCurrentFrame(q, t);
-            glassTracker.Render(detected);
+            if(!glassTracker.Render(detected)) break;
             if (detected)
             {
                 capture_opt |= 4;
@@ -250,32 +260,88 @@ int main(int argc, char **argv)
             k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0
             if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
             {
+            
 #ifdef ABT_DISPLAY
+                VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight);
                 if (!s_isRunning)
                     break;
-                VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight);
 #endif
+
                 int num = k4abt_frame_get_num_bodies(bodyFrame);
                 // num = num > 5 ? 5 : num;
-                if (num)
-                {
-                    capture_opt |= 8;
-                    sendBuff[pos++] = num;
-                }
+                // if (num)
+                // {
+                //     capture_opt |= 8;
+                //     sendBuff[pos++] = num;
+                // }
+                int numPos = pos;
+                sendBuff[pos++] = 0;
+                
                 for (int i = 0; i < num; i++)
                 {
-                    sendBuff[pos++] = k4abt_frame_get_body_id(bodyFrame, i);
+                    int id0 = k4abt_frame_get_body_id(bodyFrame, i);
+                    // sendBuff[pos++] = id0;
                     k4abt_body_t body;
                     k4abt_frame_get_body_skeleton(bodyFrame, i, &body.skeleton);
+                    // imshow("neck", color(cv::Rect(p0, p1)));
+                    if((givenIDs[id0].first<0) || (givenIDs[id0].second<10)) // if ID was not assigned
+                    {
+                        int givenID(-1);
+                        for(auto iter:colorIdx)
+                        {
+                            bool match(true);
+                            for(auto colors:iter.second)
+                            {
+                                Point2i point;
+                                transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[colors.first].position, point);
+                                Point2i p0 = point - Point2i(5, 10); p0 = Point2i(p0.x<0?0:p0.x, p0.y<0?0:p0.y);
+                                Point2i p1 = point + Point2i(10, 10); p1 = Point2i(p1.x<color.cols?p1.x:color.cols, p1.y<color.rows?p1.y:color.rows);
+                                Mat sample;
+                                cvtColor(color(Rect(p0, p1)), sample, COLOR_BGR2HSV);
+                                Scalar jColor = mean(sample);
+                                if( (colors.second + colorMargin > 179) || (colors.second - colorMargin < 0) )
+                                {
+                                    if((jColor[0]<(colors.second - colorMargin)%180) && (jColor[0]>(colors.second + colorMargin)%180))
+                                        {match = false; break; }
+                                }
+                                else if((jColor[0]<colors.second - colorMargin) || (jColor[0]>colors.second + colorMargin))
+                                {
+                                    match = false; break;
+                                }
+                            }
+                            if(match) 
+                            {
+                                if(givenID<0) givenID = iter.first;
+                                else {
+                                    cout<<"two possible ID: "<<givenID<<", "<<iter.first;
+                                    givenID = -1;
+                                }
+                            }
+                        }
+                        if(givenID != givenIDs[id0].first) givenIDs[id0].second = 0;
+                        givenIDs[id0].first = givenID; givenIDs[id0].second++; 
+                    }
+
+                    if(givenIDs[id0].second >= 10) //if assigned
+                    {
+                        sendBuff[pos++] = givenIDs[id0].first;
+                        sendBuff[numPos]++;
+                    }
+                    else continue;
+
+                    Point2i point;
+                    transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[3].position, point);
+                    putText(color, to_string(givenIDs[id0].first), point, FONT_HERSHEY_COMPLEX, 8., cv::Scalar(60000));
+
                     for (int i = 0; i < 18; i++)
                     {
                         k4a_quaternion_t q = body.skeleton.joints[kinectData[i]].orientation;
                         // Quaterniond q1 = Quaterniond(q.wxyz.y, q.wxyz.z, q.wxyz.w, q.wxyz.x);// * alignRot[i];
                         // q1.normalize();
-                        sendBuff[pos++] = q.wxyz.z;
-                        sendBuff[pos++] = q.wxyz.y;
-                        sendBuff[pos++] = q.wxyz.x;
                         sendBuff[pos++] = q.wxyz.w;
+                        sendBuff[pos++] = q.wxyz.x;
+                        sendBuff[pos++] = q.wxyz.y;
+                        sendBuff[pos++] = q.wxyz.z;
                     }
                     for (int i : kinectData)
                     {
@@ -288,16 +354,23 @@ int main(int argc, char **argv)
                     }
                 }
                 k4abt_frame_release(bodyFrame);
+                if(sendBuff[numPos]>0) capture_opt |= 8;
             }
 #ifdef ABT_DISPLAY
+            // VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight);
+            // VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight, givenIDs);
             window3d.SetLayout3d(s_layoutMode);
             window3d.SetJointFrameVisualization(s_visualizeJointFrame);
             window3d.Render();
+
+            resize(color, color, Size(color.cols*0.4, color.rows*0.4));
+            imshow("color_body", color);
+            waitKey(1);
 #endif
         }
         if (sensorCapture)
             k4a_capture_release(sensorCapture);
-
+   
         sendBuff[1] = capture_opt;
         server_addr_size = sizeof(serverAddress);
         sendto(client_socket, sendBuff, 500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));

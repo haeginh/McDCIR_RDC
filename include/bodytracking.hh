@@ -128,6 +128,100 @@ void VisualizeResult(k4abt_frame_t bodyFrame, Window3dWrapper& window3d, int dep
 
 }
 
+void VisualizeResult(k4abt_frame_t bodyFrame, std::vector<int> id, Window3dWrapper& window3d, int depthWidth, int depthHeight) {
+
+    // Obtain original capture that generates the body tracking result
+    k4a_capture_t originalCapture = k4abt_frame_get_capture(bodyFrame);
+    k4a_image_t depthImage = k4a_capture_get_depth_image(originalCapture);
+
+    std::vector<Color> pointCloudColors(depthWidth * depthHeight, { 1.f, 1.f, 1.f, 1.f });
+
+    // Read body index map and assign colors
+    k4a_image_t bodyIndexMap = k4abt_frame_get_body_index_map(bodyFrame);
+    const uint8_t* bodyIndexMapBuffer = k4a_image_get_buffer(bodyIndexMap);
+    for (int i = 0; i < depthWidth * depthHeight; i++)
+    {
+        uint8_t bodyIndex = bodyIndexMapBuffer[i];
+        if (bodyIndex != K4ABT_BODY_INDEX_MAP_BACKGROUND)
+        {
+            uint32_t bodyId = k4abt_frame_get_body_id(bodyFrame, bodyIndex);
+            pointCloudColors[i] = g_bodyColors[bodyId % g_bodyColors.size()];
+        }
+    }
+    k4a_image_release(bodyIndexMap);
+
+    // Visualize point cloud
+    window3d.UpdatePointClouds(depthImage, pointCloudColors);
+
+    // Visualize the skeleton data
+    window3d.CleanJointsAndBones();
+    uint32_t numBodies = k4abt_frame_get_num_bodies(bodyFrame);
+    if(id.size()!=numBodies) 
+    {
+        cout<<"wrong id vector size! : "<<id.size()<<" != "<<numBodies<<endl;
+        return;
+    }
+    for (uint32_t i = 0; i < numBodies; i++)
+    {
+        k4abt_body_t body;
+        VERIFY(k4abt_frame_get_body_skeleton(bodyFrame, i, &body.skeleton), "Get skeleton from body frame failed!");
+        // body.id = k4abt_frame_get_body_id(bodyFrame, i);
+        body.id = id[i];
+
+        // Assign the correct color based on the body id
+        Color color = g_bodyColors[body.id % g_bodyColors.size()];
+        color.a = 0.4f;
+        Color lowConfidenceColor = color;
+        lowConfidenceColor.a = 0.1f;
+
+        // Visualize joints
+        for (int joint = 0; joint < static_cast<int>(K4ABT_JOINT_COUNT); joint++)
+        {
+            if (body.skeleton.joints[joint].confidence_level >= K4ABT_JOINT_CONFIDENCE_LOW)
+            {
+                const k4a_float3_t& jointPosition = body.skeleton.joints[joint].position;
+                const k4a_quaternion_t& jointOrientation = body.skeleton.joints[joint].orientation;
+                window3d.AddJoint(
+                    jointPosition,
+                    jointOrientation,
+                    body.skeleton.joints[joint].confidence_level >= K4ABT_JOINT_CONFIDENCE_MEDIUM ? color : lowConfidenceColor);
+            }
+        }
+
+        // Visualize bones
+        for (size_t boneIdx = 0; boneIdx < g_boneList.size(); boneIdx++)
+        {
+            k4abt_joint_id_t joint1 = g_boneList[boneIdx].first;
+            k4abt_joint_id_t joint2 = g_boneList[boneIdx].second;
+
+            if (body.skeleton.joints[joint1].confidence_level >= K4ABT_JOINT_CONFIDENCE_LOW &&
+                body.skeleton.joints[joint2].confidence_level >= K4ABT_JOINT_CONFIDENCE_LOW)
+            {
+                bool confidentBone = body.skeleton.joints[joint1].confidence_level >= K4ABT_JOINT_CONFIDENCE_MEDIUM &&
+                    body.skeleton.joints[joint2].confidence_level >= K4ABT_JOINT_CONFIDENCE_MEDIUM;
+                const k4a_float3_t& joint1Position = body.skeleton.joints[joint1].position;
+                const k4a_float3_t& joint2Position = body.skeleton.joints[joint2].position;
+
+                window3d.AddBone(joint1Position, joint2Position, confidentBone ? color : lowConfidenceColor);
+            }
+        }
+    }
+
+    k4a_capture_release(originalCapture);
+    k4a_image_release(depthImage);
+
+}
+
+inline bool transform_joint_from_depth_3d_to_color_2d(const k4a_calibration_t* calibration, k4a_float3_t joint_in_depth_space, Point2i& joint_in_color_2d)
+{
+    int valid;
+    k4a_float2_t point;
+    VERIFY(k4a_calibration_3d_to_2d(calibration, &joint_in_depth_space, K4A_CALIBRATION_TYPE_DEPTH, K4A_CALIBRATION_TYPE_COLOR, &point, &valid),
+        "Failed to project 3d joint from depth space to 2d color image space!");
+    joint_in_color_2d = Point2i(point.v[0], point.v[1]);
+    return valid != 0;
+}
+
 void PlayFromDevice() {
     k4a_device_t device = nullptr;
     VERIFY(k4a_device_open(0, &device), "Open K4A Device failed!");
