@@ -131,9 +131,18 @@ int main(int argc, char **argv)
     // body tracker variable
     vector<int> poseJoints = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24, 8, 15, 21, 25, 28, 30};
     map<int, map<int, int>> colorIdx;
-    colorIdx[2][1] = 127;
-    colorIdx[2][3] = 2;
     int colorMargin(10);
+
+    string colorComment;
+    if(argc>5)
+    {
+        for(int i=0;i<atoi(argv[5]);i++)
+        {
+            colorIdx[atoi(argv[6+i*5])][atoi(argv[7+i*5])] = atoi(argv[9+i*5]);
+            colorIdx[atoi(argv[6+i*5])][atoi(argv[8+i*5])] = atoi(argv[10+i*5]);
+            colorComment += string(argv[6+i*5])+":"+string(argv[7+i*5])+"/"+string(argv[9+i*5])+", "+string(argv[8+i*5])+"/"+string(argv[10+i*5])+" | ";
+        }
+    }
 
     // Start camera
     VERIFY(k4a_device_open(0, &device), "Open K4A Device failed!");
@@ -201,6 +210,7 @@ int main(int argc, char **argv)
         window3d.SetKeyCallback(ProcessKey);
     }
 #endif
+
     // main loop
     Mat color;
     vector<int> kinectData = {0, 1, 2, 4, 5, 6, 8, 26, 11, 12, 13, 15, 18, 19, 20, 22, 23, 24, 9, 16, 21, 25, 28, 30}; // first 18 belongs to bone data
@@ -294,10 +304,9 @@ int main(int argc, char **argv)
                             {
                                 Point2i point;
                                 transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[colors.first].position, point);
-                                Point2i p0 = point - Point2i(5, 10); p0 = Point2i(p0.x<0?0:p0.x, p0.y<0?0:p0.y);
-                                Point2i p1 = point + Point2i(10, 10); p1 = Point2i(p1.x<color.cols?p1.x:color.cols, p1.y<color.rows?p1.y:color.rows);
+                                if(point.x<10||point.y<10||point.x>=color.cols-10||point.y>=color.rows-10) {match = false; break;}
                                 Mat sample;
-                                cvtColor(color(Rect(p0, p1)), sample, COLOR_BGR2HSV);
+                                cvtColor(color(Rect(point - Point2i(5, 5), point + Point2i(5, 5))), sample, COLOR_BGR2HSV);
                                 Scalar jColor = mean(sample);
                                 if( (colors.second + colorMargin > 179) || (colors.second - colorMargin < 0) )
                                 {
@@ -364,6 +373,7 @@ int main(int argc, char **argv)
             window3d.Render();
 
             resize(color, color, Size(color.cols*0.4, color.rows*0.4));
+            putText(color, colorComment, Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f, 0.f, 0.f), 1.2);
             imshow("color_body", color);
             waitKey(1);
 #endif
