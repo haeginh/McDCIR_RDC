@@ -13,6 +13,7 @@ if (OPENMP_FOUND)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
+# link_directories(/usr/lib/)
 
 # libigl
 #option(LIBIGL_USE_STATIC_LIBRARY     "Use libIGL as static library" ON)
@@ -40,11 +41,12 @@ include_directories(${PROJECT_SOURCE_DIR}/include
                     )
 
 add_executable(DCIR_RDC DCIR_RDC.cc ${sources} ${headers} ${plotSource})
-# Dependencies of this library
+
 target_link_libraries(DCIR_RDC
     igl::core
     igl::opengl
     igl::opengl_glfw_imgui
     igl::embree
     igl::tetgen
+    mysqlclient
     )

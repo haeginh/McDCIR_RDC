@@ -54,7 +54,7 @@ public:
     bool recording;
     int loadNum;
     vector<vector<float>> recordData;
-    bool postureUpdated;
+    // bool postureUpdated;
     igl::opengl::glfw::Viewer viewer;
 
     // data id
@@ -79,7 +79,7 @@ public:
     // void SetDAP(double dap) { mapContainer->SetDAP(dap); }
     // VectorList accD;
 
-    unsigned int v_left, v_middle, v_right;
+    unsigned int v_left, v_middle;//, v_right;
 
     // shadow-related
     MatrixXf B_patient, B_patient1, N_patient, N_patient1;
@@ -105,6 +105,7 @@ public:
         
         for(auto id:bodyMap)
         {
+            if(id.first<0) continue;
             int numF = indivPhantoms[id.first]->F.rows();
             int numV = indivPhantoms[id.first]->V.rows();
             totalF.conservativeResize(totalF.rows()+numF, 3);
@@ -194,6 +195,7 @@ public:
     }
 
     int maxNumPeople;
+    map<int, pair<int, bool>> workerIdData; //accepts only 2set of color
     int dataSize;
     // bool connectPDC;
     clock_t lastFrameT;
@@ -204,9 +206,10 @@ public:
     int bodyID;
     double manualDAP;
     bool stop;
+    float bodyDelayTol;
     PhantomAnimator * GetMainPhantomHandle(){return indivPhantoms[bodyID];}
 private:
-    RDCWindow() : maxNumPeople(5), bodyID(0), stop(false), recording(false), loadNum(-1), show_beam(true), show_leadGlass(true)
+    RDCWindow() : maxNumPeople(5), bodyID(0), stop(false), recording(false), loadNum(-1), show_beam(true), show_leadGlass(true), bodyDelayTol(1)
     {
         if(getenv("DCIR_MAX_NUM_OF_PEOPLE")) 
             maxNumPeople = atoi(getenv("DCIR_MAX_NUM_OF_PEOPLE"));

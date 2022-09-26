@@ -3,6 +3,7 @@
 #include <external/imgui/backends/imgui_impl_glfw.h>
 #include <implot.h>
 #include <igl/Timer.h>
+#include <mysql/mysql.h>
 
 RDCWindow &RDCWindow::Instance()
 {
@@ -15,10 +16,7 @@ static void ShowMachineStatus(bool *p_open, RDCWindow *_window);
 static void ShowViewOptions(bool *p_open, RDCWindow *_window);
 static void ShowSettingsWindow(bool *p_open, RDCWindow *_window);
 static void ShowManualSettingPopup(bool *p_open, RDCWindow *_window);
-static void ShowStatusWindow(bool *p_open, RDCWindow *_window);
-static void DoseResultTab(RDCWindow *_window);
-static void DoseGraphTab();
-static void ProgramLogTab();
+static void DoseResultWindow(RDCWindow *_window);
 static void ShowProgramInformationPopUp(bool *p_open);
 void ColorInfoWindow(float min, float max, string unit);
 static void ShowColorInfoPopUp(bool *p_open);
@@ -39,22 +37,24 @@ void RDCWindow::Initialize()
         glfwGetWindowSize(_viewer.window, &w, &h);
         float phantomViewX = h * 0.35;
         // radiolRate
-        _viewer.core().viewport = Eigen::Vector4f(0, h * 0.29, w - phantomViewX * 2, h * 0.71);
+        // _viewer.core().viewport = Eigen::Vector4f(0, h * 0.29, w - phantomViewX * 2, h * 0.71);
+        _viewer.core().viewport = Eigen::Vector4f(0, h * 0.29, w - phantomViewX,  h - 230);
         this->v_left = viewer.core_list[0].id;
         _viewer.core(this->v_left).background_color = Eigen::Vector4f(0.95, 0.95, 0.95, 1.);
         _viewer.core(this->v_left).camera_center = Vector3f(0, 0, 10);
         _viewer.core(this->v_left).camera_up = Vector3f(0, 0, 1);
         _viewer.core(this->v_left).camera_eye = Vector3f(60, 0, 0);
         // radiolAcc
-        this->v_middle = viewer.append_core(Eigen::Vector4f(w - phantomViewX * 2, h * 0.29, phantomViewX, h * 0.71));
+        // this->v_middle = viewer.append_core(Eigen::Vector4f(w - phantomViewX * 2, h * 0.29, phantomViewX, h * 0.71));
+        this->v_middle = viewer.append_core(Eigen::Vector4f(w - phantomViewX, h * 0.29, phantomViewX,  h - 230));
         _viewer.core(this->v_middle).background_color = Eigen::Vector4f(255. / 255., 255. / 255., 255. / 255., 0.);
         _viewer.core(this->v_middle).camera_center = Vector3f(0, 0, 0);
         _viewer.core(this->v_middle).camera_up = Vector3f(0, -1, 0);
         _viewer.core(this->v_middle).camera_dfar = 300;
         _viewer.core(this->v_middle).camera_eye = Vector3f(0, 0, -250);
         // patient
-        this->v_right = viewer.append_core(Eigen::Vector4f(w - phantomViewX, h * 0.29, phantomViewX, h * 0.71));
-        _viewer.core(this->v_right).background_color = Eigen::Vector4f(82. / 255., 82. / 255., 82. / 255., 0.);
+        // this->v_right = viewer.append_core(Eigen::Vector4f(w - phantomViewX, h * 0.29, phantomViewX, h * 0.71));
+        // _viewer.core(this->v_right).background_color = Eigen::Vector4f(82. / 255., 82. / 255., 82. / 255., 0.);
 
         // visiblity
         _viewer.data(this->apron_data).is_visible = 0;
@@ -88,11 +88,13 @@ void RDCWindow::Initialize()
     {
         float phantomViewX = h * 0.35;
         // radiolRate
-        v.core(this->v_left).viewport = Eigen::Vector4f(0, 235, w - phantomViewX * 2, h - 235);
+        // v.core(this->v_left).viewport = Eigen::Vector4f(0, 235, w - phantomViewX * 2, h - 235);
+        v.core(this->v_left).viewport = Eigen::Vector4f(0, 230, w - phantomViewX, h - 230);
         // radiolAcc
-        v.core(this->v_middle).viewport = Eigen::Vector4f(w - phantomViewX * 2, 235, phantomViewX, h - 235);
+        // v.core(this->v_middle).viewport = Eigen::Vector4f(w - phantomViewX * 2, 235, phantomViewX, h - 235);
+        v.core(this->v_middle).viewport = Eigen::Vector4f(w - phantomViewX, 230, phantomViewX, h - 230);
         // patient
-        v.core(this->v_right).viewport = Eigen::Vector4f(w - phantomViewX, 235, phantomViewX, h - 235);
+        // v.core(this->v_right).viewport = Eigen::Vector4f(w - phantomViewX, 235, phantomViewX, h - 235);
         return true;
     };
 
@@ -116,13 +118,14 @@ void RDCWindow::Initialize()
     viewer.core(0).is_animating = true;
     viewer.core(v_left).is_animating = true;
     viewer.core(v_middle).is_animating = true;
-    viewer.core(v_right).is_animating = true;
+    // viewer.core(v_right).is_animating = true;
 }
 static int boneID(0);
 static bool showAxis(false);
 bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
 {
-    if(stop) return false;
+    if (stop)
+        return false;
     // if (showAxis)
     // {
     //     _viewer.data(phantomAcc_data).set_data(indivPhantoms[bodyID]->GetWeight(boneID));
@@ -144,10 +147,14 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
         }
         currentFrame = ReadAframeData(recordData[loadNum++]);
         frameTimeInMSEC = currentFrame.time;
+        //////////////////
+        // if(currentFrame.bodyMap.find(0)==currentFrame.bodyMap.end()) return false;
+        // currentFrame.bodyMap[0].jointC(0) -= 20;
         // currentFrame.beamOn = true;
     }
-    else{ //not loading
-        currentFrame = Communicator::Instance().current;
+    else
+    { // not loading
+        Communicator::Instance().SetCurrentFrame(currentFrame, bodyDelayTol);
         if (currentFrame.beamOn || useManualBeam)
         {
             if (lastFrameT > 0)
@@ -168,7 +175,6 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
         }
     }
 
-
     if (_viewer.core(v_left).is_animating)
     {
         // machine
@@ -185,17 +191,9 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
             _viewer.data(beam_data).compute_normals();
             CalculateSourceFacets(currentFrame.bed, rot);
             _viewer.data(patient_data).set_points(B_patient1.cast<double>(), RowVector3d(1, 0, 0));
-            if (currentFrame.glassChk)
-            {
-                if (show_leadGlass)
-                    _viewer.data(glass_data).is_visible |= v_left;
-                _viewer.data(glass_data).set_vertices((V_glass.rowwise().homogeneous() * currentFrame.glass_aff.matrix().transpose()).rowwise().hnormalized());
-                _viewer.data(glass_data).compute_normals();
-            }
-            else
-                _viewer.data(glass_data).is_visible = 0;
         }
-        else currentFrame.dap = manualDAP;
+        else
+            currentFrame.dap = manualDAP;
 
         if (!currentFrame.beamOn && !useManualBeam)
         {
@@ -203,17 +201,35 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
             return false;
         }
         _viewer.data(patient_data).set_visible(show_beam, v_left);
+
+        if (currentFrame.glassChk)
+        {
+            if (show_leadGlass)
+                _viewer.data(glass_data).is_visible |= v_left;
+            _viewer.data(glass_data).set_vertices((V_glass.rowwise().homogeneous() * currentFrame.glass_aff.matrix().transpose()).rowwise().hnormalized());
+            _viewer.data(glass_data).compute_normals();
+        }
+        else
+            _viewer.data(glass_data).is_visible = 0;
+
         if (!currentFrame.bodyMap.size())
+        {
+            for (int i = 0; i < phantom_data.size(); i++)
+                _viewer.data(phantom_data[i]).is_visible = 0;
             return false;
+        }
 
         MatrixXd P, C, V;
         MatrixXi BE, F;
         int extraID;
         // posture deformation
         for (auto iter : currentFrame.bodyMap)
+        {
+            if (iter.first<0) continue;
             if (indivPhantoms[iter.first]->V.rows() > 0)
                 indivPhantoms[iter.first]
                     ->Animate(iter.second.posture, iter.second.jointC, C, false);
+        }
         // shadow generation
         igl::embree::EmbreeIntersector ei;
         MatrixXf totalV = InitTree(ei, currentFrame.bodyMap);
@@ -232,6 +248,7 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
         // visualization & dose calculation
         for (int i = 0, vNum = 0; i < phantom_data.size(); i++)
         {
+            if(indivPhantoms[i]->V.rows() ==0) continue;
             if (currentFrame.bodyMap.find(i) == currentFrame.bodyMap.end())
             {
                 _viewer.data(phantom_data[i]).is_visible = 0;
@@ -264,7 +281,7 @@ void RDCWindow::SetMeshes(string dir)
     // radiologist phantom
     //  auto phantom  = indivPhantoms[0];
     //  viewer.data().set_mesh(phantom->U_apron, phantom->F_apron);
-    apron_data = viewer.selected_data_index;
+    // apron_data = viewer.selected_data_index;
     viewer.append_mesh();
     // viewer.data().set_mesh(phantom->V, phantom->F);
     phantomAcc_data = viewer.selected_data_index;
@@ -316,6 +333,7 @@ void RDCWindow::SetMeshes(string dir)
     {
         phantom_data.push_back(viewer.selected_data_index);
         viewer.append_mesh();
+        viewer.append_mesh(); // for apron
     }
 
     // draw grids
@@ -400,6 +418,12 @@ void RDCWindow::SetMeshes(string dir)
     viewer.data(phantomAcc_data).double_sided = false;
 }
 
+void mysql_finish_with_error(MYSQL* conn)
+{
+    cerr << "SQL Error !! - " + string(mysql_error(conn)) << endl;
+    mysql_close(conn);
+}
+
 void MainMenuBar(RDCWindow *_window)
 {
     static bool show_status_window = true;
@@ -410,7 +434,7 @@ void MainMenuBar(RDCWindow *_window)
     static bool show_info_popup = false;
     static bool show_machine_popup = false;
     static bool connect_PDC = true;
-    ShowStatusWindow(&show_status_window, _window);
+    DoseResultWindow(_window);
     if (show_view_options)
         ShowViewOptions(&show_view_options, _window);
     if (show_color_popup)
@@ -441,6 +465,9 @@ void MainMenuBar(RDCWindow *_window)
         }
         if (ImGui::BeginMenu("Settings"))
         {
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7.f);
+            static double bdtol(_window->bodyDelayTol);
+            if(ImGui::InputDouble("body delay tol.", &bdtol,0.1, 1, "%.1f")) _window->bodyDelayTol = bdtol;
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7.f);
             ImGui::DragFloat("font size", &ImGui::GetFont()->Scale, 0.005f, 0.3f, 2.0f, "%.1f");
             if (ImGui::MenuItem("open settings", ""))
@@ -528,14 +555,109 @@ void MainMenuBar(RDCWindow *_window)
                     pdcSender = thread(
                         [&pdcProcess](vector<vector<float>> _data)
                         {
-                            // open
-                            for (int i = 0; i < _data.size(); i++)
+                            string DB_HOST("166.104.155.16");
+                            string DB_USER("sungho");
+                            string DB_PASS("sungho");
+                            string DB_NAME("McDCIR_PDC");
+                            string DB_TABLE("FrameMain");
+                            int PORT_ID = 3307;
+
+                            vector<string> body_TABLE;
+                            for (int i=0;i<20;i++) {
+                                body_TABLE.push_back("id" + to_string(i));
+                            }
+                            vector<string> main_colNameVec, body_colNameVec;
+                            string main_colNameStr, main_colValueStr, body_colNameStr;
+                            vector<string> body_colValueStr;
+                            string main_colNameStr_tmp, main_colValueStr_tmp;
+
+                            main_colNameVec = {"time","kVp","mA","dap","cArm0","cArm1","cArm2","bed0","bed1","bed2",
+                                            "glassChk","glass_qx","glass_qy","glass_qz","glass_qw","glass_tx","glass_ty","glass_tz",
+                                            "id0","id1","id2","id3","id4","id5","id6","id7","id8","id9",
+                                            "id10","id11","id12","id13","id14","id15","id16","id17","id18","id19","flag"};
+                            
+                            cout << "#: " << pdcProcess << endl;
+
+                            
+                            for (int i=0;i<18;i++) {
+                                main_colNameStr  += "`" + main_colNameVec[i] + "`,";
+                            }
+                            main_colNameStr_tmp = main_colNameStr;
+                            
+                            for (int i=0;i<18*4;i++) {
+                                if      (i%4 == 0) body_colNameVec.push_back("qx_" + to_string(i/4));
+                                else if (i%4 == 1) body_colNameVec.push_back("qy_" + to_string(i/4));
+                                else if (i%4 == 2) body_colNameVec.push_back("qz_" + to_string(i/4));
+                                else if (i%4 == 3) body_colNameVec.push_back("qw_" + to_string(i/4));
+                                body_colNameStr += "`" + body_colNameVec[i] + "`,";
+                            }
+                            for (int i=0;i<24*3;i++) {
+                                if      (i%3 == 0) body_colNameVec.push_back("tx_" + to_string(i/3));
+                                else if (i%3 == 1) body_colNameVec.push_back("ty_" + to_string(i/3));
+                                else if (i%3 == 2) body_colNameVec.push_back("tz_" + to_string(i/3));
+                                body_colNameStr += "`" + body_colNameVec[18*4+i] + "`,";
+                                if (i == 24*3-1) {
+                                    body_colNameStr.pop_back();
+                                }
+                            }
+                            // ==========================================================
+
+                            MYSQL* conn = mysql_init(NULL);
+                            if( mysql_real_connect(conn, DB_HOST.c_str(), DB_USER.c_str(), DB_PASS.c_str(), DB_NAME.c_str(), PORT_ID, NULL, 0) != NULL ) {
+                                cout << "web-server is successfully connected !!" << endl;
+                            } //else mysql_finish_with_error(conn);
+
+                            for(int i=0;i<_data.size();i++)
                             {
                                 sleep(1);
-                                // send
-                                pdcProcess = i + 1;
+                                //send
+                                pdcProcess = i+1;
+
+                                for (int j=0; j<18; j++) { // before first worker id
+                                    main_colValueStr += "'" + to_string(_data[i][j]) + "',";
+                                }
+                                
+                                int maxWorkerNo(5);
+                                int body_start_idx(18);
+                                int idx(0); int bodyNo(0);
+                                bool isFirst(false);
+                                for (int j=body_start_idx; j<body_start_idx+maxWorkerNo*145; j++) {
+                                    int body_id = (j-body_start_idx)/145*145+body_start_idx;
+                                    if (_data[i][body_id] == false) {
+                                        continue;
+                                    }
+                                    if (j == 18 + idx * 145) {
+                                        main_colNameStr += "`" + main_colNameVec[(body_start_idx)+idx] + "`,";
+                                        main_colValueStr += "'" + to_string((int)_data[i][j]) + "',";
+                                        body_colValueStr.push_back("");
+                                        idx++;
+                                        if (_data[i][body_id] == true) bodyNo++;
+                                        continue;
+                                    }
+                                    
+                                    body_colValueStr[bodyNo-1] += "'" + to_string(_data[i][j]) + "',";
+                                }
+                                main_colNameStr += "`flag`";
+                                main_colValueStr += "'0'"; // set flag status as '0'
+                                
+                                
+                                string sql;
+                                sql = "INSERT INTO `" + DB_NAME + "`.`" + DB_TABLE + "` (" + main_colNameStr + ") VALUES (" + main_colValueStr + ");";
+                               // if (mysql_query(conn, sql.c_str()) != false) mysql_finish_with_error(conn);
+                                main_colNameStr = main_colNameStr_tmp;
+                                main_colValueStr = "";
+
+                                for(int j=0;j<bodyNo;j++) {
+                                    body_colValueStr[j].pop_back();
+                                    sql = "INSERT INTO `" + DB_NAME + "`.`" + body_TABLE[j] + "` (" + body_colNameStr + ") VALUES (" + body_colValueStr[j] + ");";
+                                  //  if (mysql_query(conn, sql.c_str()) != false) mysql_finish_with_error(conn);
+                                    body_colValueStr[j].clear();
+                                }
+                                
                             }
-                            // close
+                            
+                            //close
+                            mysql_close(conn);
                             return;
                         },
                         data);
@@ -569,9 +691,16 @@ void MainMenuBar(RDCWindow *_window)
         //     //     RDCWindow::Instance().viewer.core().is_animating = false;
         // }
         // ImGui::InputText("",name);
-        if(!_window->stop)
-            {if (ImGui::SmallButton("stop")) _window->stop = true;}
-        else {if (ImGui::SmallButton(" run ")) _window->stop = false;}
+        if (!_window->stop)
+        {
+            if (ImGui::SmallButton("stop"))
+                _window->stop = true;
+        }
+        else
+        {
+            if (ImGui::SmallButton(" run "))
+                _window->stop = false;
+        }
         if (ImGui::SmallButton("record"))
         {
             _window->loadNum = -1;
@@ -641,11 +770,12 @@ void ShowMachineStatus(bool *p_open, RDCWindow *_window)
             ImGui::Text("rot  :  %d deg.", (int)_window->currentFrame.cArm(0));
             ImGui::Text("ang  :  %d deg.", (int)_window->currentFrame.cArm(1));
             ImGui::Text("SID  :  %d cm", (int)_window->currentFrame.cArm(2));
+            ImGui::Text("FD   :  %d cm", (int)_window->currentFrame.FD);
         }
         if (ImGui::CollapsingHeader("Bed    ", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            ImGui::Text("long. :  %d cm", (int)_window->currentFrame.bed(0));
-            ImGui::Text("lat.  :  %d cm", (int)_window->currentFrame.bed(1));
+            ImGui::Text("long. :  %d cm", (int)_window->currentFrame.bed(1));
+            ImGui::Text("lat.  :  %d cm", (int)_window->currentFrame.bed(0));
             ImGui::Text("height:  %d cm", (int)_window->currentFrame.bed(2));
         }
     }
@@ -754,38 +884,46 @@ void ShowViewOptions(bool *p_open, RDCWindow *_window)
     ImGui::End();
 }
 
-void ShowStatusWindow(bool *p_open, RDCWindow *_window)
+// void ShowStatusWindow(bool *p_open, RDCWindow *_window)
+// {
+//     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
+//     const ImGuiViewport *viewport = ImGui::GetMainViewport();
+//     ImGui::SetNextWindowPos(ImVec2(0.f, viewport->WorkPos.y + viewport->WorkSize.y), ImGuiCond_Always, ImVec2(0., 1.f));
+//     ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, 235));
+//     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(8. / 255., 15. / 255., 26. / 255., 1.0f));
+//     if (ImGui::Begin("Status", p_open, flags))
+//     {
+//         if (ImGui::BeginTabBar("StatusTabBar", ImGuiTabBarFlags_None))
+//         {
+//             DoseResultTab(_window);
+//             DoseGraphTab();
+//             ProgramLogTab();
+//             ImGui::EndTabBar();
+//         }
+//     }
+//     ImGui::PopStyleColor();
+//     ImGui::End();
+// }
+
+void DoseResultWindow(RDCWindow *_window)
 {
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(0.f, viewport->WorkPos.y + viewport->WorkSize.y), ImGuiCond_Always, ImVec2(0., 1.f));
-    ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, 235));
+    ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, 230));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(8. / 255., 15. / 255., 26. / 255., 1.0f));
-    if (ImGui::Begin("Status", p_open, flags))
-    {
-        if (ImGui::BeginTabBar("StatusTabBar", ImGuiTabBarFlags_None))
-        {
-            DoseResultTab(_window);
-            DoseGraphTab();
-            ProgramLogTab();
-            ImGui::EndTabBar();
-        }
-    }
-    ImGui::PopStyleColor();
-    ImGui::End();
-}
-
-void DoseResultTab(RDCWindow *_window)
-{
     vector<string> radiologistDose = {"Whole skin", "Right hand (palm)", "Left hand (palm)", "PSD", "Lens"};
     vector<string> patientDose = {"Whole skin", "PSD"};
-    if (ImGui::BeginTabItem("Dose values"))
+    char buf[128];
+    sprintf(buf, "Radiologist #%d Dose", _window->bodyID);
+    bool open(true);
+    if (ImGui::Begin(buf, &open, flags))
     {
-        // ImGui::Columns(2, "", false);
+        // ImGui::BulletText("Radiologist #%d Dose", _window->bodyID);
+        ImGui::Columns(2, "", false);
         ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Reorderable;
-        ImGui::BulletText("Radiologist #%d Dose", _window->bodyID);
         static int graphOpt(0);
-        if (ImGui::BeginTable("radiologist", 4, flags))
+        if (ImGui::BeginTable("Dose Table", 4, flags))
         {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_NoReorder | ImGuiTableColumnFlags_WidthFixed);
             ImGui::TableSetupColumn("Dose Rate (mGy/hr)");
@@ -795,8 +933,8 @@ void DoseResultTab(RDCWindow *_window)
             // //set dose
             //     cout<<4<<endl;
             auto phantom = _window->GetMainPhantomHandle();
-            vector<double> rateVal = {phantom->GetAvgSkinDoseRate()*1000.*3600., 0, 0, phantom->GetMaxSkinDoseRate()*1000.*3600., 0, 0};
-            vector<double> accVal = {phantom->GetAvgAccSkinDose()*1.e6, 0, 0, phantom->GetMaxAccSkinDose()*1.e6, 0, 0};
+            vector<double> rateVal = {phantom->GetAvgSkinDoseRate() * 1000. * 3600., 0, 0, phantom->GetMaxSkinDoseRate() * 1000. * 3600., 0, 0};
+            vector<double> accVal = {phantom->GetAvgAccSkinDose() * 1.e6, 0, 0, phantom->GetMaxAccSkinDose() * 1.e6, 0, 0};
             for (size_t row = 0; row < radiologistDose.size(); row++)
             {
                 ImGui::TableNextRow();
@@ -813,7 +951,15 @@ void DoseResultTab(RDCWindow *_window)
             }
             ImGui::EndTable();
         }
-        // ImGui::NextColumn();
+        ImGui::NextColumn();
+        ImPlot::CreateContext();
+        float x_data[1000], y_data[1000];
+        if (ImPlot::BeginPlot(radiologistDose[graphOpt].c_str(), ImVec2(-1, 200)))
+        {
+            ImPlot::PlotLine("My Line Plot", x_data, y_data, 1000);
+            ImPlot::EndPlot();
+        }
+        ImPlot::DestroyContext();
         // ImGui::BulletText("Patient Dose");
         // if (ImGui::BeginTable("patient", 3, flags))
         // {
@@ -829,216 +975,56 @@ void DoseResultTab(RDCWindow *_window)
         //     }
         //     ImGui::EndTable();
         // }
-        // ImGui::NextColumn();
-        ImGui::EndTabItem();
+        ImGui::NextColumn();
+        ImGui::End();
     }
 }
 
-void DoseGraphTab()
-{
-    static int offset = 0;
-    if (ImGui::BeginTabItem("Dose rate gragphs"))
-    {
-        static int frameTime = 2;
-        const ImGuiViewport *viewport = ImGui::GetMainViewport();
-        ImGui::SetNextItemWidth(viewport->WorkSize.x * 0.5);
-        ImGui::SliderInt("", &frameTime, 1, 10);
-        char buf[200];
-        sprintf(buf, "frame time: %d sec / plot length: %d sec", frameTime, frameTime * 100);
-        ImGui::SameLine();
-        ImGui::Text(buf);
-        static float whole_skin[100] = {};
-        static float hands[100] = {};
-        static float lens[100] = {};
-        static float patient[100] = {};
-        for (int i = 0; i < 100; i++)
-        {
-            whole_skin[i] = 0.1 * i;
-            hands[i] = 0.1 * i;
-            lens[i] = 0.1 * i;
-            patient[i] = 0.1 * i;
-        }
-        offset = ++offset % 100;
-        ImGui::Columns(2, "", false);
-        ImGui::BulletText("Whole skin dose rate (radiologist)");
-        ImGui::PlotLines("", whole_skin, 100, offset, "", 0, 10, ImVec2(viewport->WorkSize.x * 0.48, viewport->WorkSize.y * 0.085));
-        ImGui::BulletText("Hands dose rate (radiologist)");
-        ImGui::PlotLines("", hands, 100, offset, "", 0, 10, ImVec2(viewport->WorkSize.x * 0.48, viewport->WorkSize.y * 0.085));
-        ImGui::NextColumn();
-        ImGui::BulletText("Lens dose rate (radiologist)");
-        ImGui::PlotLines("", lens, 100, offset, "", 0, 10, ImVec2(viewport->WorkSize.x * 0.48, viewport->WorkSize.y * 0.085));
-        ImGui::BulletText("Patient PSD");
-        ImGui::PlotLines("", patient, 100, offset, "", 0, 10, ImVec2(viewport->WorkSize.x * 0.48, viewport->WorkSize.y * 0.085));
-        ImGui::NextColumn();
-        ImGui::EndTabItem();
-    }
-}
-
-//-----------------------------------------------------------------------------
-// [SECTION] Example App: Debug Log / ShowExampleAppLog()
-//-----------------------------------------------------------------------------
-
-// Usage:
-//  static ExampleAppLog my_log;
-//  my_log.AddLog("Hello %d world\n", 123);
-//  my_log.Draw("title");
-
-struct DCIRAppLog
-{
-    ImGuiTextBuffer Buf;
-    ImGuiTextFilter Filter;
-    ImVector<int> LineOffsets; // Index to lines offset. We maintain this with AddLog() calls.
-    bool AutoScroll;           // Keep scrolling if already at the bottom.
-
-    DCIRAppLog()
-    {
-        AutoScroll = true;
-        Clear();
-    }
-
-    void Clear()
-    {
-        Buf.clear();
-        LineOffsets.clear();
-        LineOffsets.push_back(0);
-    }
-
-    void AddLog(const char *fmt, ...) IM_FMTARGS(2)
-    {
-        int old_size = Buf.size();
-        va_list args;
-        va_start(args, fmt);
-        Buf.appendfv(fmt, args);
-        va_end(args);
-        for (int new_size = Buf.size(); old_size < new_size; old_size++)
-            if (Buf[old_size] == '\n')
-                LineOffsets.push_back(old_size + 1);
-    }
-
-    void Draw()
-    {
-        // Options menu
-        if (ImGui::BeginPopup("Options"))
-        {
-            ImGui::Checkbox("Auto-scroll", &AutoScroll);
-            ImGui::EndPopup();
-        }
-
-        // Main window
-        bool clear = ImGui::Button("Clear");
-        ImGui::SameLine();
-        bool copy = ImGui::Button("Copy");
-        ImGui::SameLine();
-        Filter.Draw("Filter", -100.0f);
-
-        ImGui::BeginChild("scrolling", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
-
-        if (clear)
-            Clear();
-        if (copy)
-            ImGui::LogToClipboard();
-
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-        const char *buf = Buf.begin();
-        const char *buf_end = Buf.end();
-        if (Filter.IsActive())
-        {
-            // In this example we don't use the clipper when Filter is enabled.
-            // This is because we don't have a random access on the result on our filter.
-            // A real application processing logs with ten of thousands of entries may want to store the result of
-            // search/filter.. especially if the filtering function is not trivial (e.g. reg-exp).
-            for (int line_no = 0; line_no < LineOffsets.Size; line_no++)
-            {
-                const char *line_start = buf + LineOffsets[line_no];
-                const char *line_end = (line_no + 1 < LineOffsets.Size) ? (buf + LineOffsets[line_no + 1] - 1) : buf_end;
-                if (Filter.PassFilter(line_start, line_end))
-                    ImGui::TextUnformatted(line_start, line_end);
-            }
-        }
-        else
-        {
-            // The simplest and easy way to display the entire buffer:
-            //   ImGui::TextUnformatted(buf_begin, buf_end);
-            // And it'll just work. TextUnformatted() has specialization for large blob of text and will fast-forward
-            // to skip non-visible lines. Here we instead demonstrate using the clipper to only process lines that are
-            // within the visible area.
-            // If you have tens of thousands of items and their processing cost is non-negligible, coarse clipping them
-            // on your side is recommended. Using ImGuiListClipper requires
-            // - A) random access into your data
-            // - B) items all being the  same height,
-            // both of which we can handle since we an array pointing to the beginning of each line of text.
-            // When using the filter (in the block of code above) we don't have random access into the data to display
-            // anymore, which is why we don't use the clipper. Storing or skimming through the search result would make
-            // it possible (and would be recommended if you want to search through tens of thousands of entries).
-            ImGuiListClipper clipper;
-            clipper.Begin(LineOffsets.Size);
-            while (clipper.Step())
-            {
-                for (int line_no = clipper.DisplayStart; line_no < clipper.DisplayEnd; line_no++)
-                {
-                    const char *line_start = buf + LineOffsets[line_no];
-                    const char *line_end = (line_no + 1 < LineOffsets.Size) ? (buf + LineOffsets[line_no + 1] - 1) : buf_end;
-                    ImGui::TextUnformatted(line_start, line_end);
-                }
-            }
-            clipper.End();
-        }
-        ImGui::PopStyleVar();
-
-        if (AutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
-            ImGui::SetScrollHereY(1.0f);
-
-        ImGui::EndChild();
-    }
-};
-
-void ProgramLogTab()
-{
-    if (ImGui::BeginTabItem("System sataus"))
-    {
-        ImGui::Columns(2, "", false);
-        const ImGuiViewport *viewport = ImGui::GetMainViewport();
-        ImGuiStyle &style = ImGui::GetStyle();
-        ImGui::SetColumnWidth(0, (viewport->WorkSize.x - style.FramePadding.x * 2) * 0.58f);
-        ImGui::SetColumnWidth(1, (viewport->WorkSize.x - style.FramePadding.x * 2) * 0.4f);
-        ImGui::BulletText("Tracking information");
-        ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_Reorderable;
-        if (ImGui::BeginTable("Tracking_info", 3, flags))
-        {
-            ImGui::TableSetupColumn("OCR");
-            ImGui::TableSetupColumn("Glass");
-            ImGui::TableSetupColumn("Posture");
-            ImGui::TableHeadersRow();
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::BulletText("RAO/LAO: RAO 30");
-            ImGui::BulletText("CRAN/CAUD: CRAN 20");
-            ImGui::BulletText("SID: 110 cm");
-            ImGui::BulletText("Beam: 80 kVp, 20 mA");
-            ImGui::BulletText("Table Pos: (10, 5, 21) cm");
-            ImGui::TableSetColumnIndex(1);
-            ImGui::BulletText("Pos: (10, 20, 22) cm");
-            ImGui::BulletText("Quat: (0.5, -0.2, 0.5, 0.6)");
-            ImGui::TableSetColumnIndex(2);
-            ImGui::BulletText("# of detected people: 2");
-            ImGui::BulletText("P1: (0, 20, -15) cm / 0.89");
-            ImGui::BulletText("P2: (10, 22, -25) cm / 0.71");
-            ImGui::EndTable();
-        }
-        ImGui::NextColumn();
-        ImGui::BulletText("Program log");
-        static DCIRAppLog logApp;
-        logApp.AddLog("[%05d] [%.1f] This is log!!\n", ImGui::GetFrameCount(), ImGui::GetTime());
-        logApp.Draw();
-        ImGui::EndTabItem();
-    }
-}
+// void DoseGraphTab()
+// {
+//     static int offset = 0;
+//     if (ImGui::BeginTabItem("Dose rate gragphs"))
+//     {
+//         static int frameTime = 2;
+//         const ImGuiViewport *viewport = ImGui::GetMainViewport();
+//         ImGui::SetNextItemWidth(viewport->WorkSize.x * 0.5);
+//         ImGui::SliderInt("", &frameTime, 1, 10);
+//         char buf[200];
+//         sprintf(buf, "frame time: %d sec / plot length: %d sec", frameTime, frameTime * 100);
+//         ImGui::SameLine();
+//         ImGui::Text(buf);
+//         static float whole_skin[100] = {};
+//         static float hands[100] = {};
+//         static float lens[100] = {};
+//         static float patient[100] = {};
+//         for (int i = 0; i < 100; i++)
+//         {
+//             whole_skin[i] = 0.1 * i;
+//             hands[i] = 0.1 * i;
+//             lens[i] = 0.1 * i;
+//             patient[i] = 0.1 * i;
+//         }
+//         offset = ++offset % 100;
+//         ImGui::Columns(2, "", false);
+//         ImGui::BulletText("Whole skin dose rate (radiologist)");
+//         ImGui::PlotLines("", whole_skin, 100, offset, "", 0, 10, ImVec2(viewport->WorkSize.x * 0.48, viewport->WorkSize.y * 0.085));
+//         ImGui::BulletText("Hands dose rate (radiologist)");
+//         ImGui::PlotLines("", hands, 100, offset, "", 0, 10, ImVec2(viewport->WorkSize.x * 0.48, viewport->WorkSize.y * 0.085));
+//         ImGui::NextColumn();
+//         ImGui::BulletText("Lens dose rate (radiologist)");
+//         ImGui::PlotLines("", lens, 100, offset, "", 0, 10, ImVec2(viewport->WorkSize.x * 0.48, viewport->WorkSize.y * 0.085));
+//         ImGui::BulletText("Patient PSD");
+//         ImGui::PlotLines("", patient, 100, offset, "", 0, 10, ImVec2(viewport->WorkSize.x * 0.48, viewport->WorkSize.y * 0.085));
+//         ImGui::NextColumn();
+//         ImGui::EndTabItem();
+//     }
+// }
 
 void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
 {
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize;
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetItemRectSize().x * 2, -1), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetItemRectSize().x * 3, -1), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Settings", p_open, flags))
     {
         ImGui::BulletText("Phantom settings");
@@ -1052,15 +1038,20 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
 
         ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_NoBordersInBody;
         // | ImGuiTableFlags_SizingFixedFit;
-        static int bfID[20], profileID[20];
-        static float color[20][3];
+        static int bfID[20], profileID[20];// idJoints[20][2];
+        static float color[20][3]={2,};
+        if(color[0][0]>1){
+            fill(color[0], color[20], 1);
+        }
+        static bool blueMask[20];
         static bool trackOpt[20];
-        if (ImGui::BeginTable("phantom settings", 5, flags))
+        if (ImGui::BeginTable("phantom settings", 6, flags))
         {
             ImGui::TableSetupColumn("#");
             ImGui::TableSetupColumn("BF%");
             ImGui::TableSetupColumn("profile");
-            ImGui::TableSetupColumn("color");
+            ImGui::TableSetupColumn("neck color");
+            ImGui::TableSetupColumn("mask color"); // or red
             ImGui::TableSetupColumn("track");
             ImGui::TableHeadersRow();
 
@@ -1081,7 +1072,15 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
                     ImGui::Combo("profile", &profileID[i], profileNames);
                 }
                 if (ImGui::TableNextColumn())
-                    ImGui::ColorEdit3("", color[i]);
+                {
+                    auto flag = ImGuiColorEditFlags_InputHSV | ImGuiColorEditFlags_HSV|ImGuiColorEditFlags_Float|ImGuiColorEditFlags_NoSidePreview|ImGuiColorEditFlags_NoAlpha|ImGuiColorEditFlags_NoOptions|ImGuiColorEditFlags_PickerHueWheel|ImGuiColorEditFlags_NoInputs;
+                    ImGui::ColorEdit3("", color[i], flag);
+                }
+                if (ImGui::TableNextColumn())
+                {
+                    ImGui::Checkbox("blue", &blueMask[i]);
+                }
+                    // ImGui::ColorEdit3("", color[i]);
                 if (ImGui::TableNextColumn())
                     if (ImGui::Checkbox("", &trackOpt[i]))
                     {
@@ -1094,6 +1093,8 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
                             if (profileNames[profileID[i]] != "original")
                                 phantom->CalibrateTo(profileNames[profileID[i]]);
                             _window->viewer.data(id).set_mesh(phantom->V, phantom->F);
+
+                            _window->workerIdData[i] = make_pair(int(floor(color[i][0]*180.+0.5)), blueMask[i]);
                             // texture setting
                             if (id == _window->mainID())
                                 _window->viewer.data(id).show_texture = false;
@@ -1112,6 +1113,7 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
                         {
                             phantom->Clear();
                             _window->viewer.data(id).is_visible = false;
+                            _window->workerIdData.erase(i);
                         }
                     }
                 ImGui::PopID();
@@ -1128,7 +1130,8 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
             {
                 int id;
                 string bfData, profile;
-                ifs >> id >> bfData >> profile >> color[id][0] >> color[id][1] >> color[id][2];
+                ifs >> id >> bfData >> profile >> color[id][0]>> color[id][1]>> color[id][2] >>blueMask[id];
+                color[id][0] /= 180.;
                 for (int b = 0; b < BFlist.size(); b++)
                     if (BFlist[b] == bfData)
                         bfID[i] = b;
@@ -1144,9 +1147,9 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
         if (ImGui::Button("SAVE"))
         {
             ofstream ofs(fileBuff);
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < _window->maxNumPeople; i++)
                 ofs << i << "\t" << BFlist[bfID[i]] << "\t" << profileNames[profileID[i]]
-                    << "\t" << color[i][0] << "\t" << color[i][1] << "\t" << color[i][2] << endl;
+                    << "\t"<< color[i][0]*180 <<"\t"<<color[i][1]<<"\t" << color[i][2]<<"\t" << int(blueMask[i])<< endl;
             ofs.close();
         }
 
@@ -1189,7 +1192,8 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
             else
             {
                 int option = 8 * (int)motionChk + 4 * (int)glassChk + 2 * (int)bedChk + 1 * (int)ocrChk;
-                Communicator::Instance().StartWorker(ip, option);
+                if(_window->workerIdData.size()) Communicator::Instance().StartWorker(ip, option, _window->workerIdData);
+                else Communicator::Instance().StartWorker(ip, option);
             }
         }
         // | ImGuiTableFlags_SizingFixedFit;

@@ -196,6 +196,7 @@ bool PhantomAnimator::LoadPhantom(string _phantom)
         cleanWeightsApron.push_back(vertexWeight);
     }
 
+    Initialize();
     return true;
 }
 

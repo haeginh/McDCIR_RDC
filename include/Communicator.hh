@@ -8,8 +8,8 @@
 #include <chrono>
 
 #define BE_ROWS 22
-#define SERVER_IP "192.168.0.100"
-// #define SERVER_IP "127.0.0.1"
+// #define SERVER_IP "192.168.0.100"
+#define SERVER_IP "127.0.0.1"
 using namespace std;
 typedef tuple<string, int, Eigen::Affine3d> WORKER;
 struct Body
@@ -17,6 +17,7 @@ struct Body
     // clock_t time;
     RotationList posture = RotationList(18);
     MatrixXd jointC = MatrixXd::Zero(24, 3);
+    clock_t time;
 };
 
 struct DataSet
@@ -70,11 +71,20 @@ public:
     // -GetDelay    : gets a elapsed time from last response from the worker    // --> unit needs to be checked
     //////////////////////////////////////////////////////////////////////////////
     map<int, WORKER> workerData;
-    void StartWorker(string ip, int opt, int port = 22)
+    void StartWorker(string ip, int opt, map<int, pair<int, bool>> idx={}, int port = 22)
     {
         workerData[nextWorkerID] = WORKER(ip, opt, Affine3d::Identity());
         // system(("ssh " +ip+" \"2_tracker "+SERVER_IP+" "+to_string(serverPORT)+" " +to_string(nextWorkerID++) + " " + to_string(opt) + "\" &" ).c_str());
-        system(("ssh " +ip+" \"screen -dr dcir -X screen 2_tracker "+SERVER_IP+" "+to_string(serverPORT)+" " +to_string(nextWorkerID++) + " " + to_string(opt) + "\" &" ).c_str());
+
+        string command = "ssh " +ip+" \"screen -dr dcir -X screen 2_tracker "+SERVER_IP+" "+to_string(serverPORT)+" " +to_string(nextWorkerID++) + " " + to_string(opt); //+ "\" &"
+        if((opt&8) && (idx.size())){
+            command += " "+to_string(idx.size());
+            for(auto iter:idx)
+            {
+                command += " " + to_string(iter.first) + " " + to_string(iter.second.first) + " " + to_string(int(iter.second.second));
+            }
+        }
+        system((command + "\" &" ).c_str());
     // sock_opts[nextWorkerID++] = opt;
     }
     void StartWorkers()
@@ -95,6 +105,18 @@ public:
         if(lastStamp.find(i)==lastStamp.end()) return __DBL_MAX__;
         return float(clock() - lastStamp[i])/CLOCKS_PER_SEC;
     }
+    void SetCurrentFrame(DataSet &data, float bodyDelayTol)
+    {
+        data = current;
+        vector<int> keys;
+        for_each(data.bodyMap.begin(), data.bodyMap.end(), 
+                [&keys](pair<int, Body> body){keys.push_back(body.first);});
+        for(int i:keys)
+        {
+            if(float(clock() - current.bodyMap[i].time)>(bodyDelayTol*CLOCKS_PER_SEC))
+                data.bodyMap.erase(i);
+        }
+    } 
 
     void InitializeDataSet();
     void SetInitPack(RotationList vQ, MatrixXi BE);
@@ -132,12 +154,11 @@ public:
     }
     bool IsRecording() { return record; }
 
-    DataSet current;
-
 private:
     Communicator():nextWorkerID(0)
     {}
     
+    DataSet current;
     // udp
     int server_fd;
     int serverPORT;
@@ -145,7 +166,6 @@ private:
     thread listening;
     bool isListening;
     map<int, clock_t> lastStamp;
-
 
     array<double, 155> initPack;
     thread mainLoop;

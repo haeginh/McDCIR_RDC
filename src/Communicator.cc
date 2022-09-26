@@ -57,7 +57,6 @@ bool Communicator::StartServer(int port)
                 receivedBytes = recvfrom(server_fd, readBuff, 500*4, 0, (struct sockaddr*)&clientAddress, &client_addr_size);
                 if(receivedBytes>0){
                     int id = (int)readBuff[0];
-                    for(int i=0;i<500;i++) ofs<<readBuff[i]<<"\t";
          
                     if(!this->isListening||this->workerData.find(id)==this->workerData.end()){ //stop msg
                         sendto(server_fd, msg, 4, 0, (struct  sockaddr*)&clientAddress, sizeof(clientAddress));
@@ -90,7 +89,7 @@ bool Communicator::StartServer(int port)
                         if(opt & 1)
                         {
                             current.cArm = RowVector3f(readBuff[pos+0],readBuff[pos+1],readBuff[pos+5]);
-                            current.bed = RowVector3f(readBuff[pos+2],readBuff[pos+3],readBuff[pos+4]);
+                            current.bed = RowVector3f(readBuff[pos+3],readBuff[pos+2],readBuff[pos+4]);
                             current.kVp = readBuff[pos+9];
                             current.mA = readBuff[pos+10];
                             current.FD = readBuff[pos+6];
@@ -102,10 +101,13 @@ bool Communicator::StartServer(int port)
                         }
                         if(opt & 4)
                         {   
-                            Quaterniond q(readBuff[pos++], readBuff[pos++], readBuff[pos++], readBuff[pos++]);
-                            Vector3d t(readBuff[pos++], readBuff[pos++], readBuff[pos++]);
-                            glassAff.rotate(q);
+                            Quaterniond q(readBuff[pos], readBuff[pos+1], readBuff[pos+2], readBuff[pos+3]);
+                            Vector3d t(readBuff[pos+4], readBuff[pos+5], readBuff[pos+6]);
+                            pos += 7;
                             glassAff.translate(t);
+                            glassAff.rotate(q);
+                            // cout<<q.w()<<" "<<q.x()<<" "<<q.y()<<" "<<q.z()<<endl;
+                            //  cout<<t.transpose()<<endl;
                             glassAff = get<2>(workerData[readBuff[0]]) * glassAff;
                         }
                         if(opt & 8)
@@ -114,11 +116,13 @@ bool Communicator::StartServer(int port)
                             for(int body=0;body<num;body++)
                             {
                                 //body ID starts from 1. So subtract 1 from all IDs.
-                                int bodyID = readBuff[pos++]-1;
+                                int bodyID = readBuff[pos++];//-1;
                                 Body bodyStruct;
-                                for(int i=0;i<bodyStruct.posture.size();i++) 
+                                for(int i=0;i<bodyStruct.posture.size();i++, pos+=4) 
+                                {
                                     bodyStruct.posture[i] = get<2>(workerData[readBuff[0]]).rotation() *
-                                                            Quaterniond(readBuff[pos++], readBuff[pos++], readBuff[pos++], readBuff[pos++]); //*   alignRot[i];
+                                                            Quaterniond(readBuff[pos], readBuff[pos+1], readBuff[pos+2], readBuff[pos+3]); //*   alignRot[i];
+                                }
                                 for(int i=0;i<24;i++)
                                 {
                                     bodyStruct.jointC(i, 0) = readBuff[pos++];
@@ -129,7 +133,7 @@ bool Communicator::StartServer(int port)
                                     // jointC(i, 2) = readBuff[pos++];
                                 }
                                 bodyStruct.jointC = (bodyStruct.jointC.rowwise().homogeneous()*get<2>(workerData[readBuff[0]]).matrix().transpose()).rowwise().hnormalized();
-                                // bodyStruct.time = lastStamp[id];
+                                bodyStruct.time = current.time;
                                 bodyMap[bodyID] = bodyStruct;
                             }
                         }
@@ -142,8 +146,10 @@ bool Communicator::StartServer(int port)
                         }
                         if(opt&8){
                             //add new frame only if posture data is IN.
-                            RDCWindow::Instance().postureUpdated = true;
-                            current.bodyMap = bodyMap;
+                            // RDCWindow::Instance().postureUpdated = true;
+                            for(auto iter:bodyMap) current.bodyMap[iter.first] = iter.second;
+                            
+                            // current.bodyMap = bodyMap;
                         }
                     }                               
                 }
