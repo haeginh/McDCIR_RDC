@@ -106,6 +106,7 @@ bool OcrMain::Render(float *data)
 {
 	cv::Mat img;
 	cap >> img;
+	if(recording) recorder<<img; 
 	cv::Mat imgCopy, imgResize;
 	img.copyTo(imgCopy);
 	std::vector<cv::Mat> digits;
@@ -513,7 +514,12 @@ void OcrMain::RenderForLearning()
 			if (cap.get(cv::CAP_PROP_POS_FRAMES) == cap.get(cv::CAP_PROP_FRAME_COUNT) - 1)
 				cap.set(cv::CAP_PROP_POS_FRAMES, 0);
 		}
+		double ratio = (double)resize / 100.;
+		cv::resize(imgCopy, imgCopy, cv::Size(img.cols * ratio, img.rows * ratio));
 		cv::imshow("Training", imgCopy);
+		cv::createTrackbar(
+			"resize", "Training", &resize, 100, [](int pos, void *data) {}, (void *)&imgCopy);
+
 		char key = cv::waitKey(1);
 
 		if (learning)

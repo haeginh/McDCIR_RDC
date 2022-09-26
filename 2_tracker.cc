@@ -17,7 +17,7 @@
 #define C_NUM 24
 
 // #define TEST
-#define OCR_SETTINGS
+// #define OCR_SETTINGS
 #define ABT_DISPLAY
 #define GLASS_DISPLAY
 extern Rect cropRect;
@@ -101,7 +101,7 @@ int main(int argc, char **argv)
         int optLen = sizeof(optVal);
         setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &optVal, optLen);
         // first msg.
-
+        ocr_main.SetRecord(true);
         while (1)
         {
             sendto(client_socket, sendBuff, 500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
@@ -130,7 +130,8 @@ int main(int argc, char **argv)
     GlassTracker glassTracker;
     // body tracker variable
     vector<int> poseJoints = {0, 1, 2, 4, 5, 6, 7, 26, 11, 12, 13, 14, 18, 19, 20, 22, 23, 24, 8, 15, 21, 25, 28, 30};
-    map<int, map<int, int>> colorIdx;
+    // map<int, map<int, int>> colorIdx;
+    map<int, pair<int, bool>> colorIdx; // blue is true
     int colorMargin(10);
 
     string colorComment;
@@ -138,9 +139,11 @@ int main(int argc, char **argv)
     {
         for(int i=0;i<atoi(argv[5]);i++)
         {
-            colorIdx[atoi(argv[6+i*5])][atoi(argv[7+i*5])] = atoi(argv[9+i*5]);
-            colorIdx[atoi(argv[6+i*5])][atoi(argv[8+i*5])] = atoi(argv[10+i*5]);
-            colorComment += string(argv[6+i*5])+":"+string(argv[7+i*5])+"/"+string(argv[9+i*5])+", "+string(argv[8+i*5])+"/"+string(argv[10+i*5])+" | ";
+            colorIdx[atoi(argv[6+i*3])].first=atoi(argv[7+i*3]);
+            colorIdx[atoi(argv[6+i*3])].second=bool(atoi(argv[8+i*3]));
+            string maskColor("red");
+            if(colorIdx[atoi(argv[6+i*3])].second) maskColor = "blue";
+            colorComment += string(argv[6+i*3])+":"+string(argv[7+i*3])+"/"+maskColor+" | ";
         }
     }
 
@@ -300,24 +303,49 @@ int main(int argc, char **argv)
                         for(auto iter:colorIdx)
                         {
                             bool match(true);
-                            for(auto colors:iter.second)
+                            Point2i pNeck, pNose;
+                            transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[3].position, pNeck);
+                            if(pNeck.x<10||pNeck.y<10||pNeck.x>=color.cols-10||pNeck.y>=color.rows-10) {match = false; break;}
+                            transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[27].position, pNose);
+                            if(pNose.x<10||pNose.y<10||pNose.x>=color.cols-10||pNose.y>=color.rows-10) {match = false; break;}
+                            Mat sample;
+                            cvtColor(color(Rect(pNeck - Point2i(5, 5), pNeck + Point2i(5, 5))), sample, COLOR_BGR2HSV);
+                            Scalar cNeck = mean(sample);
+                            cvtColor(color(Rect(pNose - Point2i(5, 5), pNose + Point2i(5, 5))), sample, COLOR_BGR2HSV);
+                            Scalar cNose = mean(sample);
+                            
+                            if( (iter.second.first + colorMargin > 179) || (iter.second.first - colorMargin < 0) )
                             {
-                                Point2i point;
-                                transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[colors.first].position, point);
-                                if(point.x<10||point.y<10||point.x>=color.cols-10||point.y>=color.rows-10) {match = false; break;}
-                                Mat sample;
-                                cvtColor(color(Rect(point - Point2i(5, 5), point + Point2i(5, 5))), sample, COLOR_BGR2HSV);
-                                Scalar jColor = mean(sample);
-                                if( (colors.second + colorMargin > 179) || (colors.second - colorMargin < 0) )
-                                {
-                                    if((jColor[0]<(colors.second - colorMargin)%180) && (jColor[0]>(colors.second + colorMargin)%180))
-                                        {match = false; break; }
-                                }
-                                else if((jColor[0]<colors.second - colorMargin) || (jColor[0]>colors.second + colorMargin))
-                                {
-                                    match = false; break;
-                                }
+                                if((cNeck[0]<(iter.second.first - colorMargin)%180) && (cNeck[0]>(iter.second.first + colorMargin)%180))
+                                    {match = false; continue; }
                             }
+                            else if((cNeck[0]<iter.second.first - colorMargin) || (cNeck[0]>iter.second.first + colorMargin))
+                            {
+                                match = false; continue;
+                            }
+
+                            double redDist = min(fabs(cNose[0]-0), fabs(cNose[0]-180));
+                            double blueDist = min(fabs(cNose[0]+72), fabs(cNose[0]-108));
+                            if(iter.second.second != (blueDist<redDist)) {match = false; continue;}                          
+                            
+                            // for(auto colors:iter.second)
+                            // {
+                            //     Point2i point;
+                            //     transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[colors.first].position, point);
+                            //     if(point.x<10||point.y<10||point.x>=color.cols-10||point.y>=color.rows-10) {match = false; break;}
+                            //     Mat sample;
+                            //     cvtColor(color(Rect(point - Point2i(5, 5), point + Point2i(5, 5))), sample, COLOR_BGR2HSV);
+                            //     Scalar jColor = mean(sample);
+                            //     if( (colors.second + colorMargin > 179) || (colors.second - colorMargin < 0) )
+                            //     {
+                            //         if((jColor[0]<(colors.second - colorMargin)%180) && (jColor[0]>(colors.second + colorMargin)%180))
+                            //             {match = false; break; }
+                            //     }
+                            //     else if((jColor[0]<colors.second - colorMargin) || (jColor[0]>colors.second + colorMargin))
+                            //     {
+                            //         match = false; break;
+                            //     }
+                            // }
                             if(match) 
                             {
                                 if(givenID<0) givenID = iter.first;
@@ -327,6 +355,7 @@ int main(int argc, char **argv)
                                 }
                             }
                         }
+                        if(givenID<0) givenID = -id0;
                         if(givenID != givenIDs[id0].first) givenIDs[id0].second = 0;
                         givenIDs[id0].first = givenID; givenIDs[id0].second++; 
                     }
