@@ -312,6 +312,13 @@ int main(int argc, char **argv)
                     if((givenIDs[id0].first<0) || (givenIDs[id0].second<6)) // if ID was not assigned
                     {
                         int givenID(-1);
+                        k4a_quaternion_t q = body.skeleton.joints[2].orientation;
+                        Quaterniond quat2(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z);
+                        q = body.skeleton.joints[26].orientation;
+                        Quaterniond quat26(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z);
+                        
+                        if((Vector3d(0, 0, -1).dot(quat2 * Vector3d(0, 1, 0)) > 0.9) && 
+                        (Vector3d(0, 0, -1).dot(quat26 * Vector3d(0, 1, 0)) > 0.9))
                         for(auto iter:colorIdx)
                         {
                             bool match(true);
