@@ -71,8 +71,12 @@ bool Communicator::StartServer(int port)
                         
                         //for KINECT-connected programs
                         Affine3d aff = Affine3d::Identity();
+                        // cout<<readBuff[2]<<" "<<readBuff[3]<<" "<<readBuff[4]<<" "<<readBuff[5]<<endl;
+                        // cout<<readBuff[6]<<" "<<readBuff[7]<<" "<<readBuff[8]<<endl;
                         aff.rotate(Quaterniond(readBuff[5], readBuff[2], readBuff[3], readBuff[4]).normalized().toRotationMatrix().transpose());
                         aff.translate(-Vector3d(readBuff[6], readBuff[7], readBuff[8]));
+                        // aff.rotate(Quaterniond(readBuff[5], readBuff[2], readBuff[3], readBuff[4]).normalized().toRotationMatrix());
+                        // aff.translate(Vector3d(readBuff[6], readBuff[7], readBuff[8]));
                         get<2>(workerData[id]) = aff;
                         // workerData[id] = WORKER(string(inet_ntoa(clientAddress.sin_addr)), (int)readBuff[1], aff);
                     }

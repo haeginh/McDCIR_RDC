@@ -213,7 +213,7 @@ private:
     {
         if(getenv("DCIR_MAX_NUM_OF_PEOPLE")) 
             maxNumPeople = atoi(getenv("DCIR_MAX_NUM_OF_PEOPLE"));
-        dataSize = 18+maxNumPeople*145;
+        dataSize = 19+maxNumPeople*145;
         for (int i = 0; i < maxNumPeople; i++)
         {
             auto phantom = new PhantomAnimator;

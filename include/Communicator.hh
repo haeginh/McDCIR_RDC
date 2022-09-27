@@ -8,8 +8,8 @@
 #include <chrono>
 
 #define BE_ROWS 22
-// #define SERVER_IP "192.168.0.100"
-#define SERVER_IP "127.0.0.1"
+#define SERVER_IP "192.168.0.100"
+// #define SERVER_IP "127.0.0.1"
 using namespace std;
 typedef tuple<string, int, Eigen::Affine3d> WORKER;
 struct Body
@@ -84,6 +84,7 @@ public:
                 command += " " + to_string(iter.first) + " " + to_string(iter.second.first) + " " + to_string(int(iter.second.second));
             }
         }
+        cout<<command<<endl;
         system((command + "\" &" ).c_str());
     // sock_opts[nextWorkerID++] = opt;
     }

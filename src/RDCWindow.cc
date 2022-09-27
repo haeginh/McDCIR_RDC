@@ -221,15 +221,54 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
 
         MatrixXd P, C, V;
         MatrixXi BE, F;
-        int extraID;
         // posture deformation
+        int extraID(0); //tmp
         for (auto iter : currentFrame.bodyMap)
         {
-            if (iter.first<0) continue;
-            if (indivPhantoms[iter.first]->V.rows() > 0)
-                indivPhantoms[iter.first]
+            // cout<<iter.first<<endl;
+            if(extraID>=maxNumPeople) break;
+            if (indivPhantoms[extraID]->V.rows() > 0)
+                indivPhantoms[extraID]
                     ->Animate(iter.second.posture, iter.second.jointC, C, false);
+            _viewer.data(patient_data).set_points(iter.second.jointC, RowVector3d(1, 0, 0));
+            extraID++;
+            // if (iter.first<0) continue;
+            // if (indivPhantoms[iter.first]->V.rows() > 0)
+            //     indivPhantoms[iter.first]
+            //         ->Animate(iter.second.posture, iter.second.jointC, C, false);
         }
+
+
+///tmp
+        for (int i = 0; i < phantom_data.size(); i++)
+        {
+            if(indivPhantoms[i]->V.rows() ==0) continue;
+            if (i>=currentFrame.bodyMap.size())
+            {
+                _viewer.data(phantom_data[i]).is_visible = 0;
+                continue;
+            }
+            // indivPhantoms[i]->SetDose(dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1), frameTimeInMSEC);
+            _viewer.data(phantom_data[i]).is_visible |= v_left;
+            _viewer.data(phantom_data[i]).set_vertices(indivPhantoms[i]->U);
+            // indivPhantoms[i]->accD += dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1);
+            // if (i == bodyID)
+            // {
+            //     if (show_C)
+            //         _viewer.data(phantom_data[i]).set_points(currentFrame.bodyMap[i].jointC, RowVector3d(0, 0, 1));
+            //     if (show_BE)
+            //         _viewer.data(phantom_data[i]).set_edges(C, indivPhantoms[i]->BE, RowVector3d(70. / 255., 252. / 255., 167. / 255.));
+
+            //     _viewer.data(phantom_data[i]).set_data(indivPhantoms[i]->rateD);
+            //     _viewer.data(phantom_data[i]).compute_normals();
+            //     // _viewer.data(phantomAcc_data).set_data(indivPhantoms[i]->accD);
+            // }
+        }
+        return false;
+///tmp
+
+
+
         // shadow generation
         igl::embree::EmbreeIntersector ei;
         MatrixXf totalV = InitTree(ei, currentFrame.bodyMap);
@@ -389,9 +428,10 @@ void RDCWindow::SetMeshes(string dir)
         viewer.data(id).show_texture = true;
         viewer.data(id).show_lines = false;
         viewer.data(id).show_faces = true;
+        viewer.data(id).face_based = false;
         viewer.data(id).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
-        if (id == mainID())
-            viewer.data(id).show_texture = false;
+        // if (id == mainID())
+        //     viewer.data(id).show_texture = false;
     }
 
     viewer.data(patient_data).show_lines = true;
@@ -805,13 +845,13 @@ void ShowViewOptions(bool *p_open, RDCWindow *_window)
             _window->SetBodyID(bodyID);
             for (int id : _window->phantom_data)
             {
-                if (id == _window->mainID())
-                {
-                    _window->viewer.data(id).show_texture = false;
-                    auto phantom = _window->GetPhantom(bodyID);
-                    _window->viewer.data(_window->phantomAcc_data).set_mesh(phantom->V, phantom->F);
-                    continue;
-                }
+                // if (id == _window->mainID())
+                // {
+                //     _window->viewer.data(id).show_texture = false;
+                //     auto phantom = _window->GetPhantom(bodyID);
+                //     _window->viewer.data(_window->phantomAcc_data).set_mesh(phantom->V, phantom->F);
+                //     continue;
+                // }
                 _window->viewer.data(id).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
                 _window->viewer.data(id).show_texture = true;
                 _window->viewer.data(id).clear_points();
@@ -1096,15 +1136,15 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
 
                             _window->workerIdData[i] = make_pair(int(floor(color[i][0]*180.+0.5)), blueMask[i]);
                             // texture setting
-                            if (id == _window->mainID())
-                                _window->viewer.data(id).show_texture = false;
-                            else
-                            {
+                            // if (id == _window->mainID())
+                            //     _window->viewer.data(id).show_texture = false;
+                            // else
+                            // {
                                 _window->viewer.data(id).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
                                 _window->viewer.data(id).show_texture = true;
                                 _window->viewer.data(id).clear_points();
                                 _window->viewer.data(id).clear_edges();
-                            }
+                            // }
                             _window->viewer.data(id).set_visible(true, _window->v_left);
                             if (id == _window->mainID())
                                 _window->viewer.data(_window->phantomAcc_data).set_mesh(phantom->V, phantom->F);
@@ -1411,26 +1451,49 @@ vector<float> RDCWindow::SetAframeData(DataSet data, float frameTimeInMSEC)
     frameData[15] = data.glass_aff.translation().x();
     frameData[16] = data.glass_aff.translation().y();
     frameData[17] = data.glass_aff.translation().z();
-    int pos = 18;
-    for (int i = 0; i < maxNumPeople; i++)
+    frameData[18] = data.bodyMap.size();
+    int pos = 19;
+    // for (int i = 0; i < maxNumPeople; i++)
+    // {
+    //     if (data.bodyMap.find(i) == data.bodyMap.end())
+    //         continue;
+    //     int num = pos + i * 145;
+    //     frameData[num++] = 1;
+    //     for (int b = 0; b < data.bodyMap[i].posture.size(); b++)
+    //     {
+    //         frameData[num++] = data.bodyMap[i].posture[b].x();
+    //         frameData[num++] = data.bodyMap[i].posture[b].y();
+    //         frameData[num++] = data.bodyMap[i].posture[b].z();
+    //         frameData[num++] = data.bodyMap[i].posture[b].w();
+    //     }
+    //     for (int c = 0; c < data.bodyMap[i].jointC.rows(); c++)
+    //     {
+    //         frameData[num++] = data.bodyMap[i].jointC(c, 0);
+    //         frameData[num++] = data.bodyMap[i].jointC(c, 1);
+    //         frameData[num++] = data.bodyMap[i].jointC(c, 2);
+    //     }
+    // }
+
+    // for (int i = 0; i < maxNumPeople; i++)
+    int i=0;
+    for (auto iter:data.bodyMap)
     {
-        if (data.bodyMap.find(i) == data.bodyMap.end())
-            continue;
         int num = pos + i * 145;
-        frameData[num++] = 1;
-        for (int b = 0; b < data.bodyMap[i].posture.size(); b++)
+        frameData[num++] = iter.first;
+        for (int b = 0; b < iter.second.posture.size(); b++)
         {
-            frameData[num++] = data.bodyMap[i].posture[b].x();
-            frameData[num++] = data.bodyMap[i].posture[b].y();
-            frameData[num++] = data.bodyMap[i].posture[b].z();
-            frameData[num++] = data.bodyMap[i].posture[b].w();
+            frameData[num++] = iter.second.posture[b].x();
+            frameData[num++] = iter.second.posture[b].y();
+            frameData[num++] = iter.second.posture[b].z();
+            frameData[num++] = iter.second.posture[b].w();
         }
-        for (int c = 0; c < data.bodyMap[i].jointC.rows(); c++)
+        for (int c = 0; c < iter.second.jointC.rows(); c++)
         {
-            frameData[num++] = data.bodyMap[i].jointC(c, 0);
-            frameData[num++] = data.bodyMap[i].jointC(c, 1);
-            frameData[num++] = data.bodyMap[i].jointC(c, 2);
+            frameData[num++] = iter.second.jointC(c, 0);
+            frameData[num++] = iter.second.jointC(c, 1);
+            frameData[num++] = iter.second.jointC(c, 2);
         }
+        if(++i==maxNumPeople) break;        
     }
     return frameData;
 }
@@ -1458,24 +1521,44 @@ DataSet RDCWindow::ReadAframeData(vector<float> frameData)
     glassAff.rotate(Quaterniond(frameData[11], frameData[12], frameData[13], frameData[14]));
     glassAff.translate(Vector3d(frameData[15], frameData[16], frameData[17]));
     data.glass_aff = glassAff;
-    int pos = 18;
-    for (int i = 0; i < 5; i++)
+    int bodyNum = frameData[18];
+    int pos = 19;
+    // for (int i = 0; i < 5; i++)
+    // {
+    //     int num = pos + i * 145;
+    //     if (!frameData[num++])
+    //         continue;
+    //     for (int b = 0; b < data.bodyMap[i].posture.size(); b++)
+    //     {
+    //         data.bodyMap[i].posture[b].x() = frameData[num++];
+    //         data.bodyMap[i].posture[b].y() = frameData[num++];
+    //         data.bodyMap[i].posture[b].z() = frameData[num++];
+    //         data.bodyMap[i].posture[b].w() = frameData[num++];
+    //     }
+    //     for (int c = 0; c < data.bodyMap[i].jointC.rows(); c++)
+    //     {
+    //         data.bodyMap[i].jointC(c, 0) = frameData[num++];
+    //         data.bodyMap[i].jointC(c, 1) = frameData[num++];
+    //         data.bodyMap[i].jointC(c, 2) = frameData[num++];
+    //     }
+    // }
+    for (int i = 0; i < min(maxNumPeople, bodyNum); i++)
     {
         int num = pos + i * 145;
-        if (!frameData[num++])
-            continue;
+        int id = frameData[num++];
+
         for (int b = 0; b < data.bodyMap[i].posture.size(); b++)
         {
-            data.bodyMap[i].posture[b].x() = frameData[num++];
-            data.bodyMap[i].posture[b].y() = frameData[num++];
-            data.bodyMap[i].posture[b].z() = frameData[num++];
-            data.bodyMap[i].posture[b].w() = frameData[num++];
+            data.bodyMap[id].posture[b].x() = frameData[num++];
+            data.bodyMap[id].posture[b].y() = frameData[num++];
+            data.bodyMap[id].posture[b].z() = frameData[num++];
+            data.bodyMap[id].posture[b].w() = frameData[num++];
         }
         for (int c = 0; c < data.bodyMap[i].jointC.rows(); c++)
         {
-            data.bodyMap[i].jointC(c, 0) = frameData[num++];
-            data.bodyMap[i].jointC(c, 1) = frameData[num++];
-            data.bodyMap[i].jointC(c, 2) = frameData[num++];
+            data.bodyMap[id].jointC(c, 0) = frameData[num++];
+            data.bodyMap[id].jointC(c, 1) = frameData[num++];
+            data.bodyMap[id].jointC(c, 2) = frameData[num++];
         }
     }
     return data;
