@@ -24,12 +24,13 @@ class OcrMain
     bool Render(float* data);
     void RenderForSetting();
     void RenderForLearning();
-    void SetRecord(bool chk){
+    void SetRecord(bool chk, double factor=0.5){
         recording = chk;
+        recordSize = cv::Size(cap.get(cv::CAP_PROP_FRAME_WIDTH)*factor, cap.get(cv::CAP_PROP_FRAME_HEIGHT)*factor);
         if(recording){
             time_t now = chrono::system_clock::to_time_t(chrono::system_clock::now());
             recorder.open(string(ctime(&now))+"_ocr.avi", cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 
-		    20 , cv::Size(cap.get(cv::CAP_PROP_FRAME_WIDTH), cap.get(cv::CAP_PROP_FRAME_HEIGHT)), true);
+		    20 , recordSize, true);
             if(!recorder.isOpened())
             {
                 cout<<"error in recorder!"<<endl;
@@ -54,6 +55,7 @@ class OcrMain
     bool learning;
     bool recording;
     VideoWriter recorder;
+    cv::Size recordSize;;
 };
 
 #endif

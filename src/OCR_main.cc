@@ -106,7 +106,11 @@ bool OcrMain::Render(float *data)
 {
 	cv::Mat img;
 	cap >> img;
-	if(recording) recorder<<img; 
+	if(recording) {
+		cv::Mat recordImg;
+		cv::resize(img, recordImg, recordSize);
+		recorder<<img;
+	}
 	cv::Mat imgCopy, imgResize;
 	img.copyTo(imgCopy);
 	std::vector<cv::Mat> digits;

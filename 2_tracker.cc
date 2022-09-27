@@ -19,6 +19,7 @@
 // #define TEST
 // #define OCR_SETTINGS
 #define ABT_DISPLAY
+#define KINECT_RECORD
 #define GLASS_DISPLAY
 extern Rect cropRect;
 void PrintUsage()
@@ -66,6 +67,8 @@ int main(int argc, char **argv)
     sendBuff[1] = opt;
     char recvBuff[4];
 
+    double kinectRecordF = 0.3;
+    
     // --OCR
     if (opt & 1)
     {
@@ -213,7 +216,15 @@ int main(int argc, char **argv)
         window3d.SetKeyCallback(ProcessKey);
     }
 #endif
-
+#ifdef KINECT_RECORD
+    time_t now = chrono::system_clock::to_time_t(chrono::system_clock::now());
+    VideoWriter recorder;
+    cv::Size recordSize(sensorCalibration.color_camera_calibration.resolution_width*kinectRecordF, 
+            sensorCalibration.color_camera_calibration.resolution_height*kinectRecordF);
+    recorder.open(string(ctime(&now))+"_kinect.avi", cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 15 , recordSize, true);
+    if(!recorder.isOpened())
+        cout<<"error in recorder!"<<endl;
+#endif
     // main loop
     Mat color;
     vector<int> kinectData = {0, 1, 2, 4, 5, 6, 8, 26, 11, 12, 13, 15, 18, 19, 20, 22, 23, 24, 9, 16, 21, 25, 28, 30}; // first 18 belongs to bone data
@@ -270,7 +281,8 @@ int main(int argc, char **argv)
             }
 
             k4abt_frame_t bodyFrame = nullptr;
-            k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0
+            k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0           
+            map<int, Point2i> idPos;
             if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
             {
             
@@ -289,22 +301,26 @@ int main(int argc, char **argv)
                 // }
                 int numPos = pos;
                 sendBuff[pos++] = 0;
-                
                 for (int i = 0; i < num; i++)
                 {
                     int id0 = k4abt_frame_get_body_id(bodyFrame, i);
                     // sendBuff[pos++] = id0;
                     k4abt_body_t body;
                     k4abt_frame_get_body_skeleton(bodyFrame, i, &body.skeleton);
+                    transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[3].position, idPos[id0]);
                     // imshow("neck", color(cv::Rect(p0, p1)));
-                    if((givenIDs[id0].first<0) || (givenIDs[id0].second<10)) // if ID was not assigned
+                    if((givenIDs[id0].first<0) || (givenIDs[id0].second<6)) // if ID was not assigned
                     {
                         int givenID(-1);
                         for(auto iter:colorIdx)
                         {
                             bool match(true);
+                            k4a_float3_t pInBetween;
+                            pInBetween.v[0] = (body.skeleton.joints[3].position.v[0] + body.skeleton.joints[2].position.v[0])*0.5;
+                            pInBetween.v[1] = (body.skeleton.joints[3].position.v[1] + body.skeleton.joints[2].position.v[1])*0.5;
+                            pInBetween.v[2] = (body.skeleton.joints[3].position.v[2] + body.skeleton.joints[2].position.v[2])*0.5;
                             Point2i pNeck, pNose;
-                            transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[3].position, pNeck);
+                            transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, pInBetween, pNeck);
                             if(pNeck.x<10||pNeck.y<10||pNeck.x>=color.cols-10||pNeck.y>=color.rows-10) {match = false; break;}
                             transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[27].position, pNose);
                             if(pNose.x<10||pNose.y<10||pNose.x>=color.cols-10||pNose.y>=color.rows-10) {match = false; break;}
@@ -360,16 +376,14 @@ int main(int argc, char **argv)
                         givenIDs[id0].first = givenID; givenIDs[id0].second++; 
                     }
 
-                    if(givenIDs[id0].second >= 10) //if assigned
-                    {
-                        sendBuff[pos++] = givenIDs[id0].first;
-                        sendBuff[numPos]++;
-                    }
-                    else continue;
-
-                    Point2i point;
-                    transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[3].position, point);
-                    putText(color, to_string(givenIDs[id0].first), point, FONT_HERSHEY_COMPLEX, 8., cv::Scalar(60000));
+                    // if(givenIDs[id0].second >= 10) //if assigned
+                    // {
+                    //     sendBuff[pos++] = givenIDs[id0].first;
+                    //     sendBuff[numPos]++;
+                    // }
+                    // else continue;
+                    sendBuff[pos++] = givenIDs[id0].first;
+                    sendBuff[numPos]++;
 
                     for (int i = 0; i < 18; i++)
                     {
@@ -401,10 +415,17 @@ int main(int argc, char **argv)
             window3d.SetJointFrameVisualization(s_visualizeJointFrame);
             window3d.Render();
 
-            resize(color, color, Size(color.cols*0.4, color.rows*0.4));
-            putText(color, colorComment, Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f, 0.f, 0.f), 1.2);
-            imshow("color_body", color);
-            waitKey(1);
+            cv::resize(color, color, Size(color.cols*kinectRecordF, color.rows*kinectRecordF));
+            cv::putText(color, colorComment, Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f, 0.f, 0.f), 1.2);
+            for(auto iter:idPos)
+            {
+                string tag = to_string(givenIDs[iter.first].first);
+                if(givenIDs[iter.first].second>6) tag+= "(X)";
+                cv::putText(color, tag, iter.second*kinectRecordF, FONT_HERSHEY_SIMPLEX, 3., cv::Scalar(0, 0, 255),2);
+            }
+            cv::imshow("color_body", color);
+            cv::waitKey(1);
+            recorder<<color;
 #endif
         }
         if (sensorCapture)
