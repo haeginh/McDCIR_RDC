@@ -32,65 +32,40 @@
 #include <Eigen/StdVector>
 #include <Eigen/SparseCore>
 
-static vector<string> BFlist = {"M12.2", "M15.6", "M18.9", "M22.2", "M25.6", "M28.9", "M32", "M32.2", "M35.6", "M38.9", "M42.3"};
-static vector<string> phantomlist = {"AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM", "AM"};
+static vector<string> BFlist = {"M26", "M29", "M31", "M33", "M36", "F26", "F29", "F32", "F35", "F39"};
 
 // class Viewer;
 class PhantomAnimator{
 public:
-    PhantomAnimator(){
-        ReadProfileData("profile.txt");
+    PhantomAnimator()
+    :useApron(true), irrTime(0)
+    {
+        phantomDir = getenv("DCIR_PHANTOM_DIR");
     }
-    ~PhantomAnimator(){}
+    ~PhantomAnimator(){ Clear(); }
 
-    bool LoadPhantom(string phantomName);
-    bool LoadPhantomWithWeightFiles(string phantomName);
-    bool CalibrateTo(string name);
-    void Clear(){V.resize(0, 0);}
+    bool LoadPhantom(string phantomName, bool isMale);
+    bool LoadPhantomWithWeightFiles(string phantomName, bool isMale);
+    bool CalibrateTo(map<int, double> jl, RowVector3d eyeL_pos, RowVector3d eyeR_pos);
+    void Clear(){
+        V.resize(0, 0); 
+        U.resize(0, 0);
+        F.resize(0, 0);
+        C.resize(0, 0);
+        BE.resize(0, 0);
+        F_apron.resize(0, 0);
+        V_apron.resize(0, 0);
+        U_apron.resize(0, 0);
+    }
 
-    void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool calibChk = true);
+    void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool withApron = false);
     // void Animate(RotationList vQ, MatrixXd &V_new);
 
     void GetMeshes(MatrixXd &_V, MatrixXi &_F, MatrixXd &_C, MatrixXi &_BE){
         _V = V; _F = F; _C = C; _BE = BE;
     }
-    // MatrixXd GetV(){ return V; }
-    // MatrixXd GetU(){ return U; }
-    // MatrixXi GetF(){ return F; }
-    // MatrixXd GetC(){ return C; }
-    // MatrixXd GetC_calib(){ return C_calib; }
-    // MatrixXi GetBE(){ return BE; }
-    // ArrayXd GetWSkin(){return W_avgSkin;}
-    // MatrixXd GetUapron(){return U_apron;}
-    // VectorXi GetOutApron(){return outApron;}
-    // ArrayXd GetApronMask(){return apronMask;}
-    // MatrixXi GetFapron(){return F_apron;}
-    // map<int, double> GetWLens(){return lensWeight;}
+
     RotationList GetAlignRot() {return alignRot;}
-   
-    bool ReadProfileData(string fileName);
-    bool WriteProfileData(string fileName);
-    int AddProfile(map<int, double> calibLengths, Vector3d eyeL_pos, Vector3d eyeR_pos, string name){
-        auto iter = profileIDs.insert(make_pair(name, jointLengths.size()));
-        jointLengths.push_back(calibLengths);
-        // eyeL_vec.push_back(eyeL_pos);
-        // eyeR_vec.push_back(eyeR_pos);
-        return distance(profileIDs.begin(), iter.first);
-    }
-    vector<string> GetProfileNames()
-    {
-        vector<string> names;
-        for(auto iter:profileIDs) names.push_back(iter.first);
-        return names;
-    }
-    bool AlreadyExists(string name)
-    {
-        if(profileIDs.find(name)==profileIDs.end()) return false;
-        else return true;
-    }
-    map<string, int> profileIDs;
-    vector<map<int, double>> jointLengths;
-    vector<RowVector3d> eyeL_vec, eyeR_vec;
 
     //debug
     VectorXd GetWeight(int id)
@@ -105,41 +80,67 @@ public:
     }
 
 //variables
-    // MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
-    // MatrixXi BE, T, F, F_apron;   
-    // MatrixXd V_calib, C_calib, V_calib_apron;
     MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
     MatrixXi BE, T, F, F_apron;   
-    // MatrixXd V_calib, C_calib, V_calib_apron;
 private:
     bool Initialize();
 
-    // MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
-    // MatrixXi BE, T, F, F_apron;
     VectorXi P;
-    ArrayXd W_avgSkin;
+    RowVectorXd W_avgSkin;
     RotationList alignRot;
     vector<map<int, double>> cleanWeights, cleanWeightsApron;
     vector<vector<int>> endC;
 
     //tmp
-    VectorXi outApron;
     ArrayXd apronMask;
     map<int, double> lengths;
-
 public:
+    bool useApron;
+    double irrTime;
+    VectorXi outApron;
+    RowVectorXd lHandW, rHandW;
+    string phantomDir;
     //dose
     VectorXd accD, rateD; //Gy, Gy/s
-    void SetDose(VectorXd _doseRate, double mSec){
-        rateD = _doseRate / mSec * 1000; 
+    Vector2d accD_eye, rateD_eye;
+    void SetDose(VectorXd _doseRate, Vector2d _eyeDose, double mSec){
+        if(useApron){
+            VectorXd dose = VectorXd::Zero(V.rows());
+            igl::slice_into(_doseRate, outApron, dose);
+            _doseRate = dose;
+        }
+        rateD = _doseRate;// / mSec * 1000; 
         accD += _doseRate * mSec * 0.001;
+        rateD_eye = _eyeDose;// / mSec * 1000;
+        accD_eye += _eyeDose * mSec * 0.001;
+        irrTime += mSec * 0.001;
+    }
+    void SetZeroDose(){
+        rateD = VectorXd::Zero(V.rows()); 
+        rateD_eye = Vector2d::Zero();
     }
     double GetAvgSkinDoseRate(){
-        if(rateD.rows()>0) return (rateD.array()*W_avgSkin).sum();
+        if(rateD.rows()>0) return W_avgSkin*rateD;
+        else return 0;
+    }
+    double GetRightHandDoseRate(){
+        if(rateD.rows()>0) return rHandW*rateD;
+        else return 0;
+    }
+    double GetRightHandAccDose(){
+        if(rateD.rows()>0) return rHandW*accD;
+        else return 0;
+    }
+    double GetLeftHandDoseRate(){
+        if(rateD.rows()>0) return lHandW*rateD;
+        else return 0;
+    }
+    double GetLeftHandAccDose(){
+        if(rateD.rows()>0) return lHandW*accD;
         else return 0;
     }
     double GetAvgAccSkinDose(){
-        if(accD.rows()>0) return (accD.array()*W_avgSkin).sum();
+        if(accD.rows()>0) return W_avgSkin*accD;
         else return 0;
     }
     double GetMaxSkinDoseRate(){
@@ -153,6 +154,8 @@ public:
     void ClearDose(){
         accD = VectorXd::Zero(V.rows());
         rateD = accD;
+        rateD_eye = Vector2d::Zero();
+        accD_eye = rateD_eye;
     }
 
     // jp==

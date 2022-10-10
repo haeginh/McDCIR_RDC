@@ -8,8 +8,8 @@
 #include <chrono>
 
 #define BE_ROWS 22
-#define SERVER_IP "192.168.0.100"
-// #define SERVER_IP "127.0.0.1"
+// #define SERVER_IP "192.168.0.100"
+#define SERVER_IP "127.0.0.1"
 using namespace std;
 typedef tuple<string, int, Eigen::Affine3d> WORKER;
 struct Body
@@ -121,42 +121,9 @@ public:
 
     void InitializeDataSet();
     void SetInitPack(RotationList vQ, MatrixXi BE);
-    // void Initialization();
-    void BodyCalibration(int sock_id, string newProfile, PhantomAnimator *phantom);
-    void StartMainLoop();
-
-    // void CurrentValue(Affine3d &glass_aff, RotationList &posture, MatrixXd &jointC)
-    // {
-    //     glass_aff = current.glass_aff;
-    //     posture.resize(BE_ROWS);
-    //     for (int i = 0; i < BE_ROWS; i++)
-    //         posture[i] = current.posture[i];
-    //     jointC = current.jointC;
-    // }
-    // bool PostureAvailable() { return current.bodyIn; }
-
-    // vector<int> GetCamSock()
-    // {
-    //     vector<int> sockets;
-    //     for (auto iter : sock_opts)
-    //         if (iter.second > 0)
-    //             sockets.push_back(iter.first);
-    //     return sockets;
-    // }
-
-    vector<string> GetLabels() { return labels; }
-    vector<float> GetValues() { return values; }
-    bool AlreadyStarted() { return mainLoop.joinable(); }
-    void Record()
-    {
-        record = !record;
-        if (!ofs.is_open())
-            ofs.open("record.txt");
-    }
-    bool IsRecording() { return record; }
-
+    double dist2Limit;
 private:
-    Communicator():nextWorkerID(0)
+    Communicator():dist2Limit(40000),nextWorkerID(0)
     {}
     
     DataSet current;
@@ -172,13 +139,7 @@ private:
     thread mainLoop;
     bool stopSignal;
 
-    // ocr
-    vector<string> labels;
-    vector<float> values;
 
-    // record
-    bool record;
-    ofstream ofs;
 };
 
 #endif

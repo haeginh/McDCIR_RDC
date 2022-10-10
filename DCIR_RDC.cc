@@ -5,6 +5,7 @@
 #include "PhantomAnimator.hh"
 // #include "Viewer.hh"
 #include "RDCWindow.hh"
+#include "implot-master/implot.h"
 #include "MapContainer.hh"
 #include "Config.hh"
 #define PI 3.14159265358979323846
@@ -23,7 +24,6 @@ typedef Triplet<double> T;
 
 int main(int argc, char **argv)
 {
-
     Config config;
     if(!config.loadConfig("config.txt"))
     {

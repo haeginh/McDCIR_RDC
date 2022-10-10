@@ -16,21 +16,23 @@
 //     return PhantomAnimator;
 // }
 
-bool PhantomAnimator::LoadPhantom(string _phantom)
+bool PhantomAnimator::LoadPhantom(string _phantom, bool isMale)
 {  
     //try to load phantom with weight files
     //if it fails, generate weight files
-    if(LoadPhantomWithWeightFiles(_phantom)) return true;
+    if(LoadPhantomWithWeightFiles(_phantom, isMale)) return true;
     
     // read phantom files
-    cout << "Read " + _phantom + ".tgf" << endl;
-    if (!igl::readTGF(_phantom + ".tgf", C, BE))
+    string tfgN("AF.tgf");
+    if(isMale) tfgN = "AM.tgf";
+    cout << "Read " + tfgN << endl;
+    if (!igl::readTGF(phantomDir+tfgN, C, BE))
     {
-        cout << "There is no " + _phantom + ".tgf";
+        cout << "There is no " + tfgN;
         return false;
     }
     cout << "Read " + _phantom + ".ply" << endl;
-    if (!igl::readPLY(_phantom + ".ply", V, F))
+    if (!igl::readPLY(phantomDir+_phantom + ".ply", V, F))
     {
         cout << "There is no " + _phantom + ".ply";
         return false;
@@ -41,7 +43,7 @@ bool PhantomAnimator::LoadPhantom(string _phantom)
     cout<<"calculate skin dose average matrix"<<endl;
     VectorXd F_area;
     igl::doublearea(V, F, F_area);
-    W_avgSkin = ArrayXd::Zero(V.rows());
+    W_avgSkin = RowVectorXd::Zero(V.rows());
     for (int i = 0; i < F.rows(); i++)
     {
         for (int j = 0; j < 3; j++)
@@ -103,7 +105,7 @@ bool PhantomAnimator::LoadPhantom(string _phantom)
     double epsilon = 0.01;
     Wj = Wj.array() * (Wj.array()>epsilon).cast<double>() ;
     igl::normalize_row_sums(Wj, Wj);
-    igl::writeDMAT(_phantom+".Wj", Wj, false);
+    igl::writeDMAT(phantomDir+_phantom+".Wj", Wj, false);
     
     cout << "calculate bone BBW" << endl;
     MatrixXd bc1;
@@ -119,7 +121,11 @@ bool PhantomAnimator::LoadPhantom(string _phantom)
     WT = WT.topRows(V.rows());
     WT = WT.array() * (WT.array()>epsilon).cast<double>() ;
     igl::normalize_row_sums(WT, WT);
-    igl::writeDMAT(_phantom+".W", WT, false);
+    igl::writeDMAT(phantomDir+_phantom+".W", WT, false);
+    lHandW = W_avgSkin.transpose().array() * (WT.col(6).array()>0.5).cast<double>();
+    lHandW = lHandW / lHandW.sum();
+    rHandW = W_avgSkin.transpose().array() * (WT.col(11).array()>0.5).cast<double>();
+    rHandW = rHandW / rHandW.sum();
 
     //apron tetrahedralization
     cout << "tetrahedralize apron" << endl;
@@ -145,7 +151,7 @@ bool PhantomAnimator::LoadPhantom(string _phantom)
     igl::slice_into(W.topRows(V_apron.rows()), effCol, 2, W_apron);
     W_apron = W_apron.array() * (W_apron.array()>epsilon).cast<double>() ;
     igl::normalize_row_sums(W_apron, W_apron);
-    igl::writeDMAT(_phantom+".W_apron", W_apron, false);
+    igl::writeDMAT(phantomDir+_phantom+".W_apron", W_apron, false);
 
     //apron bone weight
     cout << "calculate joint BBW" << endl;
@@ -160,7 +166,7 @@ bool PhantomAnimator::LoadPhantom(string _phantom)
     igl::slice_into(W.topRows(V_apron.rows()), effCol, 2, Wj_apron);
     Wj_apron = Wj_apron.array() * (Wj_apron.array()>epsilon).cast<double>() ;
     igl::normalize_row_sums(Wj_apron, Wj_apron);
-    igl::writeDMAT(_phantom+".Wj_apron", Wj_apron, false);
+    igl::writeDMAT(phantomDir+_phantom+".Wj_apron", Wj_apron, false);
 
     cleanWeights.clear();
     for (int i = 0; i < V.rows(); i++)
@@ -200,17 +206,19 @@ bool PhantomAnimator::LoadPhantom(string _phantom)
     return true;
 }
 
-bool PhantomAnimator::LoadPhantomWithWeightFiles(string _phantom)
+bool PhantomAnimator::LoadPhantomWithWeightFiles(string _phantom, bool isMale)
 {
     // read phantom files
-    cout << "Read " + _phantom + ".tgf" << endl;
-    if (!igl::readTGF(_phantom + ".tgf", C, BE))
+    string tfgN("AF.tgf");
+    if(isMale) tfgN = "AM.tgf";
+    cout << "Read " + tfgN << endl;
+    if (!igl::readTGF(phantomDir+tfgN, C, BE))
     {
-        cout << "There is no " + _phantom + ".tgf";
+        cout << "There is no " + tfgN;
         return false;
     }
     cout << "Read " + _phantom + ".ply" << endl;
-    if (!igl::readPLY(_phantom + ".ply", V, F))
+    if (!igl::readPLY(phantomDir+_phantom + ".ply", V, F))
     {
         cout << "There is no " + _phantom + ".ply";
         return false;
@@ -221,7 +229,7 @@ bool PhantomAnimator::LoadPhantomWithWeightFiles(string _phantom)
     cout<<"calculate skin dose average matrix"<<endl;
     VectorXd F_area;
     igl::doublearea(V, F, F_area);
-    W_avgSkin = ArrayXd::Zero(V.rows());
+    W_avgSkin = RowVectorXd::Zero(V.rows());
     for (int i = 0; i < F.rows(); i++)
     {
         for (int j = 0; j < 3; j++)
@@ -231,7 +239,7 @@ bool PhantomAnimator::LoadPhantomWithWeightFiles(string _phantom)
 
     // read apron files
     cout << "Read " + _phantom + "_apron.ply" << endl;
-    igl::readPLY(_phantom + "_apron.ply", V_apron, F_apron);
+    igl::readPLY(phantomDir+_phantom + "_apron.ply", V_apron, F_apron);
     U_apron = V_apron;
 
     // configure vertices inside the apron polygon
@@ -250,21 +258,25 @@ bool PhantomAnimator::LoadPhantomWithWeightFiles(string _phantom)
     igl::slice_into(ones, outApron, apronMask); // 0: inside apron, 1: outside apron
 
     cout<<"read "+_phantom+".Wj"<<endl;
-    if(!igl::readDMAT(_phantom+".Wj", Wj))
+    if(!igl::readDMAT(phantomDir+_phantom+".Wj", Wj))
     {cout<<"There is no "+_phantom+".Wj"<<endl; return false;}
     
     cout<<"read "+_phantom+".W"<<endl;
     MatrixXd WT;
-    if(!igl::readDMAT(_phantom+".W", WT))
+    if(!igl::readDMAT(phantomDir+_phantom+".W", WT))
     {cout<<"There is no "+_phantom+".W"<<endl; return false;}
+    lHandW = W_avgSkin.transpose().array() * (WT.col(6).array()>0.5).cast<double>();
+    lHandW = lHandW / lHandW.sum();
+    rHandW = W_avgSkin.transpose().array() * (WT.col(11).array()>0.5).cast<double>();
+    rHandW = rHandW / rHandW.sum();
 
     cout<<"read "+_phantom+".W_apron"<<endl;
     MatrixXd W_apron;
-    if(!igl::readDMAT(_phantom+".W_apron", W_apron))
+    if(!igl::readDMAT(phantomDir+_phantom+".W_apron", W_apron))
     {cout<<"There is no "+_phantom+".W_apron"; return false;}
 
     cout<<"read "+_phantom+".Wj_apron"<<endl;
-    if(!igl::readDMAT(_phantom+".Wj_apron", Wj_apron))
+    if(!igl::readDMAT(phantomDir+_phantom+".Wj_apron", Wj_apron))
     {cout<<"There is no "+_phantom+".Wj_apron"; return false;}
 
     double epsilon(0.01);
@@ -308,6 +320,8 @@ bool PhantomAnimator::LoadPhantomWithWeightFiles(string _phantom)
 }
 bool PhantomAnimator::Initialize()
 {
+    ClearDose();
+
     endC.clear();
     endC.resize(18);
     for(int i=0;i<BE.rows();i++)
@@ -358,16 +372,6 @@ bool PhantomAnimator::Initialize()
         desiredOrt[id] = Vector3d(0, 1, 0);
     desiredOrt[4] = Vector3d(1, 0, 0);
     desiredOrt[11] = Vector3d(-1, 0, 0);
-    // for (int i = 0; i < BE.rows(); i++)
-    // {
-    //     if (desiredOrt.find(i2k[BE(i, 0)]) == desiredOrt.end())
-    //         alignRot.push_back(kinectDataRot[i2k[BE(i, 0)]]);
-    //     else
-    //     {
-    //         Vector3d v = (C.row(k2i[i2k[BE(i, 0)] + 1]) - C.row(BE(i, 0))).transpose();
-    //         alignRot.push_back(kinectDataRot[i2k[BE(i, 0)]] * GetRotMatrix(v, desiredOrt[i2k[BE(i, 0)]]));
-    //     }
-    // }
 
     alignRot.resize(18);
     for(int i=0;i<alignRot.size();i++)
@@ -402,20 +406,15 @@ bool PhantomAnimator::Initialize()
     // W_avgSkin = W_avgSkin.array() / W_avgSkin.sum();
     // W_Lens = W_Lens.array() / W_Lens.sum();
 
-    cout << "done" << endl;
     // V_calib = V;
     // C_calib = C;
     // V_calib_apron = V_apron;
     return true;
 }
 
-bool PhantomAnimator::CalibrateTo(string name)
+bool PhantomAnimator::CalibrateTo(map<int, double> jl, RowVector3d eyeL_pos, RowVector3d eyeR_pos)
 {
-    if(profileIDs.find(name)==profileIDs.end()) return false;
-    int id = profileIDs[name];
-    map<int, double> calibLengths = jointLengths[id];
-    RowVector3d eyeL_pos = eyeL_vec[id];
-    RowVector3d eyeR_pos = eyeR_vec[id];
+    map<int, double> calibLengths = jl;
 
     MatrixXd jointTrans = MatrixXd::Zero(C.rows(), 3);
     int headJ(24), eyeLJ(22), eyeRJ(23);
@@ -441,55 +440,39 @@ bool PhantomAnimator::CalibrateTo(string name)
     jointTrans(headJ, 1) = (jointTrans(eyeLJ, 1) + jointTrans(eyeRJ, 1)) * 0.5;
     C = C + jointTrans;
 
-    cout << Wj.rows() << "*" << Wj.cols() << endl;
-    cout << jointTrans.rows() << "*" << jointTrans.cols() << endl;
+    // cout << Wj.rows() << "*" << Wj.cols() << endl;
+    // cout << jointTrans.rows() << "*" << jointTrans.cols() << endl;
     V = V + Wj * jointTrans.block(0, 0, C.rows() - 1, 3);
 
-    cout << V_apron.rows() << " " << V_apron.cols() << endl;
-    cout << Wj_apron.rows() << " " << Wj_apron.cols() << endl;
-    cout << C.rows() - 1 << endl;
+    // cout << V_apron.rows() << " " << V_apron.cols() << endl;
+    // cout << Wj_apron.rows() << " " << Wj_apron.cols() << endl;
+    // cout << C.rows() - 1 << endl;
 
     V_apron = V_apron + Wj_apron * jointTrans.block(0, 0, C.rows() - 1, 3);
     // MatrixXd jt = jointTrans.block(0,0,C.rows()-1,3);
     return true;
 }
 
-void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool calibChk)
+void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool withApron)
 {
     vector<Vector3d> vT;
 
-    // if (calibChk)
-    // {
-    //     C_new = C_calib;
-    //     C_new.row(0) = C_disp.row(0); // set root
-    //     for (int i = 0; i < BE.rows(); i++)
-    //     {
-    //         Affine3d a;
-    //         a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[BE(i, 0)].matrix() * Translation3d(Vector3d(-C_calib.row(BE(i, 0)).transpose()));
-    //         vT.push_back(a.translation());
-    //         C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
-    //     }
-    //     myDqs(V_calib, cleanWeights, vQ, vT, U);
-    //     myDqs(V_calib_apron, cleanWeightsApron, vQ, vT, U_apron);
-    // }
-    // else
-    // {
-        C_new = C;
-        C_new.row(0) = C_disp.row(0); // set root
-        for (int i = 0; i < 18;i++)//BE.rows(); i++)
-        {
-            // Affine3d a;
-            // a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[BE(i, 0)].matrix() * alignRot[i] * Translation3d(Vector3d(-C.row(BE(i, 0)).transpose()));
-            // vT.push_back(a.translation());
-            // C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
-            vQ[i] = vQ[i] * alignRot[i];
-            Affine3d a;
-            a = Translation3d(Vector3d(C_new.row(i).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C.row(i).transpose()));
-            vT.push_back(a.translation());
-            for(int e:endC[i]) C_new.row(e) = a * Vector3d(C_new.row(e));
-        }
-        myDqs(V, cleanWeights, vQ, vT, U);
-        myDqs(V_apron, cleanWeightsApron, vQ, vT, U_apron);
+    C_new = C;
+    C_new.row(0) = C_disp.row(0); // set root
+    for (int i = 0; i < 18;i++)//BE.rows(); i++)
+    {
+        // Affine3d a;
+        // a = Translation3d(Vector3d(C_new.row(BE(i, 0)).transpose())) * vQ[BE(i, 0)].matrix() * alignRot[i] * Translation3d(Vector3d(-C.row(BE(i, 0)).transpose()));
+        // vT.push_back(a.translation());
+        // C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
+        vQ[i] = vQ[i] * alignRot[i];
+        Affine3d a;
+        a = Translation3d(Vector3d(C_new.row(i).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C.row(i).transpose()));
+        vT.push_back(a.translation());
+        for(int e:endC[i]) C_new.row(e) = a * Vector3d(C_new.row(e));
+    }
+    myDqs(V, cleanWeights, vQ, vT, U);
+    if(withApron) myDqs(V_apron, cleanWeightsApron, vQ, vT, U_apron);
     // }
 }
 
@@ -509,105 +492,105 @@ void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd 
 //     myDqs(V_calib, cleanWeights, vQ, vT, V_new);
 // }
 
-bool PhantomAnimator::ReadProfileData(string fileName)
-{
-    ifstream ifs(fileName);
-    if (!ifs.is_open())
-    {
-        cout << "There is no " + fileName << endl;
-        return false;
-    }
-    profileIDs.clear();
-    jointLengths.clear();
-    eyeR_vec.clear();
-    eyeL_vec.clear();
+// bool PhantomAnimator::ReadProfileData(string fileName)
+// {
+//     ifstream ifs(fileName);
+//     if (!ifs.is_open())
+//     {
+//         cout << "There is no " + fileName << endl;
+//         return false;
+//     }
+//     profileIDs.clear();
+//     jointLengths.clear();
+//     eyeR_vec.clear();
+//     eyeL_vec.clear();
 
-    int num;
-    ifs >> num;
-    string firstLine;
-    getline(ifs, firstLine);
-    jointLengths.resize(num);
-    eyeR_vec.resize(num);
-    eyeL_vec.resize(num);
+//     int num;
+//     ifs >> num;
+//     string firstLine;
+//     getline(ifs, firstLine);
+//     jointLengths.resize(num);
+//     eyeR_vec.resize(num);
+//     eyeL_vec.resize(num);
 
-    getline(ifs, firstLine);
-    stringstream ss(firstLine);
-    vector<int> boneIDs;
-    for (int i = 0; i < 17; i++)
-    {
-        int boneID;
-        ss >> boneID;
-        boneIDs.push_back(boneID);
-    }
+//     getline(ifs, firstLine);
+//     stringstream ss(firstLine);
+//     vector<int> boneIDs;
+//     for (int i = 0; i < 17; i++)
+//     {
+//         int boneID;
+//         ss >> boneID;
+//         boneIDs.push_back(boneID);
+//     }
 
-    for (int i = 0; i < num; i++)
-    {
-        string aLine;
-        getline(ifs, aLine);
-        stringstream ss1(aLine);
-        string name;
-        double d;
-        ss1 >> name;
-        profileIDs[name] = i;
-        for (int j = 0; j < 17; j++)
-        {
-            double d;
-            ss1 >> d;
-            jointLengths[i][boneIDs[j]] = d;
-        }
-        for (int j = 0; j < 3; j++)
-        {
-            ss1 >> d;
-            eyeL_vec[i](j) = d;
-        }
-        for (int j = 0; j < 3; j++)
-        {
-            ss1 >> d;
-            eyeR_vec[i](j) = d;
-        }
-    }
+//     for (int i = 0; i < num; i++)
+//     {
+//         string aLine;
+//         getline(ifs, aLine);
+//         stringstream ss1(aLine);
+//         string name;
+//         double d;
+//         ss1 >> name;
+//         profileIDs[name] = i;
+//         for (int j = 0; j < 17; j++)
+//         {
+//             double d;
+//             ss1 >> d;
+//             jointLengths[i][boneIDs[j]] = d;
+//         }
+//         for (int j = 0; j < 3; j++)
+//         {
+//             ss1 >> d;
+//             eyeL_vec[i](j) = d;
+//         }
+//         for (int j = 0; j < 3; j++)
+//         {
+//             ss1 >> d;
+//             eyeR_vec[i](j) = d;
+//         }
+//     }
 
-    ifs.close();
-    return true;
-}
+//     ifs.close();
+//     return true;
+// }
 
-bool PhantomAnimator::WriteProfileData(string filename)
-{
-    if (!jointLengths.size())
-        return false;
-    ofstream ofs(filename);
-    int num = jointLengths.size();
-    ofs << num << endl
-        << "\t";
+// bool PhantomAnimator::WriteProfileData(string filename)
+// {
+//     if (!jointLengths.size())
+//         return false;
+//     ofstream ofs(filename);
+//     int num = jointLengths.size();
+//     ofs << num << endl
+//         << "\t";
 
-    vector<int> boneIDs;
-    for (auto iter : jointLengths[0])
-        boneIDs.push_back(iter.first);
+//     vector<int> boneIDs;
+//     for (auto iter : jointLengths[0])
+//         boneIDs.push_back(iter.first);
 
-    for (int i : boneIDs)
-    {
-        ofs << i << "\t";
-    }
-    ofs << "eyeL_x\teyeL_y\teyeL_z\teyeR_x\teyeR_y\teyeR_z" << endl;
+//     for (int i : boneIDs)
+//     {
+//         ofs << i << "\t";
+//     }
+//     ofs << "eyeL_x\teyeL_y\teyeL_z\teyeR_x\teyeR_y\teyeR_z" << endl;
 
-    vector<string> names;
-    names.resize(num);
-    for (auto iter : profileIDs)
-        names[iter.second] = iter.first;
+//     vector<string> names;
+//     names.resize(num);
+//     for (auto iter : profileIDs)
+//         names[iter.second] = iter.first;
 
-    for (int i = 0; i < num; i++)
-    {
-        ofs << names[i] << "\t";
-        for (int j = 0; j < 17; j++)
-            ofs << jointLengths[i][boneIDs[j]] << "\t";
-        for (int j = 0; j < 3; j++)
-            // ofs << eyeL_vec[i](j) << "\t";
-        for (int j = 0; j < 3; j++)
-            // ofs << eyeR_vec[i](j) << "\t";
-        ofs << endl;
-    }
+//     for (int i = 0; i < num; i++)
+//     {
+//         ofs << names[i] << "\t";
+//         for (int j = 0; j < 17; j++)
+//             ofs << jointLengths[i][boneIDs[j]] << "\t";
+//         for (int j = 0; j < 3; j++)
+//             // ofs << eyeL_vec[i](j) << "\t";
+//         for (int j = 0; j < 3; j++)
+//             // ofs << eyeR_vec[i](j) << "\t";
+//         ofs << endl;
+//     }
 
-    ofs.close();
+//     ofs.close();
 
-    return true;
-}
+//     return true;
+// }

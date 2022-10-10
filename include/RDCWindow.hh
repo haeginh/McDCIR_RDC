@@ -29,7 +29,6 @@ public:
     void Launch()
     {
         viewer.launch(true, false, "DCIR System (RDC module)");
-        viewer.selected_data_index = phantom_data[bodyID];
     }
     bool PreDrawFunc(igl::opengl::glfw::Viewer &_viewer);
     void SetBodyID(int id) { bodyID = id; }
@@ -41,16 +40,15 @@ public:
             .matrix();
     }
 
-    PhantomAnimator *GetPhantom(int i)
+    void DeletePhantom(int i)
     {
-        if (i < indivPhantoms.size())
-            return indivPhantoms[i];
-        else
-            return nullptr;
+        delete(indivPhantoms[i]);
+        indivPhantoms.erase(i);
+        phantomDataID.erase(i);
     }
     // bool beamOn;
-    DataSet currentFrame;
-    bool useManualBeam;
+    DataSet currentFrame, prevFrame;
+    DataSet manualFrame;
     bool recording;
     int loadNum;
     vector<vector<float>> recordData;
@@ -58,24 +56,26 @@ public:
     igl::opengl::glfw::Viewer viewer;
 
     // data id
-    unsigned int apron_data, patient_data, table_data,
-        cArm_data, beam_data, glass_data, phantomAcc_data, grid_data, axis_data, sphere_data;
-    vector<unsigned int> phantom_data;
-    int mainID() { return phantom_data[bodyID]; }
+    unsigned int patient_data, table_data,
+        cArm_data, beam_data, glass_data, phantomAcc_data, grid_data, axis_data, sphere_data, extra_data;
+ 
+    // vector<unsigned int> phantom_data;
+    // int mainID() { return phantom_data[bodyID]; }
 
     MatrixXd V_cArm, V_beam, V_glass, V_patient, V_table, V_sphere;
+    int det_v, det_f;
 
     bool show_C, show_BE;
     bool show_leadGlass, show_beam;
 
-    bool SetMap(int kVp, int rot, int ang)
-    {
-        return mapContainer->SetCArm(kVp, rot, ang);
-    }
-    void SetDoseRate(const MatrixXf &U, VectorXd &D, double dap)
-    {
-        mapContainer->SetDoseRate(U, D, dap);
-    }
+    // bool SetMap(int kVp, int rot, int ang, RowVector3f tableTrans, int sid, int fd)
+    // {
+    //     return mapContainer->SetCArm(kVp, rot, ang, tableTrans, sid, fd);
+    // }
+    // void SetDoseRate(const MatrixXf &U, VectorXd &D, double dap)
+    // {
+    //     mapContainer->SetDoseRate(U, D, dap);
+    // }
     // void SetDAP(double dap) { mapContainer->SetDAP(dap); }
     // VectorList accD;
 
@@ -98,23 +98,62 @@ public:
         // A_patient1 = A_patient1/A_patient1.sum(); 
     }
 
-    MatrixXf InitTree(igl::embree::EmbreeIntersector &ei,  map<int, Body> bodyMap)
+    MatrixXf InitTree(igl::embree::EmbreeIntersector &ei, const MatrixXd &extraV, const MatrixXi &extraF)
     {
         MatrixXi totalF;// = viewer.data(patient_data).F;
-        MatrixXf totalV;// = viewer.data(patient_data).V.cast<float>();
-        
-        for(auto id:bodyMap)
+        MatrixXf totalV, totalV1;// = viewer.data(patient_data).V.cast<float>();
+        VectorXi doseCalV;
+        for(auto id:currentFrame.bodyMap)
         {
-            if(id.first<0) continue;
-            int numF = indivPhantoms[id.first]->F.rows();
-            int numV = indivPhantoms[id.first]->V.rows();
-            totalF.conservativeResize(totalF.rows()+numF, 3);
-            totalF.bottomRows(numF) = indivPhantoms[id.first]->F.array() + totalV.rows();
-            totalV.conservativeResize(totalV.rows()+numV, 3);
-            totalV.bottomRows(numV) = indivPhantoms[id.first]->U.cast<float>();
+            PhantomAnimator* phantom;
+            bool doseChk(true);
+            if(indivPhantoms.find(id.first)!=indivPhantoms.end())
+                phantom = indivPhantoms[id.first];
+            else //extras
+            {
+                phantom = extraPhantom;
+                doseChk = false;
+            }
+            MatrixXd C;
+            int numF = phantom->F.rows();
+            int numV = phantom->V.rows();
+            if(doseChk)
+            {
+                if(phantom->useApron)
+                {
+                    doseCalV.conservativeResize(doseCalV.rows() + phantom->outApron.rows());
+                    doseCalV.bottomRows(phantom->outApron.rows()) = phantom->outApron.array() + totalV1.rows();
+                }
+                else
+                {
+                    doseCalV.conservativeResize(doseCalV.rows() + numV);
+                    doseCalV.bottomRows(numV) = VectorXi::LinSpaced(numV, 0, numV-1).array() + totalV1.rows();
+                }
+                totalF.conservativeResize(totalF.rows()+numF, 3);
+                totalF.bottomRows(numF) = phantom->F.array() + totalV1.rows();
+                totalV1.conservativeResize(totalV1.rows()+numV, 3);
+                totalV1.bottomRows(numV) = phantom->U.cast<float>();
+            }
+        }
+        totalF.conservativeResize(totalF.rows() + extraF.rows(), 3);
+        totalF.bottomRows(extraF.rows()) = extraF.array() + totalV.rows();
+        totalV.conservativeResize(totalV1.rows()+extraV.rows(), 3);
+        totalV<<totalV1, extraV.cast<float>();
+
+        totalF.conservativeResize(totalF.rows() + det_f, 3);
+        totalF.bottomRows(det_f) = viewer.data(cArm_data).F.bottomRows(det_f).array() + totalV.rows();
+        totalV.conservativeResize(totalV.rows()+ det_v, 3);
+        totalV.bottomRows(det_v) = viewer.data(cArm_data).V.bottomRows(det_v).cast<float>();
+
+        if(currentFrame.glassChk)
+        {
+            totalF.conservativeResize(totalF.rows() + viewer.data(glass_data).F.rows(), 3);
+            totalF.bottomRows(viewer.data(glass_data).F.rows()) = viewer.data(glass_data).F.array() + totalV.rows();
+            totalV.conservativeResize(totalV.rows()+ V_glass.rows(), 3);
+            totalV.bottomRows(V_glass.rows()) = viewer.data(glass_data).V.cast<float>();
         }
         ei.init(totalV, totalF);
-        return totalV;
+        return igl::slice(totalV1,doseCalV,1);
     }
 
     //naive + dot production exception
@@ -204,23 +243,63 @@ public:
     // int PDCprocess;
     // clock_t lastFrameT_PDC;
     int bodyID;
-    double manualDAP;
     bool stop;
     float bodyDelayTol;
-    PhantomAnimator * GetMainPhantomHandle(){return indivPhantoms[bodyID];}
-private:
-    RDCWindow() : maxNumPeople(5), bodyID(0), stop(false), recording(false), loadNum(-1), show_beam(true), show_leadGlass(true), bodyDelayTol(1)
+    PhantomAnimator * GetMainPhantomHandle(){
+        return GetPhantom(bodyID);
+    }
+    PhantomAnimator *GetPhantom(int i)
     {
+        if(indivPhantoms.find(i)==indivPhantoms.end()) return nullptr;
+        return indivPhantoms[i];
+    }
+    PhantomAnimator *AddNewPhantom(int i)
+    {
+        if(indivPhantoms.find(i)!=indivPhantoms.end())
+        {
+            cout<<"PHANTOM #"<<i<<" already exists!"<<endl;
+        }
+        else indivPhantoms[i] = new PhantomAnimator;
+        return indivPhantoms[i];
+    }
+    map<int, pair<int, int>> phantomDataID;
+    vector<string> profileNames;
+    vector<map<int, double>> jointLengths;
+    vector<RowVector3d> eyeL_vec, eyeR_vec;
+    bool extraChk, animBeamOnOnly;
+private:
+    RDCWindow() : maxNumPeople(5), bodyID(0), stop(false), recording(false), loadNum(-1), show_beam(true), 
+    show_leadGlass(true), bodyDelayTol(10)
+    {
+        ReadProfileData("profile.txt");
         if(getenv("DCIR_MAX_NUM_OF_PEOPLE")) 
             maxNumPeople = atoi(getenv("DCIR_MAX_NUM_OF_PEOPLE"));
         dataSize = 19+maxNumPeople*145;
-        for (int i = 0; i < maxNumPeople; i++)
-        {
-            auto phantom = new PhantomAnimator;
-            indivPhantoms.push_back(phantom);
-        }
-        mapContainer = new MapContainer;
-        SetMap(80, 0, 0); //default map
+        // for (int i = 0; i < maxNumPeople; i++)
+        // {
+        //     auto phantom = new PhantomAnimator;
+        //     indivPhantoms.push_back(phantom);
+        // }
+        extraPhantom = new PhantomAnimator;
+        extraPhantom->LoadPhantom("M26", true);
+        mapContainer = new MapContainer(81);
+        manualFrame.kVp = 80;
+        manualFrame.dap = 0.001;
+        manualFrame.bed = RowVector3f(0, 0, 0);
+        manualFrame.cArm = RowVector3f(0, 0, 120);
+        manualFrame.FD = 48;
+        manualFrame.beamOn = false;
+        extraChk = true;
+        MatrixXd base(4, 2);
+        base<<-1, 1, -1, -1, 1, -1, 1, 1;
+        fdSize[16] = base * 5.5;
+        fdSize[19] = base * 6.75;
+        fdSize[22] = base * 9;
+        fdSize[27] = base * 9.5;
+        fdSize[31] = base * 11;
+        fdSize[37] = base * 13;
+        fdSize[42] = base * 15;
+        fdSize[48] = base.array().rowwise() * Array2d(19, 15).transpose();
     }
     void SetMeshes(string dir);
     igl::opengl::glfw::imgui::ImGuiMenu mainMenu;
@@ -228,13 +307,17 @@ private:
 
     // view id
 
-    vector<PhantomAnimator *> indivPhantoms;
+    // vector<PhantomAnimator *> indivPhantoms;
+    map<int, PhantomAnimator*> indivPhantoms;
+    PhantomAnimator* extraPhantom;
     MapContainer *mapContainer;
 
     //something else
     vector<float> SetAframeData(DataSet data, float frameTimeInMSEC);
     DataSet ReadAframeData(vector<float> frameData);
 
+    bool ReadProfileData(string fileName);
+    map<int, MatrixXd> fdSize;
 };
 
 #endif

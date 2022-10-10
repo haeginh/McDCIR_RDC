@@ -132,11 +132,9 @@ bool Communicator::StartServer(int port)
                                     bodyStruct.jointC(i, 0) = readBuff[pos++];
                                     bodyStruct.jointC(i, 1) = readBuff[pos++];
                                     bodyStruct.jointC(i, 2) = readBuff[pos++];
-                                    // jointC(i, 0) = readBuff[pos++];
-                                    // jointC(i, 1) = readBuff[pos++];
-                                    // jointC(i, 2) = readBuff[pos++];
                                 }
                                 bodyStruct.jointC = (bodyStruct.jointC.rowwise().homogeneous()*get<2>(workerData[readBuff[0]]).matrix().transpose()).rowwise().hnormalized();
+                                if(bodyStruct.jointC.row(0).leftCols(2).squaredNorm()>dist2Limit) continue;
                                 bodyStruct.time = current.time;
                                 bodyMap[bodyID] = bodyStruct;
                             }
@@ -342,45 +340,45 @@ void Communicator::SetInitPack(RotationList vQ, MatrixXi BE)
 
 // }
 
-void Communicator::BodyCalibration(int sock_id, string newProfile, PhantomAnimator *phantom)
-{
-    int signal(-1); // signal for calib.
-    // client_sockets[sock_id]->SendIntBuffer(&signal, 1);
-    cout << "Start calibration in socket #" << sock_id << endl;
+// void Communicator::BodyCalibration(int sock_id, string newProfile, PhantomAnimator *phantom)
+// {
+//     int signal(-1); // signal for calib.
+//     // client_sockets[sock_id]->SendIntBuffer(&signal, 1);
+//     cout << "Start calibration in socket #" << sock_id << endl;
 
-    array<double, 155> pack;
-    // client_sockets[sock_id]->RecvDoubleBuffer(pack.data(), 155);
-    cout << "Get calibration data.." << flush;
-    map<int, double> calibLengths;
-    Vector3d eyeL_pos(0, 0, 0), eyeR_pos(0, 0, 0);
-    int i = 0;
-    for (; i < 155; i += 2)
-    {
-        if (initPack[i] < 0)
-            break;
-        calibLengths[initPack[i]] = initPack[i + 1];
-    }
-    eyeL_pos = Vector3d(initPack[i + 1], initPack[i + 2], initPack[i + 3]);
-    eyeR_pos = Vector3d(initPack[i + 4], initPack[i + 5], initPack[i + 6]);
-    int calibFrame = initPack[i + 7];
-    cout << "done" << endl;
+//     array<double, 155> pack;
+//     // client_sockets[sock_id]->RecvDoubleBuffer(pack.data(), 155);
+//     cout << "Get calibration data.." << flush;
+//     map<int, double> calibLengths;
+//     Vector3d eyeL_pos(0, 0, 0), eyeR_pos(0, 0, 0);
+//     int i = 0;
+//     for (; i < 155; i += 2)
+//     {
+//         if (initPack[i] < 0)
+//             break;
+//         calibLengths[initPack[i]] = initPack[i + 1];
+//     }
+//     eyeL_pos = Vector3d(initPack[i + 1], initPack[i + 2], initPack[i + 3]);
+//     eyeR_pos = Vector3d(initPack[i + 4], initPack[i + 5], initPack[i + 6]);
+//     int calibFrame = initPack[i + 7];
+//     cout << "done" << endl;
 
-    for (i = 0; i < BE_ROWS; i++)
-    {
-        if (calibLengths.find(i) == calibLengths.end())
-            continue;
-        calibLengths[i] /= (double)calibFrame * 10;
-    }
-    eyeR_pos /= (double)calibFrame * 10;
-    eyeL_pos /= (double)calibFrame * 10;
+//     for (i = 0; i < BE_ROWS; i++)
+//     {
+//         if (calibLengths.find(i) == calibLengths.end())
+//             continue;
+//         calibLengths[i] /= (double)calibFrame * 10;
+//     }
+//     eyeR_pos /= (double)calibFrame * 10;
+//     eyeL_pos /= (double)calibFrame * 10;
 
-    phantom->AddProfile(calibLengths, eyeL_pos, eyeR_pos, newProfile);
-    phantom->WriteProfileData("profile.txt");
-    // (*client_sockets[sock_id]) << "Profile data for " + string(newProfile) + " was successfully transmitted!";
-}
+//     phantom->AddProfile(calibLengths, eyeL_pos, eyeR_pos, newProfile);
+//     phantom->WriteProfileData("profile.txt");
+//     // (*client_sockets[sock_id]) << "Profile data for " + string(newProfile) + " was successfully transmitted!";
+// }
 
-void Communicator::StartMainLoop()
-{
+// void Communicator::StartMainLoop()
+// {
     // for (auto client : client_sockets)
     // {
     //     string msg;
@@ -471,5 +469,5 @@ void Communicator::StartMainLoop()
     //             }
     //         }
     //     } });
-    return;
-}
+//     return;
+// }

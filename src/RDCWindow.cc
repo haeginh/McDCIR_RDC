@@ -57,7 +57,7 @@ void RDCWindow::Initialize()
         // _viewer.core(this->v_right).background_color = Eigen::Vector4f(82. / 255., 82. / 255., 82. / 255., 0.);
 
         // visiblity
-        _viewer.data(this->apron_data).is_visible = 0;
+        // _viewer.data(this->apron_data).is_visible = 0;
         _viewer.data(this->patient_data).is_visible = 0;
         _viewer.data(this->table_data).is_visible = 0;
         _viewer.data(this->cArm_data).is_visible = 0;
@@ -66,22 +66,26 @@ void RDCWindow::Initialize()
         _viewer.data(this->grid_data).is_visible = 0;
         _viewer.data(this->axis_data).is_visible = 0;
         _viewer.data(this->phantomAcc_data).is_visible = 0;
+        _viewer.data(this->extra_data).is_visible = 0;
         _viewer.data(this->sphere_data).is_visible = 0;
-        for (int id : this->phantom_data)
-            _viewer.data(id).is_visible = 0;
+        // for (int id : this->phantom_data)
+        //     _viewer.data(id).is_visible = 0;
 
         // _viewer.data(this->phantom_data).is_visible |= this->v_left;
         // _viewer.data(this->apron_data).is_visible   |= this->v_left;
+        if(this->extraChk) _viewer.data(this->extra_data).is_visible |= this->v_left;
         _viewer.data(this->patient_data).is_visible |= this->v_left;
         _viewer.data(this->table_data).is_visible |= this->v_left;
         _viewer.data(this->cArm_data).is_visible |= this->v_left;
-        _viewer.data(this->beam_data).is_visible |= this->v_left;
         _viewer.data(this->grid_data).is_visible |= this->v_left;
         _viewer.data(this->phantomAcc_data).is_visible |= this->v_middle;
+
+        // _viewer.core(v_left).animation_max_fps = 5;
 
         _viewer.selected_core_index = this->v_left;
 
         _viewer.core(this->v_left).set_rotation_type(igl::opengl::ViewerCore::ROTATION_TYPE_TRACKBALL);
+        _viewer.core(this->v_left).animation_max_fps = 5;
         return false;
     };
     viewer.callback_post_resize = [&](igl::opengl::glfw::Viewer &v, int w, int h)
@@ -99,18 +103,13 @@ void RDCWindow::Initialize()
     };
 
     // set meshes
-    SetMeshes(".");
+    SetMeshes(string(getenv("DCIR_PHANTOM_DIR"))+"rdc/");
 
     // callback functions
     viewer.callback_pre_draw = bind(&RDCWindow::PreDrawFunc, this, placeholders::_1);
     viewer.callback_post_draw = [&](igl::opengl::glfw::Viewer &_viewer) -> bool
     {
-        // to prevent program to be idle
-        // if (RDCWindow::Instance().beamOn)
         _viewer.core(0).is_animating = true;
-        // else
-        //     _viewer.core(0).is_animating = false;
-        // _viewer.core().is_animating = true;
         return true;
     };
 
@@ -118,7 +117,6 @@ void RDCWindow::Initialize()
     viewer.core(0).is_animating = true;
     viewer.core(v_left).is_animating = true;
     viewer.core(v_middle).is_animating = true;
-    // viewer.core(v_right).is_animating = true;
 }
 static int boneID(0);
 static bool showAxis(false);
@@ -137,6 +135,8 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
     //     DataSet data = Communicator::Instance().current;
     //     _viewer.data(phantom_data[bodyID]).set_edges((CE * data.bodyMap[bodyID].posture[boneID].normalized().matrix().transpose()).rowwise() + data.bodyMap[bodyID].jointC.row(boneID), BE, Matrix3d::Identity());
     // }
+
+    //***SET FRAME***//
     float frameTimeInMSEC(0);
     if (loadNum >= 0) // loading
     {
@@ -147,170 +147,216 @@ bool RDCWindow::PreDrawFunc(igl::opengl::glfw::Viewer &_viewer)
         }
         currentFrame = ReadAframeData(recordData[loadNum++]);
         frameTimeInMSEC = currentFrame.time;
-        //////////////////
-        // if(currentFrame.bodyMap.find(0)==currentFrame.bodyMap.end()) return false;
-        // currentFrame.bodyMap[0].jointC(0) -= 20;
-        // currentFrame.beamOn = true;
     }
     else
     { // not loading
         Communicator::Instance().SetCurrentFrame(currentFrame, bodyDelayTol);
-        if (currentFrame.beamOn || useManualBeam)
+        //manual settings
+        if(manualFrame.beamOn)
+        {
+            currentFrame.beamOn = true;
+            currentFrame.cArm = manualFrame.cArm;
+            currentFrame.kVp = manualFrame.kVp;
+            currentFrame.FD = manualFrame.FD;
+            currentFrame.dap = manualFrame.dap;
+            currentFrame.bed = manualFrame.bed;
+            currentFrame.time = clock();
+        }
+        if(manualFrame.glassChk)
+        {
+            currentFrame.glassChk = true;
+            currentFrame.glass_aff = manualFrame.glass_aff;
+        }
+
+        // frame time settings
+        if (currentFrame.beamOn)
         {
             if (lastFrameT > 0)
                 frameTimeInMSEC = float(currentFrame.time - lastFrameT) / CLOCKS_PER_SEC * 1000;
             lastFrameT = currentFrame.time;
             if (recording)
                 recordData.push_back(SetAframeData(currentFrame, frameTimeInMSEC));
-        }
+        }   
         else if (lastFrameT > 0) // last frame
         {
             frameTimeInMSEC = currentFrame.time - lastFrameT;
             lastFrameT = -1;
             if (recording)
             {
-                recordData.push_back(SetAframeData(currentFrame, frameTimeInMSEC));
+                recordData.push_back(SetAframeData(currentFrame, -frameTimeInMSEC)); //indicator for the last frame
                 recordData.back().push_back(0); // last frame flag
             }
         }
     }
 
-    if (_viewer.core(v_left).is_animating)
+    //***COMPARE WITH PREVIDOUS FRAME && PREPARE DOSE MAP && MACHINE ANIMATION***//
+    bool changeMap(false);
+    MatrixXf rot = GetCarmRotation(currentFrame.cArm(0), currentFrame.cArm(1));
+        
+    if(prevFrame.cArm!=currentFrame.cArm || prevFrame.FD != currentFrame.FD)
     {
-        // machine
-        if (!useManualBeam)
-        {
-            _viewer.data(patient_data).set_vertices(V_patient.rowwise() + currentFrame.bed.cast<double>());
-            _viewer.data(table_data).set_vertices(V_table.rowwise() + currentFrame.bed.cast<double>());
-            SetMap(currentFrame.kVp, currentFrame.cArm(0), currentFrame.cArm(1));
-            // SetDAP(currentFrame.dap);
-            MatrixXf rot = GetCarmRotation(currentFrame.cArm(0), currentFrame.cArm(1));
-            _viewer.data(cArm_data).set_vertices(V_cArm * rot.cast<double>().transpose());
-            _viewer.data(beam_data).set_vertices(V_beam * rot.cast<double>().transpose());
-            _viewer.data(cArm_data).compute_normals();
-            _viewer.data(beam_data).compute_normals();
-            CalculateSourceFacets(currentFrame.bed, rot);
-            _viewer.data(patient_data).set_points(B_patient1.cast<double>(), RowVector3d(1, 0, 0));
-        }
-        else
-            currentFrame.dap = manualDAP;
+        MatrixXd cArmTmp = V_cArm;
+        cArmTmp.bottomRows(det_v).col(2) = V_cArm.bottomRows(det_v).col(2).array() + (currentFrame.cArm(2)-120);
+        _viewer.data(cArm_data).set_vertices(cArmTmp * rot.cast<double>().transpose());
+        MatrixXd beamTmp = V_beam;
+        beamTmp.bottomRows(4).col(2) = V_beam.bottomRows(4).col(2).array() + (currentFrame.cArm(2)-120);
+        if(fdSize.find(currentFrame.FD)==fdSize.end()) cout<<"wrong FD!"<<endl;
+        else beamTmp.bottomRows(4).leftCols(2) = fdSize[currentFrame.FD];
+        _viewer.data(beam_data).set_vertices(beamTmp * rot.cast<double>().transpose());
+        _viewer.data(cArm_data).compute_normals();
+        _viewer.data(beam_data).compute_normals();
+        changeMap = true;
+    }
 
-        if (!currentFrame.beamOn && !useManualBeam)
-        {
-            _viewer.data(patient_data).set_visible(false, v_left);
-            return false;
-        }
-        _viewer.data(patient_data).set_visible(show_beam, v_left);
+    if(prevFrame.bed!=currentFrame.bed)
+    {
+        _viewer.data(patient_data).set_vertices(V_patient.rowwise() + currentFrame.bed.cast<double>());
+        _viewer.data(table_data).set_vertices(V_table.rowwise() + currentFrame.bed.cast<double>());
+        changeMap = true;
+    }
 
-        if (currentFrame.glassChk)
-        {
-            if (show_leadGlass)
-                _viewer.data(glass_data).is_visible |= v_left;
-            _viewer.data(glass_data).set_vertices((V_glass.rowwise().homogeneous() * currentFrame.glass_aff.matrix().transpose()).rowwise().hnormalized());
-            _viewer.data(glass_data).compute_normals();
-        }
-        else
-            _viewer.data(glass_data).is_visible = 0;
+    if(changeMap)
+    {
+        CalculateSourceFacets(currentFrame.bed, rot);
+        mapContainer->SetCArm(currentFrame.kVp, currentFrame.cArm, currentFrame.bed, currentFrame.FD);    
+    }
+    prevFrame = currentFrame;
 
+    if (currentFrame.glassChk)
+    {
+        if (show_leadGlass) _viewer.data(glass_data).is_visible |= v_left;
+        _viewer.data(glass_data).set_vertices((V_glass.rowwise().homogeneous() * currentFrame.glass_aff.matrix().transpose()).rowwise().hnormalized());
+        _viewer.data(glass_data).compute_normals();
+    }
+    else
+        _viewer.data(glass_data).is_visible = 0;
+
+    if(currentFrame.beamOn)
+    {
+        if(show_beam) _viewer.data(beam_data).set_visible(true, v_left);
+        _viewer.data(patient_data).set_points(B_patient1.cast<double>(), RowVector3d(1, 0, 0));
+    }
+    else 
+    {
+        _viewer.data(patient_data).clear_points();
+        if(animBeamOnOnly) return false;
+    }
+
+
+    // if (_viewer.core(v_left).is_animating)
+    // {
+
+    //***PHANTOM ANIMATION***//
         if (!currentFrame.bodyMap.size())
         {
-            for (int i = 0; i < phantom_data.size(); i++)
-                _viewer.data(phantom_data[i]).is_visible = 0;
+            for (auto iter:phantomDataID)
+            {
+                _viewer.data(iter.second.first).is_visible = 0;
+                _viewer.data(iter.second.second).is_visible = 0;
+                indivPhantoms[iter.first]->SetZeroDose();
+            }
+            _viewer.data(extra_data).is_visible = 0;
             return false;
         }
 
         MatrixXd P, C, V;
         MatrixXi BE, F;
-        // posture deformation
-        int extraID(0); //tmp
-        for (auto iter : currentFrame.bodyMap)
-        {
-            // cout<<iter.first<<endl;
-            if(extraID>=maxNumPeople) break;
-            if (indivPhantoms[extraID]->V.rows() > 0)
-                indivPhantoms[extraID]
-                    ->Animate(iter.second.posture, iter.second.jointC, C, false);
-            _viewer.data(patient_data).set_points(iter.second.jointC, RowVector3d(1, 0, 0));
-            extraID++;
-            // if (iter.first<0) continue;
-            // if (indivPhantoms[iter.first]->V.rows() > 0)
-            //     indivPhantoms[iter.first]
-            //         ->Animate(iter.second.posture, iter.second.jointC, C, false);
-        }
-
-
-///tmp
-        for (int i = 0; i < phantom_data.size(); i++)
-        {
-            if(indivPhantoms[i]->V.rows() ==0) continue;
-            if (i>=currentFrame.bodyMap.size())
-            {
-                _viewer.data(phantom_data[i]).is_visible = 0;
-                continue;
-            }
-            // indivPhantoms[i]->SetDose(dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1), frameTimeInMSEC);
-            _viewer.data(phantom_data[i]).is_visible |= v_left;
-            _viewer.data(phantom_data[i]).set_vertices(indivPhantoms[i]->U);
-            // indivPhantoms[i]->accD += dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1);
-            // if (i == bodyID)
-            // {
-            //     if (show_C)
-            //         _viewer.data(phantom_data[i]).set_points(currentFrame.bodyMap[i].jointC, RowVector3d(0, 0, 1));
-            //     if (show_BE)
-            //         _viewer.data(phantom_data[i]).set_edges(C, indivPhantoms[i]->BE, RowVector3d(70. / 255., 252. / 255., 167. / 255.));
-
-            //     _viewer.data(phantom_data[i]).set_data(indivPhantoms[i]->rateD);
-            //     _viewer.data(phantom_data[i]).compute_normals();
-            //     // _viewer.data(phantomAcc_data).set_data(indivPhantoms[i]->accD);
-            // }
-        }
-        return false;
-///tmp
-
-
-
-        // shadow generation
+        // posture deform & shadow generation
         igl::embree::EmbreeIntersector ei;
-        MatrixXf totalV = InitTree(ei, currentFrame.bodyMap);
-        VectorXd dose = VectorXd::Zero(totalV.rows());
-        if (B_patient1.rows() && (currentFrame.beamOn || useManualBeam))
-        {
-            dose = GenerateShadow(ei, totalV);
-            SetDoseRate(totalV, dose, currentFrame.dap);
-            // cout<<dose.maxCoeff()<<endl;
-        }
-        // else if(data.beamOn||useManualBeam) // to-do
-        // {
+        MatrixXi extraF;
+        MatrixXd extraV;
+        VectorXd dose; 
 
-        // }
-
-        // visualization & dose calculation
-        for (int i = 0, vNum = 0; i < phantom_data.size(); i++)
+        for(auto id:currentFrame.bodyMap)
         {
-            if(indivPhantoms[i]->V.rows() ==0) continue;
-            if (currentFrame.bodyMap.find(i) == currentFrame.bodyMap.end())
+            PhantomAnimator* phantom;
+            if(indivPhantoms.find(id.first)!=indivPhantoms.end())
+                phantom = indivPhantoms[id.first];
+            else //extras
+                phantom = extraPhantom;
+            MatrixXd C;
+            int numF = phantom->F.rows();
+            int numV = phantom->V.rows();
+            if(phantom->useApron) phantom->Animate(id.second.posture, id.second.jointC, C, true);
+            else phantom->Animate(id.second.posture, id.second.jointC, C);
+            if(phantom == extraPhantom)
             {
-                _viewer.data(phantom_data[i]).is_visible = 0;
+                extraF.conservativeResize(extraF.rows()+numF, 3);
+                extraF.bottomRows(numF) = phantom->F.array() + extraV.rows();
+                extraV.conservativeResize(extraV.rows()+numV, 3);
+                extraV.bottomRows(numV) = phantom->U;
+            }
+        }
+
+        if (currentFrame.beamOn && B_patient1.rows())
+        {
+            MatrixXf totalV = InitTree(ei, extraV, extraF);
+            dose = VectorXd::Zero(totalV.rows());
+            dose = GenerateShadow(ei, totalV);
+            mapContainer->SetDoseRate(totalV, dose, currentFrame.dap);
+        }
+    
+        // visualization & dose calculation
+        if(extraChk && extraV.rows()>0) //extra
+        {
+            if(_viewer.data(extra_data).F.rows()!=extraF.rows())
+            {
+                _viewer.data(extra_data).clear();
+                _viewer.data(extra_data).set_mesh(extraV, extraF);
+                _viewer.data(extra_data).set_colors(RowVector4d(0.4, 0.4, 0.4, 0.2));
+            }
+            else _viewer.data(extra_data).set_vertices(extraV);
+            _viewer.data(extra_data).is_visible |= v_left;
+        }
+        else _viewer.data(extra_data).is_visible = 0;
+
+        int vNum(0);
+        for (auto iter:indivPhantoms)
+        {
+            if (currentFrame.bodyMap.find(iter.first) == currentFrame.bodyMap.end())
+            {
+                _viewer.data(phantomDataID[iter.first].first).is_visible = 0;
+                _viewer.data(phantomDataID[iter.first].second).is_visible = 0;
+                indivPhantoms[iter.first]->SetZeroDose();
                 continue;
             }
-            indivPhantoms[i]->SetDose(dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1), frameTimeInMSEC);
-            _viewer.data(phantom_data[i]).is_visible |= v_left;
-            _viewer.data(phantom_data[i]).set_vertices(indivPhantoms[i]->U);
-            // indivPhantoms[i]->accD += dose.block(vNum, 0, indivPhantoms[i]->U.rows(), 1);
-            if (i == bodyID)
+            _viewer.data(phantomDataID[iter.first].first).is_visible |= v_left;
+            _viewer.data(phantomDataID[iter.first].first).set_vertices(iter.second->U);
+            if(currentFrame.beamOn && B_patient1.rows())
+            {
+                int num;
+                if(iter.second->useApron) num = iter.second->outApron.rows();
+                else num = iter.second->U.rows();
+                VectorXd eyeD;
+                MatrixXf eyeP = currentFrame.bodyMap[iter.first].jointC.block(22, 0, 2, 3).cast<float>();
+                eyeD = GenerateShadow(ei, eyeP);
+                mapContainer->SetDoseRate(eyeP, eyeD, currentFrame.dap);
+                iter.second->SetDose(dose.block(vNum, 0, num, 1), eyeD, frameTimeInMSEC);
+                vNum += num;
+            }
+            else iter.second->SetZeroDose();
+            if(iter.second->useApron)
+            {
+                _viewer.data(phantomDataID[iter.first].second).is_visible |= v_left;
+                _viewer.data(phantomDataID[iter.first].second).set_vertices(iter.second->U_apron);
+            } 
+            if (iter.first == bodyID)
             {
                 if (show_C)
-                    _viewer.data(phantom_data[i]).set_points(currentFrame.bodyMap[i].jointC, RowVector3d(0, 0, 1));
+                    _viewer.data(phantomDataID[iter.first].first).set_points(currentFrame.bodyMap[iter.first].jointC, RowVector3d(0, 0, 1));
                 if (show_BE)
-                    _viewer.data(phantom_data[i]).set_edges(C, indivPhantoms[i]->BE, RowVector3d(70. / 255., 252. / 255., 167. / 255.));
-
-                _viewer.data(phantom_data[i]).set_data(indivPhantoms[i]->rateD);
-                _viewer.data(phantom_data[i]).compute_normals();
-                // _viewer.data(phantomAcc_data).set_data(indivPhantoms[i]->accD);
+                    _viewer.data(phantomDataID[iter.first].first).set_edges(C, iter.second->BE, RowVector3d(70. / 255., 252. / 255., 167. / 255.));
+                _viewer.data(phantomDataID[iter.first].first).compute_normals();
+                if(iter.second->useApron) _viewer.data(phantomDataID[iter.first].second).compute_normals();
+                if(currentFrame.beamOn && B_patient1.rows())
+                {
+                    _viewer.data(phantomDataID[iter.first].first).set_data(iter.second->rateD, igl::COLOR_MAP_TYPE_PARULA, 50);
+                    _viewer.data(phantomAcc_data).set_data(iter.second->accD, igl::COLOR_MAP_TYPE_PARULA, 50);
+                }
+                else _viewer.data(phantomDataID[iter.first].first).set_data(iter.second->rateD, igl::COLOR_MAP_TYPE_PARULA);
             }
-            vNum += indivPhantoms[i]->U.rows();
         }
-    }
+    // }
 
     return false;
 }
@@ -321,20 +367,28 @@ void RDCWindow::SetMeshes(string dir)
     //  auto phantom  = indivPhantoms[0];
     //  viewer.data().set_mesh(phantom->U_apron, phantom->F_apron);
     // apron_data = viewer.selected_data_index;
-    viewer.append_mesh();
+    // viewer.append_mesh();
     // viewer.data().set_mesh(phantom->V, phantom->F);
     phantomAcc_data = viewer.selected_data_index;
 
     // read other meshes
-    MatrixXi F_cArm, F_patient, F_glass, F_beam, F_table, F_sphere;
+    MatrixXi F_cArm, F_patient, F_glass, F_beam, F_table, F_sphere, F_det;
+    MatrixXd V_det;
     igl::readPLY(dir + "/c-arm.ply", V_cArm, F_cArm);
+    igl::readPLY(dir + "/FPD.ply", V_det, F_det);
+    det_v = V_det.rows();
+    det_f = F_det.rows();
+    F_cArm.conservativeResize(F_cArm.rows() + det_f, 3);
+    F_cArm.bottomRows(F_det.rows()) = F_det.array() + V_cArm.rows();
+    V_cArm.conservativeResize(V_cArm.rows() + det_v, 3);
+    V_cArm.bottomRows(det_v) = V_det;
     igl::readPLY(dir + "/patient.ply", V_patient, F_patient);
     igl::readPLY(dir + "/table.ply", V_table, F_table);
     igl::readPLY(dir + "/beam.ply", V_beam, F_beam);
     igl::readPLY(dir + "/leadGlass.ply", V_glass, F_glass);
     igl::readPLY(dir + "/sphere.ply", V_sphere, F_sphere);
     V_sphere.rowwise().normalize();
-
+    
     // for shadow factors
     MatrixXd B_patient0, Nface_patient;
     igl::barycenter(V_patient, F_patient, B_patient0);
@@ -364,16 +418,15 @@ void RDCWindow::SetMeshes(string dir)
     viewer.append_mesh();
     viewer.data().set_mesh(V_glass, F_glass);
     viewer.data().set_colors(RowVector4d(0, 0, 1, 0.2));
-    viewer.data().show_lines = false;
     glass_data = viewer.selected_data_index;
     viewer.append_mesh();
 
-    for (int i = 0; i < maxNumPeople; i++)
-    {
-        phantom_data.push_back(viewer.selected_data_index);
-        viewer.append_mesh();
-        viewer.append_mesh(); // for apron
-    }
+    // for (int i = 0; i < maxNumPeople; i++)
+    // {
+    //     phantom_data.push_back(viewer.selected_data_index);
+    //     viewer.append_mesh();
+    //     viewer.append_mesh(); // for apron
+    // }
 
     // draw grids
     int n(5);
@@ -415,24 +468,26 @@ void RDCWindow::SetMeshes(string dir)
     viewer.data().line_color = RowVector4f(0.5, 0.5, 0.5, 0.5);
     sphere_data = viewer.selected_data_index;
 
-    // viewer settings
-    viewer.data(apron_data).double_sided = true;
-    viewer.data(apron_data).show_lines = false;
-    viewer.data(apron_data).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.7));
-    for (int id : phantom_data)
-    {
-        viewer.data(id).double_sided = true;
-        viewer.data(id).show_overlay_depth = true;
-        viewer.data(id).line_width = 1;
-        viewer.data(id).point_size = 8;
-        viewer.data(id).show_texture = true;
-        viewer.data(id).show_lines = false;
-        viewer.data(id).show_faces = true;
-        viewer.data(id).face_based = false;
-        viewer.data(id).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
-        // if (id == mainID())
-        //     viewer.data(id).show_texture = false;
-    }
+    // extra phantom
+    viewer.append_mesh();
+    viewer.data().show_lines = false;
+    viewer.data().show_texture = true;
+    viewer.data().set_colors(RowVector4d(0.4, 0.4, 0.4, 0.2));
+    extra_data = viewer.selected_data_index;
+    // for (int id : phantom_data)
+    // {
+    //     viewer.data(id).double_sided = true;
+    //     viewer.data(id).show_overlay_depth = true;
+    //     viewer.data(id).line_width = 1;
+    //     viewer.data(id).point_size = 8;
+    //     viewer.data(id).show_texture = true;
+    //     viewer.data(id).show_lines = false;
+    //     viewer.data(id).show_faces = true;
+    //     viewer.data(id).face_based = false;
+    //     viewer.data(id).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
+    //     // if (id == mainID())
+    //     //     viewer.data(id).show_texture = false;
+    // }
 
     viewer.data(patient_data).show_lines = true;
     viewer.data(patient_data).show_overlay_depth = true;
@@ -453,6 +508,9 @@ void RDCWindow::SetMeshes(string dir)
     viewer.data(beam_data).set_colors(RowVector4d(1, 0, 0, 0.2));
     viewer.data(beam_data).show_lines = false;
     viewer.data(beam_data).show_overlay_depth = false;
+    viewer.data(glass_data).show_lines = false;
+    viewer.data(glass_data).double_sided = true;
+    viewer.data(glass_data).show_overlay_depth = true;
     viewer.data(phantomAcc_data).point_size = 4;
     viewer.data(phantomAcc_data).show_lines = false;
     viewer.data(phantomAcc_data).double_sided = false;
@@ -475,12 +533,12 @@ void MainMenuBar(RDCWindow *_window)
     static bool show_machine_popup = false;
     static bool connect_PDC = true;
     DoseResultWindow(_window);
+    if (show_settings_window)
+        ShowSettingsWindow(&show_settings_window, _window);
     if (show_view_options)
         ShowViewOptions(&show_view_options, _window);
     if (show_color_popup)
         ShowColorInfoPopUp(&show_color_popup);
-    if (show_settings_window)
-        ShowSettingsWindow(&show_settings_window, _window);
     if (show_manual_setting_popup)
         ShowManualSettingPopup(&show_manual_setting_popup, _window);
     if (show_info_popup)
@@ -505,9 +563,12 @@ void MainMenuBar(RDCWindow *_window)
         }
         if (ImGui::BeginMenu("Settings"))
         {
-            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7.f);
             static double bdtol(_window->bodyDelayTol);
+            static int distLimit(sqrt(Communicator::Instance().dist2Limit));
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7.f);
             if(ImGui::InputDouble("body delay tol.", &bdtol,0.1, 1, "%.1f")) _window->bodyDelayTol = bdtol;
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7.f);
+            if(ImGui::InputInt("dist limit (cm)", &distLimit, 50, 100)) Communicator::Instance().dist2Limit = distLimit*distLimit;
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7.f);
             ImGui::DragFloat("font size", &ImGui::GetFont()->Scale, 0.005f, 0.3f, 2.0f, "%.1f");
             if (ImGui::MenuItem("open settings", ""))
@@ -823,6 +884,7 @@ void ShowMachineStatus(bool *p_open, RDCWindow *_window)
     // ImGui::PopStyleColor();
 }
 
+static igl::Timer timer;        
 void ShowViewOptions(bool *p_open, RDCWindow *_window)
 {
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
@@ -837,39 +899,53 @@ void ShowViewOptions(bool *p_open, RDCWindow *_window)
     if (ImGui::Begin("View options", p_open, flags))
     {
         ImGui::BulletText("RADIOLOGIST");
-        static int bodyID(0);
-        ImGui::SetNextItemWidth(64);
-        if (ImGui::InputInt("body ID", &bodyID))
+        static bool eChk(true);
+        if (ImGui::Checkbox("extra", &eChk))
         {
-            bodyID = bodyID % _window->maxNumPeople;
-            _window->SetBodyID(bodyID);
-            for (int id : _window->phantom_data)
+            _window->extraChk = eChk;
+        }
+        ImGui::SetNextItemWidth(64);
+
+        static vector<string> bodyIDs;
+        bodyIDs.resize(_window->phantomDataID.size());
+        int tmpI(0);
+        for(auto iter:_window->phantomDataID) bodyIDs[tmpI++] = to_string(iter.first);
+
+        static int selectedID(0);
+        if (ImGui::Combo("main ID", &selectedID, bodyIDs))
+        {
+            // bodyID = bodyID % _window->maxNumPeople;
+            _window->SetBodyID(atoi(bodyIDs[selectedID].c_str()));
+            for (auto id : _window->phantomDataID)
             {
-                // if (id == _window->mainID())
-                // {
-                //     _window->viewer.data(id).show_texture = false;
-                //     auto phantom = _window->GetPhantom(bodyID);
-                //     _window->viewer.data(_window->phantomAcc_data).set_mesh(phantom->V, phantom->F);
-                //     continue;
-                // }
-                _window->viewer.data(id).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
-                _window->viewer.data(id).show_texture = true;
-                _window->viewer.data(id).clear_points();
-                _window->viewer.data(id).clear_edges();
+                if (id.first == _window->bodyID)
+                {
+                    _window->viewer.data(id.second.first).show_texture = false;
+                    auto phantom = _window->GetMainPhantomHandle();
+                    _window->viewer.data(_window->phantomAcc_data).set_mesh(phantom->V, phantom->F);
+                    _window->viewer.data(_window->phantomAcc_data).set_data(phantom->accD, igl::COLOR_MAP_TYPE_PARULA, 50);
+                    _window->viewer.data(_window->phantomDataID[id.first].second).set_colors(RowVector4d(0.5, 0.5, 1, 0.7));                      
+                    continue;
+                }
+                _window->viewer.data(id.second.first).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
+                _window->viewer.data(id.second.first).show_texture = true;
+                _window->viewer.data(id.second.first).clear_points();
+                _window->viewer.data(id.second.first).clear_edges();
             }
+            timer.start();
         }
         static bool show_C(_window->show_C), show_BE(_window->show_BE);
         if (ImGui::Checkbox("joint", &show_C))
         {
             _window->show_C = show_C;
             if (!show_C)
-                _window->viewer.data(_window->mainID()).clear_points();
+                _window->viewer.data(_window->phantomDataID[_window->bodyID].first).clear_points();
         }
         if (ImGui::Checkbox("skeleton", &show_BE))
         {
             _window->show_BE = show_BE;
             if (!show_BE)
-                _window->viewer.data(_window->mainID()).clear_edges();
+                _window->viewer.data(_window->phantomDataID[_window->bodyID].first).clear_edges();
         }
         ImGui::BulletText("PATIENT");
         static int patientOpt(1);
@@ -944,6 +1020,30 @@ void ShowViewOptions(bool *p_open, RDCWindow *_window)
 //     ImGui::PopStyleColor();
 //     ImGui::End();
 // }
+struct ScrollingBuffer {
+    int MaxSize;
+    int Offset;
+    ImVector<ImVec2> Data;
+    ScrollingBuffer(int max_size = 1000) {
+        MaxSize = max_size;
+        Offset  = 0;
+        Data.reserve(MaxSize);
+    }
+    void AddPoint(float x, float y) {
+        if (Data.size() < MaxSize)
+            Data.push_back(ImVec2(x,y));
+        else {
+            Data[Offset] = ImVec2(x,y);
+            Offset =  (Offset + 1) % MaxSize;
+        }
+    }
+    void Erase() {
+        if (Data.size() > 0) {
+            Data.shrink(0);
+            Offset  = 0;
+        }
+    }
+};
 
 void DoseResultWindow(RDCWindow *_window)
 {
@@ -952,17 +1052,26 @@ void DoseResultWindow(RDCWindow *_window)
     ImGui::SetNextWindowPos(ImVec2(0.f, viewport->WorkPos.y + viewport->WorkSize.y), ImGuiCond_Always, ImVec2(0., 1.f));
     ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, 230));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(8. / 255., 15. / 255., 26. / 255., 1.0f));
-    vector<string> radiologistDose = {"Whole skin", "Right hand (palm)", "Left hand (palm)", "PSD", "Lens"};
-    vector<string> patientDose = {"Whole skin", "PSD"};
+    vector<string> radiologistDose = {"Whole skin dose", "Right hand dose", "Left hand dose", "PSD", "Lens dose"};
     char buf[128];
     sprintf(buf, "Radiologist #%d Dose", _window->bodyID);
     bool open(true);
     if (ImGui::Begin(buf, &open, flags))
     {
-        // ImGui::BulletText("Radiologist #%d Dose", _window->bodyID);
+        auto phantom = _window->GetMainPhantomHandle();
+        if(phantom)
+        {
         ImGui::Columns(2, "", false);
         ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Reorderable;
-        static int graphOpt(0);
+        static int graphOpt(-1);
+        if(graphOpt<0) {timer.start(); graphOpt = 0;}
+        static ScrollingBuffer rate, avg;
+        VectorXd rateVal(radiologistDose.size()), accVal(radiologistDose.size());
+        rateVal<<phantom->GetAvgSkinDoseRate(), phantom->GetRightHandDoseRate(), phantom->GetLeftHandDoseRate(), phantom->GetMaxSkinDoseRate(), phantom->rateD_eye.sum()*0.5;
+        rateVal *= 1000.*3600.; // mGy/hr
+        accVal<<phantom->GetAvgAccSkinDose(), phantom->GetRightHandAccDose(), phantom->GetLeftHandAccDose(), phantom->GetMaxAccSkinDose(), phantom->accD_eye.sum()*0.5;
+        accVal *= 1.e6; // uGy
+   
         if (ImGui::BeginTable("Dose Table", 4, flags))
         {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_NoReorder | ImGuiTableColumnFlags_WidthFixed);
@@ -971,10 +1080,7 @@ void DoseResultWindow(RDCWindow *_window)
             ImGui::TableSetupColumn("Graph");
             ImGui::TableHeadersRow();
             // //set dose
-            //     cout<<4<<endl;
-            auto phantom = _window->GetMainPhantomHandle();
-            vector<double> rateVal = {phantom->GetAvgSkinDoseRate() * 1000. * 3600., 0, 0, phantom->GetMaxSkinDoseRate() * 1000. * 3600., 0, 0};
-            vector<double> accVal = {phantom->GetAvgAccSkinDose() * 1.e6, 0, 0, phantom->GetMaxAccSkinDose() * 1.e6, 0, 0};
+
             for (size_t row = 0; row < radiologistDose.size(); row++)
             {
                 ImGui::TableNextRow();
@@ -985,39 +1091,46 @@ void DoseResultWindow(RDCWindow *_window)
                 ImGui::TableSetColumnIndex(2);
                 ImGui::Text("%f", accVal[row]);
                 ImGui::TableSetColumnIndex(3);
-                ImGui::PushID(row * 10 + 1);
-                ImGui::RadioButton("", &graphOpt, row);
+                ImGui::PushID(row+1);
+                if(ImGui::RadioButton("", &graphOpt, row))
+                {
+                    rate.Erase();
+                    avg.Erase();
+                    timer.start();
+                }
                 ImGui::PopID();
             }
             ImGui::EndTable();
         }
+        float t = timer.getElapsedTimeInSec();
+        // cout<<time(NULL) <<" "<< startT<<" "<<t<<endl;
+        rate.AddPoint(t, rateVal(graphOpt));
+        double avgV(0);
+        if(phantom->irrTime >0) avgV = accVal(graphOpt)/phantom->irrTime * 0.001 * 3600;
+        avg.AddPoint(t,avgV);
+        static int history = 30;
+        if(ImGui::SliderInt("history time (sec)", &history, 10, 100));
         ImGui::NextColumn();
         ImPlot::CreateContext();
-        float x_data[1000], y_data[1000];
-        if (ImPlot::BeginPlot(radiologistDose[graphOpt].c_str(), ImVec2(-1, 200)))
+        if (ImPlot::BeginPlot(radiologistDose[graphOpt].c_str(), ImVec2(-1, 200), ImPlotFlags_NoTitle))
         {
-            ImPlot::PlotLine("My Line Plot", x_data, y_data, 1000);
+            ImPlot::SetupAxes("sec", "mGy/hr");
+            ImPlot::SetupAxisLimits(ImAxis_X1, t - history, t, ImGuiCond_Always);
+            if(avgV>0) ImPlot::SetupAxisLimits(ImAxis_Y1,0,max(avgV*2, rateVal(graphOpt)*1.3));
+            else ImPlot::SetupAxisLimits(ImAxis_Y1,0,0.1);
+            ImPlot::SetNextFillStyle(IMPLOT_AUTO_COL,0.5f);
+            ImPlot::PlotShaded("avg. skin dose rate", &avg.Data[0].x, &avg.Data[0].y, avg.Data.size(),-INFINITY, 0, avg.Offset, 2*sizeof(float));
+            ImPlot::PlotLine((radiologistDose[graphOpt] + " rate").c_str(), &rate.Data[0].x, &rate.Data[0].y, rate.Data.size(), 0, rate.Offset, 2 * sizeof(float));
             ImPlot::EndPlot();
         }
         ImPlot::DestroyContext();
-        // ImGui::BulletText("Patient Dose");
-        // if (ImGui::BeginTable("patient", 3, flags))
-        // {
-        //     ImGui::TableSetupColumn("", ImGuiTableColumnFlags_NoReorder | ImGuiTableColumnFlags_WidthFixed);
-        //     ImGui::TableSetupColumn("Dose Rate (mGy/hr)");
-        //     ImGui::TableSetupColumn("Cumulative Dose (uGy)");
-        //     ImGui::TableHeadersRow();
-        //     for (size_t row = 0; row < patientDose.size(); row++)
-        //     {
-        //         ImGui::TableNextRow();
-        //         ImGui::TableSetColumnIndex(0);
-        //         ImGui::BulletText(patientDose[row].c_str());
-        //     }
-        //     ImGui::EndTable();
-        // }
         ImGui::NextColumn();
+        }
         ImGui::End();
     }
+    // ImPlot::CreateContext();
+    // ImPlot::ShowDemoWindow();
+    // ImPlot::DestroyContext();
 }
 
 // void DoseGraphTab()
@@ -1069,10 +1182,7 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
     {
         ImGui::BulletText("Phantom settings");
 
-        // if (ImGui::Button("Load Phantom"))
-        //     PhantomAnimator::Instance().LoadPhantom("./phantoms/" + phantomlist[phantomNum]);
-
-        vector<string> names = RDCWindow::Instance().GetPhantom(0)->GetProfileNames();
+        vector<string> names = _window->profileNames;
         static vector<string> profileNames(names.size());
         copy(names.begin(), names.end(), profileNames.begin());
 
@@ -1084,14 +1194,16 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
             fill(color[0], color[20], 1);
         }
         static bool blueMask[20];
+        static bool useApron[20];
         static bool trackOpt[20];
-        if (ImGui::BeginTable("phantom settings", 6, flags))
+        if (ImGui::BeginTable("phantom settings", 7, flags))
         {
             ImGui::TableSetupColumn("#");
-            ImGui::TableSetupColumn("BF%");
+            ImGui::TableSetupColumn("BMI");
             ImGui::TableSetupColumn("profile");
             ImGui::TableSetupColumn("neck color");
             ImGui::TableSetupColumn("mask color"); // or red
+            ImGui::TableSetupColumn("use apron"); 
             ImGui::TableSetupColumn("track");
             ImGui::TableHeadersRow();
 
@@ -1104,7 +1216,7 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
                 if (ImGui::TableNextColumn())
                 {
                     ImGui::SetNextItemWidth(60);
-                    ImGui::Combo("BF%", &bfID[i], BFlist);
+                    ImGui::Combo("BMI", &bfID[i], BFlist);
                 }
                 if (ImGui::TableNextColumn())
                 {
@@ -1120,49 +1232,81 @@ void ShowSettingsWindow(bool *p_open, RDCWindow *_window)
                 {
                     ImGui::Checkbox("blue", &blueMask[i]);
                 }
+                if (ImGui::TableNextColumn())
+                {
+                    if(ImGui::Checkbox("apron", &useApron[i]))
+                    {
+                        if(_window->phantomDataID.find(i)!=_window->phantomDataID.end())
+                            _window->GetPhantom(i)->useApron = useApron[i];
+                    }
+                }
                     // ImGui::ColorEdit3("", color[i]);
                 if (ImGui::TableNextColumn())
                     if (ImGui::Checkbox("", &trackOpt[i]))
                     {
-                        int id = _window->phantom_data[i];
-                        auto phantom = _window->GetPhantom(i);
+                        // int id = _window->phantom_data[i];
                         if (trackOpt[i])
                         {
-                            phantom->LoadPhantom("./phantoms/" + phantomlist[bfID[i]]);
-                            phantom->ClearDose();
+                            auto phantom = _window->AddNewPhantom(i);
+                            bool isMale(false);
+                            if(bfID[i]<5) isMale = true;
+                            phantom->LoadPhantom(BFlist[bfID[i]], isMale);
+                            phantom->useApron = useApron[i];
                             if (profileNames[profileID[i]] != "original")
-                                phantom->CalibrateTo(profileNames[profileID[i]]);
-                            _window->viewer.data(id).set_mesh(phantom->V, phantom->F);
-
+                                phantom->CalibrateTo(_window->jointLengths[profileID[i]], _window->eyeL_vec[profileID[i]], _window->eyeL_vec[profileID[i]]);
+                            _window->viewer.append_mesh();
+                            _window->viewer.data().set_mesh(phantom->V, phantom->F);
+                            _window->viewer.data().show_lines = false;
+                            _window->viewer.data().double_sided = false;
+                            _window->phantomDataID[i].first = _window->viewer.selected_data_index;
+                            _window->viewer.append_mesh();
+                            if(phantom->useApron) _window->viewer.data().set_mesh(phantom->V_apron, phantom->F_apron);
+                            _window->phantomDataID[i].second = _window->viewer.selected_data_index;
                             _window->workerIdData[i] = make_pair(int(floor(color[i][0]*180.+0.5)), blueMask[i]);
+                            
                             // texture setting
-                            // if (id == _window->mainID())
-                            //     _window->viewer.data(id).show_texture = false;
-                            // else
-                            // {
-                                _window->viewer.data(id).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
-                                _window->viewer.data(id).show_texture = true;
-                                _window->viewer.data(id).clear_points();
-                                _window->viewer.data(id).clear_edges();
-                            // }
-                            _window->viewer.data(id).set_visible(true, _window->v_left);
-                            if (id == _window->mainID())
+                            if (i == _window->bodyID)
+                            {
+                                _window->viewer.data(_window->phantomDataID[i].first).show_texture = false;
                                 _window->viewer.data(_window->phantomAcc_data).set_mesh(phantom->V, phantom->F);
+                                _window->viewer.data(_window->phantomAcc_data).set_data(phantom->accD, igl::COLOR_MAP_TYPE_PARULA, 50);
+                                _window->viewer.data(_window->phantomDataID[i].second).set_colors(RowVector4d(0.5, 0.5, 1, 0.7));                      
+                            }
+                            else
+                            {
+                                _window->viewer.data(_window->phantomDataID[i].first).set_colors(RowVector4d(0.2, 0.2, 0.2, 0.2));
+                                _window->viewer.data(_window->phantomDataID[i].second).set_colors(RowVector4d(0.5, 0.5, 1, 0.2));                      
+                                _window->viewer.data(_window->phantomDataID[i].first).show_texture = true;
+                                _window->viewer.data(_window->phantomDataID[i].first).clear_points();
+                                _window->viewer.data(_window->phantomDataID[i].first).clear_edges();
+                            }
+                            _window->viewer.data(_window->phantomDataID[i].second).show_texture = true;
+                            _window->viewer.data(_window->phantomDataID[i].second).show_lines = false;
+                            _window->viewer.data(_window->phantomDataID[i].second).show_lines = false;
+                            _window->viewer.data(_window->phantomDataID[i].second).face_based = false;
+                            _window->viewer.selected_data_index = _window->phantomDataID[i].second;
+                            // _window->viewer.data(_window->phantomDataID[i].first).set_visible(true, _window->v_left);
+                            // _window->viewer.data(_window->phantomDataID[i].second).set_visible(phantom->useApron, _window->v_left);
                         }
                         else
                         {
-                            phantom->Clear();
-                            _window->viewer.data(id).is_visible = false;
+                            _window->DeletePhantom(i);
+                            _window->viewer.data(_window->phantomDataID[i].first).clear();                            
+                            _window->viewer.data(_window->phantomDataID[i].second).clear();                            
+                            _window->viewer.data(_window->phantomDataID[i].first).is_visible = false;
+                            _window->viewer.data(_window->phantomDataID[i].second).is_visible = false;
                             _window->workerIdData.erase(i);
                         }
                     }
                 ImGui::PopID();
             }
         }
+
         ImGui::EndTable();
         static string fileBuff("track.data"), loadFile("track.data");
         ImGui::InputText("read", loadFile);
         ImGui::SameLine();
+
         if (ImGui::Button("LOAD"))
         {
             ifstream ifs(loadFile);
@@ -1290,78 +1434,84 @@ void ShowManualSettingPopup(bool *p_open, RDCWindow *_window)
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetItemRectSize().x * 2, -1), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Manual settings", p_open, flags))
     {
-        static float dap;
-        static int kvp(80), rotation(0), angulation(0);
-        static int bedPos[3];
-        static bool useManualBeam(false);
-        Matrix3f rot = Matrix3f::Identity();
+        static float dap(_window->manualFrame.dap);
+        static int kvpFD[2] = {_window->manualFrame.kVp, _window->manualFrame.FD};
+        static int bedPos[3] = {_window->manualFrame.bed(0), _window->manualFrame.bed(1), _window->manualFrame.bed(2)};
+        static int cArm[3] = {_window->manualFrame.cArm(0), _window->manualFrame.cArm(1), _window->manualFrame.cArm(2)};
+        static bool useManualBeam(_window->manualFrame.beamOn);
         ImGui::BulletText("C-arm");
         ImGui::SameLine();
-        if (ImGui::Button("Set beam"))
-            _window->SetMap(kvp, rotation, angulation);
+        // if (ImGui::Button("Set beam"))
+        //     _window->SetMap(kvp, rotation, angulation, RowVector3f(bedPos[0], bedPos[1], bedPos[2]), sidfd[0], sidfd[1]);
         ImGui::SameLine();
-        if (ImGui::Checkbox("use manual beam", &useManualBeam))
-            _window->useManualBeam = useManualBeam;
+        if (ImGui::Checkbox("use manual beam/bed", &useManualBeam))
+            _window->manualFrame.beamOn = useManualBeam;
         if (ImGui::InputFloat("DAP(Gycm2)", &dap, 1))
-            _window->manualDAP = dap;
+            _window->manualFrame.dap = dap;
 
-        ImGui::InputInt("peak voltage (kVp)", &kvp, 5);
-        if (ImGui::DragInt("RAO(-) / LAO(+)", &rotation, 1, -180, 180))
+        if(ImGui::InputInt2("kVp / FD", kvpFD))
         {
-            rot = _window->GetCarmRotation(rotation, angulation);
-            _window->viewer.data(_window->cArm_data).set_vertices(_window->V_cArm * rot.cast<double>().transpose());
-            _window->viewer.data(_window->beam_data).set_vertices(_window->V_beam * rot.cast<double>().transpose());
-            _window->viewer.data(_window->cArm_data).compute_normals();
-            _window->viewer.data(_window->beam_data).compute_normals();
-            _window->CalculateSourceFacets(RowVector3f(bedPos[0], bedPos[1], bedPos[2]), rot);
+            _window->manualFrame.kVp = kvpFD[0];
+            _window->manualFrame.FD  = kvpFD[1];
+        }
+
+        if (ImGui::DragInt3("rot/ang/sid", cArm))
+        {
+            if(cArm[0]>180) cArm[0] = 180;
+            else if(cArm[0]<-180) cArm[0] = -180;
+
+            if(cArm[1]>90) cArm[1] = 90;
+            else if(cArm[1]<-90) cArm[1] = -90;
+
+            if(cArm[2]>120) cArm[2] = 120;
+            else if(cArm[2]<90) cArm[2] = 90;
+
+            _window->manualFrame.cArm = RowVector3f(cArm[0],cArm[1],cArm[2]);
+            // rot = _window->GetCarmRotation(rotation, angulation);
+            // _window->viewer.data(_window->cArm_data).set_vertices(_window->V_cArm * rot.cast<double>().transpose());
+            // _window->viewer.data(_window->beam_data).set_vertices(_window->V_beam * rot.cast<double>().transpose());
+            // _window->viewer.data(_window->cArm_data).compute_normals();
+            // _window->viewer.data(_window->beam_data).compute_normals();
+            // _window->CalculateSourceFacets(RowVector3f(bedPos[0], bedPos[1], bedPos[2]), rot);
             // if (RDCWindow::Instance().beamOn)
-            _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
-        }
-        if (ImGui::DragInt("CRAN(-) / CAUD(+)", &angulation, 1, -90, 90))
-        {
-            rot = _window->GetCarmRotation(rotation, angulation);
-            _window->viewer.data(_window->cArm_data).set_vertices(_window->V_cArm * rot.cast<double>().transpose());
-            _window->viewer.data(_window->beam_data).set_vertices(_window->V_beam * rot.cast<double>().transpose());
-            _window->viewer.data(_window->cArm_data).compute_normals();
-            _window->viewer.data(_window->beam_data).compute_normals();
-            _window->CalculateSourceFacets(RowVector3f(bedPos[0], bedPos[1], bedPos[2]), rot);
-            // if (RDCWindow::Instance().beamOn)
-            _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
-        }
-        ImGui::BulletText("Glass");
-        static int glassPos[3], glassRot[3];
-        if (ImGui::DragInt3("glass pos.", glassPos))
-        {
-            MatrixXd TT(4, 3);
-            TT.topRows(3) = (AngleAxisd((double)glassRot[0] / 180. * igl::PI, Vector3d(1, 0, 0)) * AngleAxisd((double)glassRot[1] / 180. * igl::PI, Vector3d(0, 1, 0)) * AngleAxisd((double)glassRot[2] / 180. * igl::PI, Vector3d(0, 0, 1))).matrix().transpose();
-            TT.bottomRows(1) << glassPos[0], glassPos[1], glassPos[2];
-            _window->viewer.data(_window->glass_data).set_vertices(_window->V_glass.rowwise().homogeneous() * TT);
-        }
-        if (ImGui::DragInt3("glass rot.", glassRot))
-        {
-            MatrixXd TT(4, 3);
-            TT.topRows(3) = (AngleAxisd((double)glassRot[0] / 180. * igl::PI, Vector3d(1, 0, 0)) * AngleAxisd((double)glassRot[1] / 180. * igl::PI, Vector3d(0, 1, 0)) * AngleAxisd((double)glassRot[2] / 180. * igl::PI, Vector3d(0, 0, 1))).matrix().transpose();
-            TT.bottomRows(1) << glassPos[0], glassPos[1], glassPos[2];
-            _window->viewer.data(_window->glass_data).set_vertices(_window->V_glass.rowwise().homogeneous() * TT);
-        }
-        if (ImGui::Button("  Print glass data (V.rowwise().homogeneous()*TT)  "))
-        {
-            MatrixXd TT(4, 3);
-            TT.topRows(3) = (AngleAxisd((double)glassRot[0] / 180. * igl::PI, Vector3d(1, 0, 0)) * AngleAxisd((double)glassRot[1] / 180. * igl::PI, Vector3d(0, 1, 0)) * AngleAxisd((double)glassRot[2] / 180. * igl::PI, Vector3d(0, 0, 1))).matrix().transpose();
-            TT.bottomRows(1) << glassPos[0], glassPos[1], glassPos[2];
-            cout << endl
-                 << TT << endl;
+            // _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
         }
         ImGui::BulletText("Bed");
         if (ImGui::DragInt3("bed trans.", bedPos))
         {
-            RowVector3d trans(bedPos[0], bedPos[1], bedPos[2]);
-            _window->viewer.data(_window->table_data).set_vertices(_window->V_table.rowwise() + trans);
-            _window->viewer.data(_window->patient_data).set_vertices(_window->V_patient.rowwise() + trans);
-            _window->CalculateSourceFacets(RowVector3f(bedPos[0], bedPos[1], bedPos[2]), rot.cast<float>());
-            // if (RDCWindow::Instance().beamOn)
-            _window->viewer.data(_window->patient_data).set_points(_window->B_patient1.cast<double>(), RowVector3d(1, 0, 0));
+            RowVector3f trans(bedPos[0], bedPos[1], bedPos[2]);
+            _window->manualFrame.bed = trans;
         }
+        ImGui::BulletText("Glass");
+        ImGui::SameLine();
+        static bool useManualGlass(false);
+        if (ImGui::Checkbox("use manual glass", &useManualGlass))
+            _window->manualFrame.glassChk = useManualGlass;
+        static int glassPos[3], glassRot[3];
+        if (ImGui::DragInt3("glass pos.", glassPos))
+        {
+            _window->manualFrame.glass_aff.setIdentity();
+            _window->manualFrame.glass_aff.translate(Vector3d(glassPos[0], glassPos[1], glassPos[2]));
+            _window->manualFrame.glass_aff.rotate(AngleAxisd((double)glassRot[0]/180.*igl::PI, Vector3d(1, 0, 0))
+                                      * AngleAxisd((double)glassRot[1]/180.* igl::PI, Vector3d(0, 1, 0))
+                                      * AngleAxisd((double)glassRot[2]/180. * igl::PI, Vector3d(0, 0, 1)));
+        }
+        if (ImGui::DragInt3("glass rot.", glassRot))
+        {
+            _window->manualFrame.glass_aff.setIdentity();
+            _window->manualFrame.glass_aff.translate(Vector3d(glassPos[0], glassPos[1], glassPos[2]));
+            _window->manualFrame.glass_aff.rotate(AngleAxisd((double)glassRot[0]/180.*igl::PI, Vector3d(1, 0, 0))
+                                      * AngleAxisd((double)glassRot[1]/180.* igl::PI, Vector3d(0, 1, 0))
+                                      * AngleAxisd((double)glassRot[2]/180. * igl::PI, Vector3d(0, 0, 1)));
+        }
+        // if (ImGui::Button("  Print glass data (V.rowwise().homogeneous()*TT)  "))
+        // {
+        //     MatrixXd TT(4, 3);
+        //     TT.topRows(3) = (AngleAxisd((double)glassRot[0] / 180. * igl::PI, Vector3d(1, 0, 0)) * AngleAxisd((double)glassRot[1] / 180. * igl::PI, Vector3d(0, 1, 0)) * AngleAxisd((double)glassRot[2] / 180. * igl::PI, Vector3d(0, 0, 1))).matrix().transpose();
+        //     TT.bottomRows(1) << glassPos[0], glassPos[1], glassPos[2];
+        //     cout << endl
+        //          << TT << endl;
+        // }
     }
     ImGui::End();
 }
@@ -1453,32 +1603,41 @@ vector<float> RDCWindow::SetAframeData(DataSet data, float frameTimeInMSEC)
     frameData[17] = data.glass_aff.translation().z();
     frameData[18] = data.bodyMap.size();
     int pos = 19;
-    // for (int i = 0; i < maxNumPeople; i++)
-    // {
-    //     if (data.bodyMap.find(i) == data.bodyMap.end())
-    //         continue;
-    //     int num = pos + i * 145;
-    //     frameData[num++] = 1;
-    //     for (int b = 0; b < data.bodyMap[i].posture.size(); b++)
-    //     {
-    //         frameData[num++] = data.bodyMap[i].posture[b].x();
-    //         frameData[num++] = data.bodyMap[i].posture[b].y();
-    //         frameData[num++] = data.bodyMap[i].posture[b].z();
-    //         frameData[num++] = data.bodyMap[i].posture[b].w();
-    //     }
-    //     for (int c = 0; c < data.bodyMap[i].jointC.rows(); c++)
-    //     {
-    //         frameData[num++] = data.bodyMap[i].jointC(c, 0);
-    //         frameData[num++] = data.bodyMap[i].jointC(c, 1);
-    //         frameData[num++] = data.bodyMap[i].jointC(c, 2);
-    //     }
-    // }
 
-    // for (int i = 0; i < maxNumPeople; i++)
+    if(data.bodyMap.size()>maxNumPeople) //if there are more than MAX
+    {
+        map<double, int> distMap;
+        for(auto iter:data.bodyMap)
+            distMap[iter.second.jointC.row(0).leftCols(2).squaredNorm()] = iter.first;
+        
+        int i=0;
+        for(auto iter:distMap)
+        {
+            int num = pos + i * 145;
+            int id = iter.second;
+            frameData[num++] = id;
+            for (int b = 0; b < data.bodyMap[id].posture.size(); b++)
+            {
+                frameData[num++] = data.bodyMap[id].posture[b].x();
+                frameData[num++] = data.bodyMap[id].posture[b].y();
+                frameData[num++] = data.bodyMap[id].posture[b].z();
+                frameData[num++] = data.bodyMap[id].posture[b].w();
+            }
+            for (int c = 0; c < data.bodyMap[id].jointC.rows(); c++)
+            {
+                frameData[num++] = data.bodyMap[id].jointC(c, 0);
+                frameData[num++] = data.bodyMap[id].jointC(c, 1);
+                frameData[num++] = data.bodyMap[id].jointC(c, 2);
+            }
+            if(++i==maxNumPeople) break;        
+        }
+        return frameData;
+    }
+
     int i=0;
     for (auto iter:data.bodyMap)
     {
-        int num = pos + i * 145;
+        int num = pos + ++i * 145;
         frameData[num++] = iter.first;
         for (int b = 0; b < iter.second.posture.size(); b++)
         {
@@ -1493,7 +1652,6 @@ vector<float> RDCWindow::SetAframeData(DataSet data, float frameTimeInMSEC)
             frameData[num++] = iter.second.jointC(c, 1);
             frameData[num++] = iter.second.jointC(c, 2);
         }
-        if(++i==maxNumPeople) break;        
     }
     return frameData;
 }
@@ -1573,3 +1731,66 @@ DataSet RDCWindow::ReadAframeData(vector<float> frameData)
 //     }
 //     return;
 // }
+
+bool RDCWindow::ReadProfileData(string fileName)
+{
+    ifstream ifs(fileName);
+    if (!ifs.is_open())
+    {
+        cout << "There is no " + fileName << endl;
+        return false;
+    }
+    profileNames.clear();
+    jointLengths.clear();
+    eyeR_vec.clear();
+    eyeL_vec.clear();
+
+    int num;
+    ifs >> num;
+    string firstLine;
+    getline(ifs, firstLine);
+    jointLengths.resize(num);
+    eyeR_vec.resize(num);
+    eyeL_vec.resize(num);
+
+    getline(ifs, firstLine);
+    stringstream ss(firstLine);
+    vector<int> boneIDs;
+    for (int i = 0; i < 17; i++)
+    {
+        int boneID;
+        ss >> boneID;
+        boneIDs.push_back(boneID);
+    }
+
+    for (int i = 0; i < num; i++)
+    {
+        string aLine;
+        getline(ifs, aLine);
+        stringstream ss1(aLine);
+        string name;
+        double d;
+        ss1 >> name;
+
+        profileNames.push_back(name);
+        for (int j = 0; j < 17; j++)
+        {
+            double d;
+            ss1 >> d;
+            jointLengths[i][boneIDs[j]] = d;
+        }
+        for (int j = 0; j < 3; j++)
+        {
+            ss1 >> d;
+            eyeL_vec[i](j) = d;
+        }
+        for (int j = 0; j < 3; j++)
+        {
+            ss1 >> d;
+            eyeR_vec[i](j) = d;
+        }
+    }
+
+    ifs.close();
+    return true;
+}

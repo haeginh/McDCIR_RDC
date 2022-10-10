@@ -14,10 +14,10 @@ typedef
 // typedef tuple<int, int> MAPIDX;
 class MapContainer{
     public:
-    MapContainer();
+    MapContainer(float _fl);
     void ReadSpectrum(string name);
     bool ReadMap(string name, ArrayXf& _skinMap, ArrayXf& _lensMap);
-    bool SetCArm(int kVp, int rot, int ang);
+    bool SetCArm(int kVp, RowVector3f cArm, RowVector3f tableTrans, int fd);
     void SetDoseRate(const MatrixXf &U, VectorXd &D, double dap);
 
     // void SetDAP(double _dap) {dap = _dap;}
@@ -39,26 +39,36 @@ class MapContainer{
             (AngleAxisf(rot/180.*M_PI, Vector3f(0, 1, 0))*
              AngleAxisf(ang/180.*M_PI, Vector3f(1, 0, 0))).matrix();
     }
+    int SelectFD(float rot, float ang, float tableZ, float sid, int fd);
     //variables
     string mapDir, specDir;
-    RowVector3f base; //lowest (X, Y, Z)
+    RowVector3f base0, base; //lowest (X, Y, Z)
     RowVector3i numGrid; //number of grids (X, Y, Z)
     int totalNum;
     double gridConv;
     // int i, j, k, baseIdx;
-    ArrayList skinMapList, lensMapList;
+    MatrixXf skinMapList, lensMapList;
     ArrayXf skinMap, lensMap;
+    // MatrixXf skinMap, lensMap;
     Matrix3f cArm_IT;
     
     // double dap;
-    int rot0, ang0, kVp0;
-    map<int, double> spec;
+    int rot0, ang0, kVp0, fd0, spot0;
+
+    // map<int, double> spec;
     // vector<double> doseMapS, doseMapL;
     // double maxSkin, invDAP;
     // int leftE, rightE;
     // map<MAPIDX, int> mapList;
     // map<int, double> mapDAPs;
     // sVector3d isoCenter;
+    map<pair<int, int>, string> cArmName;
+    vector<string> spotName, fdName;
+    MatrixXf spotCoord;
+    float fl; //focal length
+
+    double volInv;
 };
+
 
 #endif
