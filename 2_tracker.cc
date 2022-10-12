@@ -317,7 +317,7 @@ int main(int argc, char **argv)
                         k4a_quaternion_t q = body.skeleton.joints[2].orientation;
                         Quaterniond quat2(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z);
 
-                        if (Vector3d(0, 0, -1).dot(quat2 * Vector3d(0, 1, 0)) > 0.8)
+                        if (Vector3d(0, 0, -1).dot(quat2 * Vector3d(0, 1, 0)) > 0)
                             for (auto iter : colorIdx)
                             {
                                 bool match(true);
@@ -378,7 +378,7 @@ int main(int argc, char **argv)
                                 }
                                 //  imshow("test2", output); waitKey(1);
                                 // imshow("test3", color(Rect(p0, p1))); waitKey(1);
-                               if((countNonZero(output) >  output.cols*output.rows*0.3)) 
+                               if((countNonZero(output) >  output.cols*output.rows*0.4)) 
                                 {
                                     if (givenID < 0)
                                         givenID = iter.first;
