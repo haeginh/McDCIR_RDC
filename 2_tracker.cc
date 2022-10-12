@@ -285,6 +285,7 @@ int main(int argc, char **argv)
             k4abt_frame_t bodyFrame = nullptr;
             k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0
             map<int, Point2i> idPos;
+            map<int, int> currentID;
             if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
             {
 
@@ -311,9 +312,9 @@ int main(int argc, char **argv)
 /////// WORKER IDENTIFICATION
                     transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[3].position, idPos[id0]);
                     // imshow("neck", color(cv::Rect(p0, p1)));
+                    int givenID(-id0);
                     if (givenIDs.find(id0)==givenIDs.end() || givenIDs[id0].first < 0 || givenIDs[id0].second < 10) // if ID was not assigned
                     {
-                        int givenID(-1);
                         k4a_quaternion_t q = body.skeleton.joints[2].orientation;
                         Quaterniond quat2(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z);
 
@@ -389,7 +390,10 @@ int main(int argc, char **argv)
                                     }
                                 }
                             }
-                        if (givenID < 0)  continue;
+                        if (givenID < 0) {
+                            givenIDs[id0].second = max(0, givenIDs[id0].second-1);
+                            continue;
+                        }
                         
                         else if (givenID != givenIDs[id0].first)
                             givenIDs[id0] = make_pair(givenID, 0);
@@ -403,8 +407,9 @@ int main(int argc, char **argv)
                     // }
                     // else continue;
 
-                    if(givenIDs.find(id0) != givenIDs.end()) sendBuff[pos++] = givenIDs[id0].first;
-                    else sendBuff[pos++] = -id0;
+                    if(givenIDs.find(id0) != givenIDs.end() && givenIDs[id0].second>=10) sendBuff[pos++] = givenIDs[id0].first;
+                    else sendBuff[pos++] = givenID;
+                    currentID[id0]=sendBuff[pos-1];
                     sendBuff[numPos]++;
 
                     for (int i = 0; i < 18; i++)
@@ -450,7 +455,7 @@ int main(int argc, char **argv)
                 }
                 else 
                 {
-                string tag = to_string(givenIDs[iter.first].first);
+                string tag = to_string(currentID[iter.first]);
                 if (givenIDs[iter.first].second < 10)
                     tag += "(X)";
                 cv::putText(color, tag, iter.second * kinectRecordF, FONT_HERSHEY_SIMPLEX, 2, cv::Scalar(0, 0, 255), 2);
