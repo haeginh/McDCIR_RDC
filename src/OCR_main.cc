@@ -141,7 +141,7 @@ bool OcrMain::Render(float *data)
 		}
 		else if (success)
 		{
-			if(result[0]=='+') result = result.substr(1, result.size()-1);
+			if(result[0]==-85) result = result.substr(1, result.size()-1);
 			data[i] = atof(result.c_str());
 			// if (i == 9)
 				// fluoChk = success;
@@ -152,7 +152,6 @@ bool OcrMain::Render(float *data)
 			cv::putText(imgCopy, to_string(i) + "." + roiNames[i], roiBox[i].tl(), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 255), 2);
 		else
 			cv::putText(imgCopy, result, roiBox[i].tl(), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 255), 2);
-
 		// cv::imshow("binary", imgBin);
 		// cv::imshow("crop", imgCrop);
 		// if (firstLoop)

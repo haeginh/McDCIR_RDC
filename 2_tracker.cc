@@ -300,7 +300,9 @@ int main(int argc, char **argv)
                 for (int i = 0; i < num; i++)
                 {
                     int id0 = k4abt_frame_get_body_id(bodyFrame, i);
-                    givenIDs[id0] = make_pair(id0, 20);////////////////
+                    if(id0>100) id0 = id0%100;
+                    id0 = id*100+id0;
+                    // givenIDs[id0] = make_pair(-id0, 0);////////////////
 
                     // sendBuff[pos++] = id0;
                     k4abt_body_t body;
@@ -309,98 +311,88 @@ int main(int argc, char **argv)
 /////// WORKER IDENTIFICATION
                     transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[3].position, idPos[id0]);
                     // imshow("neck", color(cv::Rect(p0, p1)));
-                    if ((givenIDs[id0].first < 0) || (givenIDs[id0].second < 6)) // if ID was not assigned
+                    if (givenIDs.find(id0)==givenIDs.end() || givenIDs[id0].first < 0 || givenIDs[id0].second < 10) // if ID was not assigned
                     {
                         int givenID(-1);
                         k4a_quaternion_t q = body.skeleton.joints[2].orientation;
                         Quaterniond quat2(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z);
-                        q = body.skeleton.joints[26].orientation;
-                        Quaterniond quat26(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z);
 
-                        if ((Vector3d(0, 0, -1).dot(quat2 * Vector3d(0, 1, 0)) > 0.9) &&
-                            (Vector3d(0, 0, -1).dot(quat26 * Vector3d(0, 1, 0)) > 0.9))
+                        if (Vector3d(0, 0, -1).dot(quat2 * Vector3d(0, 1, 0)) > 0.8)
                             for (auto iter : colorIdx)
                             {
                                 bool match(true);
-                                k4a_float3_t pInBetween;
-                                pInBetween.v[0] = (body.skeleton.joints[3].position.v[0] + body.skeleton.joints[2].position.v[0]) * 0.5;
-                                pInBetween.v[1] = (body.skeleton.joints[3].position.v[1] + body.skeleton.joints[2].position.v[1]) * 0.5;
-                                pInBetween.v[2] = (body.skeleton.joints[3].position.v[2] + body.skeleton.joints[2].position.v[2]) * 0.5;
-                                Point2i pNeck, pNose;
-                                transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, pInBetween, pNeck);
-                                if (pNeck.x < 10 || pNeck.y < 10 || pNeck.x >= color.cols - 10 || pNeck.y >= color.rows - 10)
+                                k4a_float3_t p; //stomach
+                                p.v[0] = body.skeleton.joints[11].position.v[0];
+                                p.v[1] = (body.skeleton.joints[1].position.v[1] + body.skeleton.joints[2].position.v[1]) * 0.5;
+                                p.v[2] = body.skeleton.joints[1].position.v[2];
+                                Point2i p0, p1;
+                                transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, p, p0);
+                                p.v[0] = body.skeleton.joints[4].position.v[0];
+                                p.v[1] = (body.skeleton.joints[1].position.v[1] + body.skeleton.joints[0].position.v[1]) * 0.5;
+                                transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, p, p1);
+                                Scalar low(105-5, 0, 0);
+                                Scalar high(105+5, 255, 255);
+                                Mat output;
+                                if(p0==p1 || p0.x>=p1.x || p0.y >= p1.y) continue;
+                                cvtColor(color(Rect(p0, p1)), output, COLOR_BGR2HSV);
+                                inRange(output,low, high, output);
+                                // imshow("test", output); waitKey(1);
+                                // imshow("test1", color(Rect(p0, p1))); waitKey(1);
+                                if((countNonZero(output) > output.cols*output.rows*0.7)==iter.second.second) //blue clothing
                                 {
-                                    match = false;
-                                    break;
+                                    p = body.skeleton.joints[31].position;
+                                    p.v[1] = body.skeleton.joints[30].position.v[1];
+                                    transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[31].position, p0);
+                                    p = body.skeleton.joints[29].position;
+                                    p.v[1] = (body.skeleton.joints[3].position.v[1] + body.skeleton.joints[26].position.v[1]) * 0.5;
+                                    transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, p, p1);
                                 }
-                                transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[27].position, pNose);
-                                if (pNose.x < 10 || pNose.y < 10 || pNose.x >= color.cols - 10 || pNose.y >= color.rows - 10)
+                                else
                                 {
-                                    match = false;
-                                    break;
+                                    p.v[0] = (body.skeleton.joints[11].position.v[0] + body.skeleton.joints[12].position.v[0]) * 0.5;
+                                    p.v[1] = (body.skeleton.joints[3].position.v[1] + body.skeleton.joints[26].position.v[1]) * 0.5;
+                                    p.v[2] = body.skeleton.joints[11].position.v[2];
+                                    transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, p, p0);
+                                    p = body.skeleton.joints[2].position;
+                                    p.v[0] = (body.skeleton.joints[4].position.v[0] + body.skeleton.joints[5].position.v[0]) * 0.5;
+                                    transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, p, p1);
                                 }
-                                Mat sample;
-                                cvtColor(color(Rect(pNeck - Point2i(5, 5), pNeck + Point2i(5, 5))), sample, COLOR_BGR2HSV);
-                                Scalar cNeck = mean(sample);
-                                cvtColor(color(Rect(pNose - Point2i(5, 5), pNose + Point2i(5, 5))), sample, COLOR_BGR2HSV);
-                                Scalar cNose = mean(sample);
-
-                                if ((iter.second.first + colorMargin > 179) || (iter.second.first - colorMargin < 0))
+                                low = Scalar(iter.second.first-5, 0, 0);
+                                high= Scalar(iter.second.first+5, 255, 255);
+                                Mat output1;
+                                if(p0==p1 || p0.x>=p1.x || p0.y >= p1.y) continue;
+                                cvtColor(color(Rect(p0, p1)), output1, COLOR_BGR2HSV);
+                                inRange(output1,low, high, output);
+                                if(high(0)>180){
+                                    low = Scalar(0, 0, 0);
+                                    high= Scalar(high(0) -180, 255, 255);
+                                    inRange(output1,low, high, output1);
+                                    output += output1;
+                                }
+                                else if(low(0)<0)
                                 {
-                                    if ((cNeck[0] < (iter.second.first - colorMargin) % 180) && (cNeck[0] > (iter.second.first + colorMargin) % 180))
-                                    {
-                                        match = false;
-                                        continue;
-                                    }
+                                    low = Scalar(low(0)+180, 0, 0);
+                                    high= Scalar(255, 255, 255);
+                                    inRange(output1,low, high, output1);
+                                    output += output1;
                                 }
-                                else if ((cNeck[0] < iter.second.first - colorMargin) || (cNeck[0] > iter.second.first + colorMargin))
-                                {
-                                    match = false;
-                                    continue;
-                                }
-
-                                double redDist = min(fabs(cNose[0] - 0), fabs(cNose[0] - 180));
-                                double blueDist = min(fabs(cNose[0] + 72), fabs(cNose[0] - 108));
-                                if (iter.second.second != (blueDist < redDist))
-                                {
-                                    match = false;
-                                    continue;
-                                }
-
-                                // for(auto colors:iter.second)
-                                // {
-                                //     Point2i point;
-                                //     transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[colors.first].position, point);
-                                //     if(point.x<10||point.y<10||point.x>=color.cols-10||point.y>=color.rows-10) {match = false; break;}
-                                //     Mat sample;
-                                //     cvtColor(color(Rect(point - Point2i(5, 5), point + Point2i(5, 5))), sample, COLOR_BGR2HSV);
-                                //     Scalar jColor = mean(sample);
-                                //     if( (colors.second + colorMargin > 179) || (colors.second - colorMargin < 0) )
-                                //     {
-                                //         if((jColor[0]<(colors.second - colorMargin)%180) && (jColor[0]>(colors.second + colorMargin)%180))
-                                //             {match = false; break; }
-                                //     }
-                                //     else if((jColor[0]<colors.second - colorMargin) || (jColor[0]>colors.second + colorMargin))
-                                //     {
-                                //         match = false; break;
-                                //     }
-                                // }
-                                if (match)
+                                //  imshow("test2", output); waitKey(1);
+                                // imshow("test3", color(Rect(p0, p1))); waitKey(1);
+                               if((countNonZero(output) >  output.cols*output.rows*0.3)) 
                                 {
                                     if (givenID < 0)
                                         givenID = iter.first;
                                     else
                                     {
                                         cout << "two possible ID: " << givenID << ", " << iter.first;
-                                        givenID = -1;
+                                        givenID = -id0;
                                     }
                                 }
                             }
-                        if (givenID < 0)
-                            givenID = -id0;
-                        if (givenID != givenIDs[id0].first)
-                            givenIDs[id0].second = 0;
-                        givenIDs[id0].first = givenID;
+                        if (givenID < 0)  continue;
+                        
+                        else if (givenID != givenIDs[id0].first)
+                            givenIDs[id0] = make_pair(givenID, 0);
                         givenIDs[id0].second++;
                     }
 
@@ -411,7 +403,8 @@ int main(int argc, char **argv)
                     // }
                     // else continue;
 
-                    sendBuff[pos++] = givenIDs[id0].first;
+                    if(givenIDs.find(id0) != givenIDs.end()) sendBuff[pos++] = givenIDs[id0].first;
+                    else sendBuff[pos++] = -id0;
                     sendBuff[numPos]++;
 
                     for (int i = 0; i < 18; i++)
@@ -451,10 +444,17 @@ int main(int argc, char **argv)
             cv::putText(color, colorComment, Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f, 0.f, 0.f), 1.2);
             for (auto iter : idPos)
             {
+                if (givenIDs.find(iter.first) == givenIDs.end())
+                {
+                    cv::putText(color, to_string(iter.first), iter.second * kinectRecordF, FONT_HERSHEY_SIMPLEX, 2, cv::Scalar(255, 0, 0), 2);
+                }
+                else 
+                {
                 string tag = to_string(givenIDs[iter.first].first);
-                if (givenIDs[iter.first].second > 6)
+                if (givenIDs[iter.first].second < 10)
                     tag += "(X)";
-                cv::putText(color, tag, iter.second * kinectRecordF, FONT_HERSHEY_SIMPLEX, 3., cv::Scalar(0, 0, 255), 2);
+                cv::putText(color, tag, iter.second * kinectRecordF, FONT_HERSHEY_SIMPLEX, 2, cv::Scalar(0, 0, 255), 2);
+                }
             }
             cv::imshow("color_body", color);
             cv::waitKey(1);
