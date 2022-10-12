@@ -109,7 +109,9 @@ bool OcrMain::Render(float *data)
 	if(recording) {
 		cv::Mat recordImg;
 		cv::resize(img, recordImg, recordSize);
-		recorder<<img;
+		time_t now = chrono::system_clock::to_time_t(chrono::system_clock::now());
+        cv::putText(recordImg, string(ctime(&now)), cv::Point2i(0, 30),FONT_HERSHEY_SIMPLEX,1.f,cv::Scalar(0, 0, 255), 2);
+		recorder<<recordImg;
 	}
 	cv::Mat imgCopy, imgResize;
 	img.copyTo(imgCopy);
@@ -139,6 +141,7 @@ bool OcrMain::Render(float *data)
 		}
 		else if (success)
 		{
+			if(result[0]=='+') result = result.substr(1, result.size()-1);
 			data[i] = atof(result.c_str());
 			// if (i == 9)
 				// fluoChk = success;
@@ -184,6 +187,7 @@ bool OcrMain::Render(float *data)
 
 	double ratio = (double)resize / 100.;
 	cv::resize(imgCopy, imgCopy, cv::Size(img.cols * ratio, img.rows * ratio));
+	
 	cv::imshow("CaptureBoard", imgCopy);
 	cv::createTrackbar(
 		"resize", "CaptureBoard", &resize, 100, [](int pos, void *data) {}, (void *)&imgCopy);

@@ -19,7 +19,6 @@
 // #define TEST
 // #define OCR_SETTINGS
 #define ABT_DISPLAY
-#define KINECT_RECORD
 #define GLASS_DISPLAY
 extern Rect cropRect;
 void PrintUsage()
@@ -62,13 +61,13 @@ int main(int argc, char **argv)
     int client_socket;
     struct sockaddr_in serverAddress;
     socklen_t server_addr_size;
-    float sendBuff[500];
+    float sendBuff[1500];
     sendBuff[0] = id;
     sendBuff[1] = opt;
     char recvBuff[4];
 
     double kinectRecordF = 0.3;
-    
+
     // --OCR
     if (opt & 1)
     {
@@ -80,7 +79,7 @@ int main(int argc, char **argv)
         // ocr_main.Initialize("config_video2.yml");
         ocr_main.Initialize("config_20220914_ocr.yml");
 
-        //for settings
+        // for settings
 #ifdef OCR_SETTINGS
         ocr_main.RenderForSetting();
         ocr_main.RenderForLearning();
@@ -107,7 +106,7 @@ int main(int argc, char **argv)
         ocr_main.SetRecord(true);
         while (1)
         {
-            sendto(client_socket, sendBuff, 500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
+            sendto(client_socket, sendBuff, 1500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
             if (!ocr_main.Render(&sendBuff[2]))
                 break;
         }
@@ -138,15 +137,16 @@ int main(int argc, char **argv)
     int colorMargin(10);
 
     string colorComment;
-    if(argc>5)
+    if (argc > 5)
     {
-        for(int i=0;i<atoi(argv[5]);i++)
+        for (int i = 0; i < atoi(argv[5]); i++)
         {
-            colorIdx[atoi(argv[6+i*3])].first=atoi(argv[7+i*3]);
-            colorIdx[atoi(argv[6+i*3])].second=bool(atoi(argv[8+i*3]));
+            colorIdx[atoi(argv[6 + i * 3])].first = atoi(argv[7 + i * 3]);
+            colorIdx[atoi(argv[6 + i * 3])].second = bool(atoi(argv[8 + i * 3]));
             string maskColor("red");
-            if(colorIdx[atoi(argv[6+i*3])].second) maskColor = "blue";
-            colorComment += string(argv[6+i*3])+":"+string(argv[7+i*3])+"/"+maskColor+" | ";
+            if (colorIdx[atoi(argv[6 + i * 3])].second)
+                maskColor = "blue";
+            colorComment += string(argv[6 + i * 3]) + ":" + string(argv[7 + i * 3]) + "/" + maskColor + " | ";
         }
     }
 
@@ -167,12 +167,12 @@ int main(int argc, char **argv)
            "Get depth camera calibration failed!");
     depthWidth = sensorCalibration.depth_camera_calibration.resolution_width;
     depthHeight = sensorCalibration.depth_camera_calibration.resolution_height;
-  
+
     // tracker
     k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
     tracker_config.processing_mode = K4ABT_TRACKER_PROCESSING_MODE_GPU_CUDA;
     VERIFY(k4abt_tracker_create(&sensorCalibration, tracker_config, &tracker), "Body tracker initialization failed!");
-  
+
     if (opt & 4)
     {
         glassTracker.SetScalingFactor(0.3);
@@ -186,6 +186,7 @@ int main(int argc, char **argv)
             cerr << "Check camera parmeter file! (" << dir + "/kinect2160.yml)" << endl;
             return 1;
         }
+        glassTracker.SetRecord(true);
     }
 
     // ssize_t sentBytes;
@@ -193,7 +194,7 @@ int main(int argc, char **argv)
     serverAddress.sin_family = AF_INET;
     serverAddress.sin_addr.s_addr = inet_addr(argv[1]);
     serverAddress.sin_port = htons(atoi(argv[2]));
-  
+
     if ((client_socket = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
     {
         cout << "WORKER: socket generation failed" << endl;
@@ -205,30 +206,30 @@ int main(int argc, char **argv)
     int optLen = sizeof(optVal);
     setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &optVal, optLen);
     // first msg.
-    sendto(client_socket, sendBuff, 500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
-  
+    sendto(client_socket, sendBuff, 1500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
+
 #ifdef ABT_DISPLAY
     Window3dWrapper window3d;
+    VideoWriter recorder;
     if (opt & 8)
     {
         window3d.Create("Motion Capture", sensorCalibration);
         window3d.SetCloseCallback(CloseCallback);
         window3d.SetKeyCallback(ProcessKey);
+        time_t now = chrono::system_clock::to_time_t(chrono::system_clock::now());
+        VideoWriter recorder;
+        cv::Size recordSize(sensorCalibration.color_camera_calibration.resolution_width * kinectRecordF,
+                            sensorCalibration.color_camera_calibration.resolution_height * kinectRecordF);
+        recorder.open(string(ctime(&now)) + "_kinect.avi", cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 15, recordSize, true);
+        if (!recorder.isOpened())
+            cout << "error in recorder!" << endl;
     }
 #endif
-#ifdef KINECT_RECORD
-    time_t now = chrono::system_clock::to_time_t(chrono::system_clock::now());
-    VideoWriter recorder;
-    cv::Size recordSize(sensorCalibration.color_camera_calibration.resolution_width*kinectRecordF, 
-            sensorCalibration.color_camera_calibration.resolution_height*kinectRecordF);
-    recorder.open(string(ctime(&now))+"_kinect.avi", cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 15 , recordSize, true);
-    if(!recorder.isOpened())
-        cout<<"error in recorder!"<<endl;
-#endif
+
     // main loop
     Mat color;
     vector<int> kinectData = {0, 1, 2, 4, 5, 6, 8, 26, 11, 12, 13, 15, 18, 19, 20, 22, 23, 24, 9, 16, 21, 25, 28, 30}; // first 18 belongs to bone data
-    map<int, pair<int, int>> givenIDs; //pair<num, count>
+    map<int, pair<int, int>> givenIDs;                                                                                 // pair<num, count>
     while (1)
     {
         int capture_opt(0);
@@ -258,7 +259,8 @@ int main(int argc, char **argv)
             Quaterniond q;
             Eigen::Vector3d t;
             bool detected = glassTracker.ProcessCurrentFrame(q, t);
-            if(!glassTracker.Render(detected)) break;
+            if (!glassTracker.Render(detected))
+                break;
             if (detected)
             {
                 capture_opt |= 4;
@@ -281,11 +283,11 @@ int main(int argc, char **argv)
             }
 
             k4abt_frame_t bodyFrame = nullptr;
-            k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0           
+            k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0); // timeout_in_ms is set to 0
             map<int, Point2i> idPos;
             if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
             {
-            
+
 #ifdef ABT_DISPLAY
                 VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight);
                 if (!s_isRunning)
@@ -293,94 +295,113 @@ int main(int argc, char **argv)
 #endif
 
                 int num = k4abt_frame_get_num_bodies(bodyFrame);
-                // num = num > 5 ? 5 : num;
-                // if (num)
-                // {
-                //     capture_opt |= 8;
-                //     sendBuff[pos++] = num;
-                // }
                 int numPos = pos;
                 sendBuff[pos++] = 0;
                 for (int i = 0; i < num; i++)
                 {
                     int id0 = k4abt_frame_get_body_id(bodyFrame, i);
+                    givenIDs[id0] = make_pair(id0, 20);////////////////
+
                     // sendBuff[pos++] = id0;
                     k4abt_body_t body;
                     k4abt_frame_get_body_skeleton(bodyFrame, i, &body.skeleton);
+ 
+/////// WORKER IDENTIFICATION
                     transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[3].position, idPos[id0]);
                     // imshow("neck", color(cv::Rect(p0, p1)));
-                    if((givenIDs[id0].first<0) || (givenIDs[id0].second<6)) // if ID was not assigned
+                    if ((givenIDs[id0].first < 0) || (givenIDs[id0].second < 6)) // if ID was not assigned
                     {
                         int givenID(-1);
                         k4a_quaternion_t q = body.skeleton.joints[2].orientation;
                         Quaterniond quat2(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z);
                         q = body.skeleton.joints[26].orientation;
                         Quaterniond quat26(q.wxyz.w, q.wxyz.x, q.wxyz.y, q.wxyz.z);
-                        
-                        if((Vector3d(0, 0, -1).dot(quat2 * Vector3d(0, 1, 0)) > 0.9) && 
-                        (Vector3d(0, 0, -1).dot(quat26 * Vector3d(0, 1, 0)) > 0.9))
-                        for(auto iter:colorIdx)
-                        {
-                            bool match(true);
-                            k4a_float3_t pInBetween;
-                            pInBetween.v[0] = (body.skeleton.joints[3].position.v[0] + body.skeleton.joints[2].position.v[0])*0.5;
-                            pInBetween.v[1] = (body.skeleton.joints[3].position.v[1] + body.skeleton.joints[2].position.v[1])*0.5;
-                            pInBetween.v[2] = (body.skeleton.joints[3].position.v[2] + body.skeleton.joints[2].position.v[2])*0.5;
-                            Point2i pNeck, pNose;
-                            transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, pInBetween, pNeck);
-                            if(pNeck.x<10||pNeck.y<10||pNeck.x>=color.cols-10||pNeck.y>=color.rows-10) {match = false; break;}
-                            transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[27].position, pNose);
-                            if(pNose.x<10||pNose.y<10||pNose.x>=color.cols-10||pNose.y>=color.rows-10) {match = false; break;}
-                            Mat sample;
-                            cvtColor(color(Rect(pNeck - Point2i(5, 5), pNeck + Point2i(5, 5))), sample, COLOR_BGR2HSV);
-                            Scalar cNeck = mean(sample);
-                            cvtColor(color(Rect(pNose - Point2i(5, 5), pNose + Point2i(5, 5))), sample, COLOR_BGR2HSV);
-                            Scalar cNose = mean(sample);
-                            
-                            if( (iter.second.first + colorMargin > 179) || (iter.second.first - colorMargin < 0) )
-                            {
-                                if((cNeck[0]<(iter.second.first - colorMargin)%180) && (cNeck[0]>(iter.second.first + colorMargin)%180))
-                                    {match = false; continue; }
-                            }
-                            else if((cNeck[0]<iter.second.first - colorMargin) || (cNeck[0]>iter.second.first + colorMargin))
-                            {
-                                match = false; continue;
-                            }
 
-                            double redDist = min(fabs(cNose[0]-0), fabs(cNose[0]-180));
-                            double blueDist = min(fabs(cNose[0]+72), fabs(cNose[0]-108));
-                            if(iter.second.second != (blueDist<redDist)) {match = false; continue;}                          
-                            
-                            // for(auto colors:iter.second)
-                            // {
-                            //     Point2i point;
-                            //     transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[colors.first].position, point);
-                            //     if(point.x<10||point.y<10||point.x>=color.cols-10||point.y>=color.rows-10) {match = false; break;}
-                            //     Mat sample;
-                            //     cvtColor(color(Rect(point - Point2i(5, 5), point + Point2i(5, 5))), sample, COLOR_BGR2HSV);
-                            //     Scalar jColor = mean(sample);
-                            //     if( (colors.second + colorMargin > 179) || (colors.second - colorMargin < 0) )
-                            //     {
-                            //         if((jColor[0]<(colors.second - colorMargin)%180) && (jColor[0]>(colors.second + colorMargin)%180))
-                            //             {match = false; break; }
-                            //     }
-                            //     else if((jColor[0]<colors.second - colorMargin) || (jColor[0]>colors.second + colorMargin))
-                            //     {
-                            //         match = false; break;
-                            //     }
-                            // }
-                            if(match) 
+                        if ((Vector3d(0, 0, -1).dot(quat2 * Vector3d(0, 1, 0)) > 0.9) &&
+                            (Vector3d(0, 0, -1).dot(quat26 * Vector3d(0, 1, 0)) > 0.9))
+                            for (auto iter : colorIdx)
                             {
-                                if(givenID<0) givenID = iter.first;
-                                else {
-                                    cout<<"two possible ID: "<<givenID<<", "<<iter.first;
-                                    givenID = -1;
+                                bool match(true);
+                                k4a_float3_t pInBetween;
+                                pInBetween.v[0] = (body.skeleton.joints[3].position.v[0] + body.skeleton.joints[2].position.v[0]) * 0.5;
+                                pInBetween.v[1] = (body.skeleton.joints[3].position.v[1] + body.skeleton.joints[2].position.v[1]) * 0.5;
+                                pInBetween.v[2] = (body.skeleton.joints[3].position.v[2] + body.skeleton.joints[2].position.v[2]) * 0.5;
+                                Point2i pNeck, pNose;
+                                transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, pInBetween, pNeck);
+                                if (pNeck.x < 10 || pNeck.y < 10 || pNeck.x >= color.cols - 10 || pNeck.y >= color.rows - 10)
+                                {
+                                    match = false;
+                                    break;
+                                }
+                                transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[27].position, pNose);
+                                if (pNose.x < 10 || pNose.y < 10 || pNose.x >= color.cols - 10 || pNose.y >= color.rows - 10)
+                                {
+                                    match = false;
+                                    break;
+                                }
+                                Mat sample;
+                                cvtColor(color(Rect(pNeck - Point2i(5, 5), pNeck + Point2i(5, 5))), sample, COLOR_BGR2HSV);
+                                Scalar cNeck = mean(sample);
+                                cvtColor(color(Rect(pNose - Point2i(5, 5), pNose + Point2i(5, 5))), sample, COLOR_BGR2HSV);
+                                Scalar cNose = mean(sample);
+
+                                if ((iter.second.first + colorMargin > 179) || (iter.second.first - colorMargin < 0))
+                                {
+                                    if ((cNeck[0] < (iter.second.first - colorMargin) % 180) && (cNeck[0] > (iter.second.first + colorMargin) % 180))
+                                    {
+                                        match = false;
+                                        continue;
+                                    }
+                                }
+                                else if ((cNeck[0] < iter.second.first - colorMargin) || (cNeck[0] > iter.second.first + colorMargin))
+                                {
+                                    match = false;
+                                    continue;
+                                }
+
+                                double redDist = min(fabs(cNose[0] - 0), fabs(cNose[0] - 180));
+                                double blueDist = min(fabs(cNose[0] + 72), fabs(cNose[0] - 108));
+                                if (iter.second.second != (blueDist < redDist))
+                                {
+                                    match = false;
+                                    continue;
+                                }
+
+                                // for(auto colors:iter.second)
+                                // {
+                                //     Point2i point;
+                                //     transform_joint_from_depth_3d_to_color_2d(&sensorCalibration, body.skeleton.joints[colors.first].position, point);
+                                //     if(point.x<10||point.y<10||point.x>=color.cols-10||point.y>=color.rows-10) {match = false; break;}
+                                //     Mat sample;
+                                //     cvtColor(color(Rect(point - Point2i(5, 5), point + Point2i(5, 5))), sample, COLOR_BGR2HSV);
+                                //     Scalar jColor = mean(sample);
+                                //     if( (colors.second + colorMargin > 179) || (colors.second - colorMargin < 0) )
+                                //     {
+                                //         if((jColor[0]<(colors.second - colorMargin)%180) && (jColor[0]>(colors.second + colorMargin)%180))
+                                //             {match = false; break; }
+                                //     }
+                                //     else if((jColor[0]<colors.second - colorMargin) || (jColor[0]>colors.second + colorMargin))
+                                //     {
+                                //         match = false; break;
+                                //     }
+                                // }
+                                if (match)
+                                {
+                                    if (givenID < 0)
+                                        givenID = iter.first;
+                                    else
+                                    {
+                                        cout << "two possible ID: " << givenID << ", " << iter.first;
+                                        givenID = -1;
+                                    }
                                 }
                             }
-                        }
-                        if(givenID<0) givenID = -id0;
-                        if(givenID != givenIDs[id0].first) givenIDs[id0].second = 0;
-                        givenIDs[id0].first = givenID; givenIDs[id0].second++; 
+                        if (givenID < 0)
+                            givenID = -id0;
+                        if (givenID != givenIDs[id0].first)
+                            givenIDs[id0].second = 0;
+                        givenIDs[id0].first = givenID;
+                        givenIDs[id0].second++;
                     }
 
                     // if(givenIDs[id0].second >= 10) //if assigned
@@ -389,31 +410,35 @@ int main(int argc, char **argv)
                     //     sendBuff[numPos]++;
                     // }
                     // else continue;
+
                     sendBuff[pos++] = givenIDs[id0].first;
                     sendBuff[numPos]++;
 
                     for (int i = 0; i < 18; i++)
                     {
                         k4a_quaternion_t q = body.skeleton.joints[kinectData[i]].orientation;
-                        // Quaterniond q1 = Quaterniond(q.wxyz.y, q.wxyz.z, q.wxyz.w, q.wxyz.x);// * alignRot[i];
-                        // q1.normalize();
-                        sendBuff[pos++] = q.wxyz.w;
-                        sendBuff[pos++] = q.wxyz.x;
-                        sendBuff[pos++] = q.wxyz.y;
-                        sendBuff[pos++] = q.wxyz.z;
+                        Quaternionf q1(q.wxyz.w,q.wxyz.x,q.wxyz.y,q.wxyz.z);
+                        q1 = AngleAxisf(-6./180*PI,Vector3f(1,0,0))*q1;
+                        sendBuff[pos++] = q1.w();
+                        sendBuff[pos++] = q1.x();
+                        sendBuff[pos++] = q1.y();
+                        sendBuff[pos++] = q1.z();
                     }
+                    int score(0);
                     for (int i : kinectData)
                     {
-                        // sendBuff[pos++] = 0;
-                        // if (body.skeleton.joints[i].confidence_level == K4ABT_JOINT_CONFIDENCE_MEDIUM)
-                        //     sendBuff[pos] = 1;
-                        sendBuff[pos++] = body.skeleton.joints[i].position.xyz.x * 0.1;
-                        sendBuff[pos++] = body.skeleton.joints[i].position.xyz.y * 0.1;
-                        sendBuff[pos++] = body.skeleton.joints[i].position.xyz.z * 0.1;
+                        if(body.skeleton.joints[i].confidence_level ==K4ABT_JOINT_CONFIDENCE_MEDIUM) score++;
+                        k4a_float3_t p;// =body.skeleton.joints[i].position;
+                        k4a_calibration_3d_to_3d(&sensorCalibration, &body.skeleton.joints[i].position, K4A_CALIBRATION_TYPE_DEPTH, K4A_CALIBRATION_TYPE_COLOR, &p);
+                        sendBuff[pos++] = p.xyz.x * 0.1;
+                        sendBuff[pos++] = p.xyz.y * 0.1;
+                        sendBuff[pos++] = p.xyz.z * 0.1;
                     }
+                    sendBuff[pos++] = score;
                 }
                 k4abt_frame_release(bodyFrame);
-                if(sendBuff[numPos]>0) capture_opt |= 8;
+                if (sendBuff[numPos] > 0)
+                    capture_opt |= 8;
             }
 #ifdef ABT_DISPLAY
             // VisualizeResult(bodyFrame, window3d, depthWidth, depthHeight);
@@ -422,25 +447,26 @@ int main(int argc, char **argv)
             window3d.SetJointFrameVisualization(s_visualizeJointFrame);
             window3d.Render();
 
-            cv::resize(color, color, Size(color.cols*kinectRecordF, color.rows*kinectRecordF));
+            cv::resize(color, color, Size(color.cols * kinectRecordF, color.rows * kinectRecordF));
             cv::putText(color, colorComment, Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f, 0.f, 0.f), 1.2);
-            for(auto iter:idPos)
+            for (auto iter : idPos)
             {
                 string tag = to_string(givenIDs[iter.first].first);
-                if(givenIDs[iter.first].second>6) tag+= "(X)";
-                cv::putText(color, tag, iter.second*kinectRecordF, FONT_HERSHEY_SIMPLEX, 3., cv::Scalar(0, 0, 255),2);
+                if (givenIDs[iter.first].second > 6)
+                    tag += "(X)";
+                cv::putText(color, tag, iter.second * kinectRecordF, FONT_HERSHEY_SIMPLEX, 3., cv::Scalar(0, 0, 255), 2);
             }
             cv::imshow("color_body", color);
             cv::waitKey(1);
-            recorder<<color;
+            recorder << color;
 #endif
         }
         if (sensorCapture)
             k4a_capture_release(sensorCapture);
-   
+
         sendBuff[1] = capture_opt;
         server_addr_size = sizeof(serverAddress);
-        sendto(client_socket, sendBuff, 500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
+        sendto(client_socket, sendBuff, 1500 * 4, 0, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
         if (recvfrom(client_socket, recvBuff, 4, 0, (struct sockaddr *)&serverAddress, &server_addr_size) > 0)
         {
             cout << "WORKER: server says - " << recvBuff << endl;

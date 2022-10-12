@@ -28,6 +28,10 @@ class GlassTracker
     bool Render(bool showResult = true);
 
     void SetScalingFactor(float s);
+    void SetRecord(bool chk)
+    {
+        recording = chk;
+    }
 
     private:
     Ptr<aruco::Dictionary> dictionary;
@@ -45,6 +49,8 @@ class GlassTracker
     float markerLength; 
 
     float sf;
+    bool recording;
+    VideoWriter recorder;
 
 };
 #endif

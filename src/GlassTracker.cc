@@ -200,6 +200,17 @@ bool GlassTracker::Render(bool showResult)
         putText(display, "tvec: " + to_string(tvec_cumul(0)) + ", " + to_string(tvec_cumul(1)) + ", " + to_string(tvec_cumul(2)), Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255.f, 0.f, 0.f), 1.2);
     }
     imshow("Glass Tracker", display);
+    time_t now = chrono::system_clock::to_time_t(chrono::system_clock::now());
+    if(recording)
+    {
+        if(!recorder.isOpened()){
+            time_t now = chrono::system_clock::to_time_t(chrono::system_clock::now());
+            recorder.open(string(ctime(&now))+"_glass.avi", cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 
+		    15 , cv::Size(display.cols, display.rows), true);
+        }
+        cv::putText(display, string(ctime(&now)), cv::Point2i(0, display.rows-1),FONT_HERSHEY_SIMPLEX,1.f,cv::Scalar(0, 0, 255), 2);
+        recorder<<display;
+    }
     waitKey(1);
     return (getWindowProperty("Glass Tracker", WND_PROP_AUTOSIZE) == 1);
 }
