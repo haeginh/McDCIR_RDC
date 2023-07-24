@@ -32,7 +32,7 @@
 #include <Eigen/StdVector>
 #include <Eigen/SparseCore>
 
-static vector<string> BFlist = {"M26", "M29", "M31", "M33", "M36", "F26", "F29", "F32", "F35", "F39"};
+static vector<string> BFlist = {"M19.0", "M22.5", "M26.0", "M29.4", "M32.9", "F17.6", "F21.5", "F25.4", "F29.3"};
 
 // class Viewer;
 class PhantomAnimator{
@@ -46,6 +46,7 @@ public:
 
     bool LoadPhantom(string phantomName, bool isMale);
     bool LoadPhantomWithWeightFiles(string phantomName, bool isMale);
+    bool CalibrateTo2(map<int, double> jl, double height);
     bool CalibrateTo(map<int, double> jl, RowVector3d eyeL_pos, RowVector3d eyeR_pos);
     void Clear(){
         V.resize(0, 0); 
@@ -58,7 +59,9 @@ public:
         U_apron.resize(0, 0);
     }
 
-    void Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool withApron = false);
+    void Animate(RotationList vQ, const MatrixXd &C_disp, bool withApron = false);
+    MatrixXd GetAccV();
+
     // void Animate(RotationList vQ, MatrixXd &V_new);
 
     void GetMeshes(MatrixXd &_V, MatrixXi &_F, MatrixXd &_C, MatrixXi &_BE){
@@ -80,7 +83,7 @@ public:
     }
 
 //variables
-    MatrixXd C, V, U, Wj, V_apron, U_apron, Wj_apron;
+    MatrixXd C, C1, V, U, Wj, V_apron, U_apron, Wj_apron;
     MatrixXi BE, T, F, F_apron;   
 private:
     bool Initialize();
@@ -96,7 +99,7 @@ private:
     map<int, double> lengths;
 public:
     bool useApron;
-    double irrTime;
+    double irrTime; //in sec
     VectorXi outApron;
     RowVectorXd lHandW, rHandW;
     string phantomDir;
@@ -151,6 +154,7 @@ public:
         if(accD.rows()>0) return accD.maxCoeff();
         else return 0;
     }
+
     void ClearDose(){
         accD = VectorXd::Zero(V.rows());
         rateD = accD;

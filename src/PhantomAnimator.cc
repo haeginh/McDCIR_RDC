@@ -31,6 +31,7 @@ bool PhantomAnimator::LoadPhantom(string _phantom, bool isMale)
         cout << "There is no " + tfgN;
         return false;
     }
+    C1 = C;
     cout << "Read " + _phantom + ".ply" << endl;
     if (!igl::readPLY(phantomDir+_phantom + ".ply", V, F))
     {
@@ -217,6 +218,7 @@ bool PhantomAnimator::LoadPhantomWithWeightFiles(string _phantom, bool isMale)
         cout << "There is no " + tfgN;
         return false;
     }
+    C1 = C;
     cout << "Read " + _phantom + ".ply" << endl;
     if (!igl::readPLY(phantomDir+_phantom + ".ply", V, F))
     {
@@ -313,7 +315,7 @@ bool PhantomAnimator::LoadPhantomWithWeightFiles(string _phantom, bool isMale)
             iter.second /= sum;
         cleanWeightsApron.push_back(vertexWeight);
     }
-
+    cout<<44<<endl;
     Initialize();
 
     return true;
@@ -321,6 +323,7 @@ bool PhantomAnimator::LoadPhantomWithWeightFiles(string _phantom, bool isMale)
 bool PhantomAnimator::Initialize()
 {
     ClearDose();
+    cout<<111<<endl;
 
     endC.clear();
     endC.resize(18);
@@ -412,6 +415,52 @@ bool PhantomAnimator::Initialize()
     return true;
 }
 
+bool PhantomAnimator::CalibrateTo2(map<int, double> jl, double height)
+{
+    double f = height / (V.col(1).maxCoeff() - V.col(1).minCoeff());
+    V *= f;
+    C *= f;
+    V_apron *= f;
+    for(auto &iter:lengths) iter.second *= f;
+
+    map<int, double> calibLengths = jl;
+
+    MatrixXd jointTrans = MatrixXd::Zero(C.rows(), 3);
+    for (int i = 0; i < BE.rows(); i++)
+    {
+        if (calibLengths.find(i) == calibLengths.end())
+        {
+            calibLengths[i] = lengths[i];
+            jointTrans.row(BE(i, 1)) = jointTrans.row(BE(P(i), 1));
+            continue;
+        }
+        double ratio = calibLengths[i] / lengths[i];
+        cout << i << " : " << lengths[i] << " -> " << calibLengths[i] << " (" << ratio * 100 << " %)" << endl;
+        jointTrans.row(BE(i, 1)) = (1 - ratio) * (C.row(BE(i, 0)) - C.row(BE(i, 1)));
+        if (P(i) < 0)
+            continue;
+        jointTrans.row(BE(i, 1)) += jointTrans.row(BE(P(i), 1));
+    }
+    jointTrans.row(22) = jointTrans.row(24);
+    jointTrans.row(23) = jointTrans.row(24);
+    V = V + Wj * jointTrans.block(0, 0, C.rows(), 3);
+    MatrixXd footTrans = MatrixXd::Zero(C.rows(), 3);
+    double trans = height - (V.col(1).maxCoeff() - V.col(1).minCoeff());
+    footTrans(17, 1) = trans; footTrans(14, 1) = trans;
+    footTrans(20, 1) = trans; footTrans(21, 1) = trans;
+    V = V + Wj * footTrans;
+    jointTrans.topRows(C.rows()-1) += footTrans;    
+    U = V;
+ 
+    cout<<"*Final foot trans: "<<trans<<" cm / height: "<<(V.col(1).maxCoeff() - V.col(1).minCoeff())<<" cm"<<endl;
+    C = C + jointTrans;
+    C1 = C;
+
+    V_apron = V_apron + Wj_apron * jointTrans.block(0, 0, C.rows(), 3);
+    U_apron = V_apron;
+    return true;
+}
+
 bool PhantomAnimator::CalibrateTo(map<int, double> jl, RowVector3d eyeL_pos, RowVector3d eyeR_pos)
 {
     map<int, double> calibLengths = jl;
@@ -449,16 +498,17 @@ bool PhantomAnimator::CalibrateTo(map<int, double> jl, RowVector3d eyeL_pos, Row
     // cout << C.rows() - 1 << endl;
 
     V_apron = V_apron + Wj_apron * jointTrans.block(0, 0, C.rows() - 1, 3);
+
     // MatrixXd jt = jointTrans.block(0,0,C.rows()-1,3);
     return true;
 }
 
-void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd &C_new, bool withApron)
+void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, bool withApron)
 {
     vector<Vector3d> vT;
 
-    C_new = C;
-    C_new.row(0) = C_disp.row(0); // set root
+    C1 = C;
+    C1.row(0) = C_disp.row(0); // set root
     for (int i = 0; i < 18;i++)//BE.rows(); i++)
     {
         // Affine3d a;
@@ -466,13 +516,60 @@ void PhantomAnimator::Animate(RotationList vQ, const MatrixXd &C_disp, MatrixXd 
         // vT.push_back(a.translation());
         // C_new.row(BE(i, 1)) = a * Vector3d(C_new.row(BE(i, 1)));
         vQ[i] = vQ[i] * alignRot[i];
+
+        if(i==6 || i==11)
+        {
+            double handMaxAngle(45./180.*M_PI);
+            AngleAxisd rel(vQ[i]*vQ[i-1].inverse());
+            rel = AngleAxisd(handMaxAngle,rel.axis());
+            vQ[i] = rel * vQ[i-1];
+        }
+        if(i==12 || i==13 || i==15 || i==16)
+        {
+            double legMaxAngle(10./180.*M_PI);
+            Vector3d dir = vQ[i] * Vector3d(0, -1, 0);
+            if(dir(2)<cos(legMaxAngle))
+            {
+                AngleAxisd rot(acos(dir(2))-legMaxAngle,dir.cross(Vector3d(0, 0, 1)).normalized());
+                vQ[i] = rot * vQ[i];
+            }
+        }
         Affine3d a;
-        a = Translation3d(Vector3d(C_new.row(i).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C.row(i).transpose()));
+        a = Translation3d(Vector3d(C1.row(i).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C.row(i).transpose()));
         vT.push_back(a.translation());
-        for(int e:endC[i]) C_new.row(e) = a * Vector3d(C_new.row(e));
+        for(int e:endC[i]) C1.row(e) = a * Vector3d(C1.row(e));
     }
+
     myDqs(V, cleanWeights, vQ, vT, U);
     if(withApron) myDqs(V_apron, cleanWeightsApron, vQ, vT, U_apron);
+    // }
+}
+
+MatrixXd PhantomAnimator::GetAccV()
+{
+    RotationList vQ(18, Quaterniond::Identity());
+    Quaterniond r0(AngleAxisd(15./180.*M_PI, Vector3d(-1, 0, 0)));
+    Quaterniond right(AngleAxisd(4./180.*M_PI, Vector3d(0, 0, 1)));
+    Quaterniond left(AngleAxisd(4./180.*M_PI, Vector3d(0, 0, -1)));
+    vQ[9] = AngleAxisd(10./180.*M_PI, Vector3d(0, 1, 0))*right*r0;
+    vQ[10] = AngleAxisd(40./180.*M_PI, Vector3d(0, 1, 0))*right*r0;
+    vQ[11] = AngleAxisd(80./180.*M_PI, Vector3d(0, 1, 0))*right*r0;
+    vQ[4] = AngleAxisd(-10./180.*M_PI, Vector3d(0, 1, 0))*left*r0;
+    vQ[5] = AngleAxisd(-40./180.*M_PI, Vector3d(0, 1, 0))*left*r0;
+    vQ[6] = AngleAxisd(-80./180.*M_PI, Vector3d(0, 1, 0))*left*r0;
+    vector<Vector3d> vT;
+    
+    MatrixXd Ctmp = C;
+    for (int i = 0; i < 18;i++)//BE.rows(); i++)
+    {
+        Affine3d a;
+        a = Translation3d(Vector3d(Ctmp.row(i).transpose())) * vQ[i].matrix() * Translation3d(Vector3d(-C.row(i).transpose()));
+        vT.push_back(a.translation());
+        for(int e:endC[i]) Ctmp.row(e) = a * Vector3d(Ctmp.row(e));
+    }
+    MatrixXd V1=V;
+    myDqs(V, cleanWeights, vQ, vT, V1);
+    return V1;
     // }
 }
 

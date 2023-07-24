@@ -5,7 +5,7 @@
 #include <igl/readDMAT.h>
 
 MapContainer::MapContainer(float _fl)
-:fl(_fl), volInv(1./125000.)
+:fl(_fl), volInv(1.3/125000.)
 {
     mapDir = string(getenv("DCIR_MAP_DIR")) + "/maps/";
     specDir = string(getenv("DCIR_MAP_DIR")) + "/spec/";
@@ -34,18 +34,27 @@ MapContainer::MapContainer(float _fl)
 
     //spot coord
     spotCoord.resize(3, 2);
-    spotCoord.row(0) = RowVector2f(3, 5); //lung
-    spotCoord.row(1) = RowVector2f(3, 27); //sto
-    spotCoord.row(2) = RowVector2f(3, 43); //pel
-    spotName = {"sto", "sto", "sto"}; //should be changed!!
+    spotCoord.row(0) = RowVector2f(-3, -30); //lung
+    spotCoord.row(1) = RowVector2f(-3, -10); //sto
+    spotCoord.row(2) = RowVector2f(-3, 6); //pel
+    spotName = {"lung", "sto", "pel"}; //should be changed!!
 
     //FD
     fdName = {"/01", "/02", "/03", "/04", "/05"};
 
     //default map
-    igl::readDMAT(mapDir + "sto/0101.sMap", skinMapList);
-    igl::readDMAT(mapDir + "sto/0101.lMap", lensMapList);
+    ReadDAPdata(specDir + "DAP.dat");
+    // skinMap.resize(totalNum);
+    // lensMap.resize(totalNum);
+    // ReadMap("RAO10CRA40_box.map", skinMap, lensMap);
+    // skinMap*=(1./dapMap[69]);
+    // lensMap*=(1./dapMap[69]);
+    // ReadSpectrum(specDir + "68.spec");
+    igl::readDMAT(mapDir + "sto/0401.sMap", skinMapList);
+    igl::readDMAT(mapDir + "sto/0401.lMap", lensMapList);
     ReadSpectrum(specDir + "60.spec");
+    skinMap*=(1./dapMap[60]);
+    lensMap*=(1./dapMap[60]);
 }
 
 void MapContainer::ReadSpectrum(string name)
@@ -57,7 +66,6 @@ void MapContainer::ReadSpectrum(string name)
         return;
     }
     string dump;
-    double factorInv;
     // skinMap = ArrayXf::Zero(totalNum);
     // lensMap = ArrayXf::Zero(totalNum);
     VectorXf spec = VectorXf::Zero(12); 
@@ -69,7 +77,7 @@ void MapContainer::ReadSpectrum(string name)
 		{
 			double brem, chara;
 			ifs>>brem>>chara;
-			factorInv = 1./(brem + chara)*1e6; //mAs/Gy@1m
+			// factorInv = 1./(brem + chara)*1e6; //mAs/Gy@1m
 		}
 		else if (dump == "Energy[keV]")
 		{
@@ -84,9 +92,10 @@ void MapContainer::ReadSpectrum(string name)
 		}
 	}
 	ifs.close(); 
-    spec *= factorInv*volInv; // #/(Gy cm2) @1m : 1/DAP
-    // cout<<skinMap.maxCoeff()<<endl;
-    skinMap = skinMapList * spec; 
+    // skinMap *= volInv*spec.sum();//Gy (/ DAP)
+    // #/(Gy cm2) @1m : 1/DAP
+    spec = spec / spec.sum();
+    skinMap = skinMapList * spec; //Gy / DAP
     lensMap = lensMapList * spec;
     return;
 }
@@ -103,6 +112,8 @@ bool MapContainer::ReadMap(string name, ArrayXf& _skinMap, ArrayXf& _lensMap)
     ifsMap.read((char*) &_skinMap(0), totalNum*sizeof(float));
     ifsMap.read((char*) &_lensMap(0), totalNum*sizeof(float));
     ifsMap.close();
+    _skinMap *= volInv; 
+    _lensMap *= volInv; 
     return true;
 }
 
@@ -114,52 +125,43 @@ bool MapContainer::SetCArm(int kVp, RowVector3f cArm, RowVector3f tableTrans, in
     int kVp1 = floor(kVp*0.2+0.5) * 5;
     
     Index idx;
-    (spotCoord.rowwise() - tableTrans.leftCols(2)).rowwise().squaredNorm().maxCoeff(&idx);
+    (spotCoord.rowwise() - tableTrans.leftCols(2)).rowwise().squaredNorm().minCoeff(&idx);
     int spot1 = idx; //chk
 
-    int fd1 = SelectFD(cArm(0), cArm(1), tableTrans(2) - 18.4285, cArm(2), fd);
+    int fd1 = SelectFD(cArm(0), cArm(1), tableTrans(2) - 23, cArm(2), fd);
 
-    if(rot0!=rot1 || ang0!=ang1 || spot0!=spot1 || fd0!=fd1) //if rotation changes
+    if((rot0!=rot1) || (ang0!=ang1) || (spot0!=spot1) || (fd0!=fd1)) //if rotation changes
     {
-        rot0=rot1; ang0=ang1; kVp0=kVp1;
+        rot0=rot1; ang0=ang1; kVp0=kVp1; spot0 = spot1; fd0 = fd1;
 
         string name = spotName[spot1]+fdName[fd1]+cArmName[make_pair(rot1, ang1)];
         igl::readDMAT(mapDir + name + ".sMap", skinMapList);
         igl::readDMAT(mapDir + name + ".lMap", lensMapList);
-
-        // for(int i=0;i<10;i++)
-        // {
-        //     //erase abs for non-decalcomanie
-        //     ReadMap(mapDir+"R"+to_string(abs(rot0))+"A"+to_string(ang0)+"_"+to_string(i+1)+"0keV.map", skinMap, lensMap);
-        //     skinMapList.push_back(skinMap);
-        //     lensMapList.push_back(lensMap);
-        // }        
+  
         ReadSpectrum(specDir + to_string(kVp0)+".spec");
-        cout<<"ROT "<<setw(5)<<rot1<<" ANG "<<setw(5)<<ang1<<setw(5)<<kVp1<<" kVp"<<setw(5)<<skinMap.maxCoeff()<<" /Gycm2(max)"<<endl;
+        skinMap *= (1./dapMap[kVp]);
+        lensMap *= (1./dapMap[kVp]);
+        cout<<"ROT "<<setw(5)<<rot1<<" ANG "<<setw(5)<<ang1<<setw(5)<<kVp1<<" kVp"<<setw(5)<<fd1<<" FD - spot"<<spot1<<endl;
     }
     else if(kVp0!=kVp1) //if peak volatage changes only
     {
-        cout<<"ROT "<<setw(5)<<rot1<<" ANG "<<setw(5)<<ang1<<setw(7)<<kVp1<<" kVp"<<endl;
+        cout<<"ROT "<<setw(5)<<rot1<<" ANG "<<setw(5)<<ang1<<setw(5)<<kVp1<<" kVp"<<setw(5)<<fd1<<" FD"<<endl;
         kVp0=kVp1;
         ReadSpectrum(specDir + to_string(kVp0)+".spec");
+        skinMap *= (1./dapMap[kVp]);
+        lensMap *= (1./dapMap[kVp]);
     }
 
     cArm_IT = (CarmRotation(rot0, ang0) * CarmRotation(cArm(0), cArm(1)).inverse()).transpose();
-    base = base0 + RowVector3f(0, 0, tableTrans(2));
+    base = base0 + RowVector3f(0, 0, -tableTrans(2)+5);
     return true;
 }
 
 void MapContainer::SetDoseRate(const MatrixXf &U, VectorXd &D, double dap)
 {
     MatrixXi gridM = ((U.rowwise() + base)*cArm_IT*gridConv).array().floor().cast<int>();
-    // MatrixXi gridM;
-    // if(rot0>0) gridM = ((U.rowwise() - base)*cArm_IT*gridConv).array().floor().cast<int>();
-    // else{//erase for non-decalcomanie
-    //     MatrixXf U1 = U;
-    //     U1.col(0) *= -1.;
-    //     gridM = ((U1.rowwise() - base)*cArm_IT*gridConv).array().floor().cast<int>();
-    // }
-    // cout<<gridM.colwise().maxCoeff()<<endl<<gridM.colwise().minCoeff()<<endl;
+    // MatrixXi gridM = ((U.rowwise()+base0)*gridConv).array().floor().cast<int>();
+    
     ArrayXi idx = gridM.col(0) * numGrid(2) * numGrid(1) + gridM.col(1) * numGrid(2) + gridM.col(2);
     ArrayXi in = ((idx.array()>0) * (idx.array()<totalNum)).cast<int>();
     D = D.array() * igl::slice(skinMap, idx*in, 1).cast<double>() * in.cast<double>() * dap; //Gy/s
@@ -167,20 +169,40 @@ void MapContainer::SetDoseRate(const MatrixXf &U, VectorXd &D, double dap)
 
 int MapContainer::SelectFD(float rot, float ang, float tableZ, float sid, int fd)
 {
-    float h = fabs(tableZ-15.);
     float cosTheta = (CarmRotation(rot, ang)*Vector3f(0, 0, -1)).dot(Vector3f(0, 0, -1));
-    float l = fl - (h/cosTheta);
-    float diag = float(fd) * (l/sid);
+    float l = fl + (tableZ*cosTheta); //focal spot to table
+    float diag = float(fd) * (l/sid); //diag. at bed height
     if(fd!=48)
     {
         Index idx;
-        (Array3f(17.281, 25.922, 34.563) - diag).abs2().minCoeff(&idx);
+        (Array3f(14.142, 21.2132, 28.28427) - diag).abs2().minCoeff(&idx);
         return int(idx);
     }
     else
     {
-        if(diag<35.030) return 3;
+        if(diag<28.67) return 3;
         else return 4;
     }
 
+}
+
+void MapContainer::ReadDAPdata(string name)
+{
+    ifstream ifs(name);
+    if(!ifs.is_open())
+    {
+        cout<<name <<" is not open!!!"<<endl;
+        exit(100);
+    }
+    string dump;
+    getline(ifs, dump);
+    int kVp;
+    double dap;
+    for(int i=0;i<120;i++)
+    {
+        ifs>>kVp>>dap>>dump>>dump>>dump;
+        dapMap[kVp] = dap;
+    }
+    ifs.close();
+    return;
 }

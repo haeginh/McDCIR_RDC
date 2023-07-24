@@ -3,46 +3,68 @@
 
 #include <iostream>
 #include <string>
-#include <eigen3/Eigen/Dense>
 
 class Config {
 public:
     Config();
-    void saveConfig(std::string fileN);
-    bool loadConfig(std::string fileN);
+    void SaveConfig(std::string fileN);
+    bool LoadConfig(std::string fileN);
+    bool CheckConfig();
 
-    int getPortNum() const {
-        return _port;
+    int GetPortNum() const {
+        return portNum;
     }
 
-    std::string getIpAdress() const {
-        return _ipAdress;
+    std::string GetIpAdress() const {
+        return ipAddress;
     } 
 
-    std::string getPhantomFile() const {
-        return _phantom;
+    std::string GetCArmFile() const {
+        return dataDir+cArm;
     } 
 
-    std::string getPatientFile() const {
-        return _patient;
+    std::string GetCArmDetFile() const {
+        return dataDir+cArmDet;
     } 
 
-    std::string getCArmFile() const {
-        return _cArm;
+    std::string GetTableFile() const {
+        return dataDir+table;
     } 
 
-    std::string getGlassFile() const {
-        return _glass;
+    std::string GetGlassFile() const {
+        return dataDir+glass;
     } 
 
-    Eigen::Vector3d getIsoCenter() const {
-        return _isoCenter;
+    std::string GetCurtainFile() const {
+        return dataDir+curtain;
+    } 
+
+    std::string GetPatientFile() const {
+        return dataDir+patient;
+    } 
+
+    std::string GetBeamFile() const {
+        return dataDir+beam;
+    } 
+
+    std::string GetSphereFile() const {
+        return dataDir+sphere;
+    } 
+
+    std::string GetProfileFile() const {
+        return dataDir+profile;
+    } 
+
+    std::string GetPhantomDir() const {
+        return phantomDir;
     } 
 
 private:
-    int _port;
-    std::string _ipAdress, _phantom, _patient, _cArm, _glass;
-    Eigen::Vector3d _isoCenter;
+    bool CheckIP(const std::string& ip_address);
+    bool CheckPort(int port);
+    int portNum;
+    std::string ipAddress, dataDir, phantomDir, cArm, cArmDet, table, glass, 
+    curtain, patient, beam, sphere, profile;
 };
 
 #endif /* INCLUDE_OCR_CONFIG_HH_ */

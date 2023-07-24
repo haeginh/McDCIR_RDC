@@ -46,7 +46,7 @@ bool Communicator::StartServer(int port)
             ssize_t receivedBytes;
             int server_fd = this->server_fd;
             int graceHalt(0);
-            float readBuff[500];
+            float readBuff[1500];
             char* msg="stop";
             while(this->isListening||graceHalt++<this->GetWorkerNum()*10){
                 timer.start();
@@ -54,7 +54,7 @@ bool Communicator::StartServer(int port)
                 socklen_t connectSocketLength = sizeof(connectSocket);
                 getpeername(client_fd, (struct sockaddr*)&clientAddress, &connectSocketLength);
                 // char clientIP[sizeof(clientAddress.sin_addr)+1] = {0};
-                receivedBytes = recvfrom(server_fd, readBuff, 500*4, 0, (struct sockaddr*)&clientAddress, &client_addr_size);
+                receivedBytes = recvfrom(server_fd, readBuff, 1500*4, 0, (struct sockaddr*)&clientAddress, &client_addr_size);
                 if(receivedBytes>0){
                     int id = (int)readBuff[0];
          
@@ -133,9 +133,11 @@ bool Communicator::StartServer(int port)
                                     bodyStruct.jointC(i, 1) = readBuff[pos++];
                                     bodyStruct.jointC(i, 2) = readBuff[pos++];
                                 }
+                                bodyStruct.confScore = readBuff[pos++];
                                 bodyStruct.jointC = (bodyStruct.jointC.rowwise().homogeneous()*get<2>(workerData[readBuff[0]]).matrix().transpose()).rowwise().hnormalized();
                                 if(bodyStruct.jointC.row(0).leftCols(2).squaredNorm()>dist2Limit) continue;
                                 bodyStruct.time = current.time;
+                                bodyStruct.trackedWorker = id;
                                 bodyMap[bodyID] = bodyStruct;
                             }
                         }
@@ -147,9 +149,51 @@ bool Communicator::StartServer(int port)
                             current.glassChk = true;
                         }
                         if(opt&8){
-                            //add new frame only if posture data is IN.
-                            // RDCWindow::Instance().postureUpdated = true;
-                            for(auto iter:bodyMap) current.bodyMap[iter.first] = iter.second;
+                            for(auto iter:bodyMap) {
+                                if(iter.first<0) //for not identificated person
+                                {
+                                    if(matched.find(iter.first)!=matched.end())
+                                    {
+                                        if(matched[iter.first].second>10)
+                                        {
+                                            int bID = matched[iter.first].first;
+                                            if(current.bodyMap.find(bID)!=current.bodyMap.end() &&
+                                               current.bodyMap[bID].trackedWorker != iter.second.trackedWorker &&
+                                               float(clock() - current.bodyMap[bID].time)<0.3*CLOCKS_PER_SEC &&
+                                               current.bodyMap[bID].confScore > iter.second.confScore)  continue;
+                                            current.bodyMap[bID] = iter.second;
+                                            continue;
+                                        }
+                                        else if(matched[iter.first].second<-10) matched.erase(iter.first);
+                                        else if(float(current.time - current.bodyMap[matched[iter.first].first].time)<3*CLOCKS_PER_SEC && (current.bodyMap[matched[iter.first].first].jointC.row(0).leftCols(2)-iter.second.jointC.row(0).leftCols(2)).squaredNorm()<=100)
+                                        {
+                                            current.bodyMap[matched[iter.first].first] = iter.second;
+                                            matched[iter.first].second++;
+                                            continue;
+                                        }
+                                        else matched[iter.first].second--;
+                                    }
+                                    bool registered(false);
+                                    for(auto iter2:current.bodyMap)
+                                    {
+                                        if(iter2.first<0 && floor(fabs(iter2.first)*0.01)==floor(fabs(iter.first)*0.01)) continue; //not identified from same worker
+                                        if((iter2.second.jointC.row(0).leftCols(2)-iter.second.jointC.row(0).leftCols(2)).squaredNorm()>225) continue;
+                                        if(current.bodyMap.find(iter.first)!=current.bodyMap.end()) current.bodyMap.erase(iter.first);
+                                        current.bodyMap[iter2.first] = iter.second;
+                                        if(iter2.first>=0 && float(current.time - iter2.second.time)<3*CLOCKS_PER_SEC)
+                                           matched[iter.first] = make_pair(iter2.first, 1);
+                                        registered = true;
+                                        break;
+                                    }
+                                    if(registered) continue;
+                                }
+                                if(current.bodyMap.find(iter.first)!=current.bodyMap.end() &&
+                                   current.bodyMap[iter.first].trackedWorker != iter.second.trackedWorker &&
+                                   float(clock() - current.bodyMap[iter.first].time)<0.3*CLOCKS_PER_SEC &&
+                                   current.bodyMap[iter.first].confScore > iter.second.confScore)  continue;
+
+                                current.bodyMap[iter.first] = iter.second;
+                            }
                             
                             // current.bodyMap = bodyMap;
                         }
@@ -322,18 +366,18 @@ Communicator::~Communicator()
     // delete server;
 }
 
-void Communicator::SetInitPack(RotationList vQ, MatrixXi BE)
-{
-    for (int i = 0; i < BE_ROWS; i++)
-    {
-        initPack[6 * i] = vQ[i].w();
-        initPack[6 * i + 1] = vQ[i].x();
-        initPack[6 * i + 2] = vQ[i].y();
-        initPack[6 * i + 3] = vQ[i].z();
-        initPack[6 * i + 4] = BE(i, 0);
-        initPack[6 * i + 5] = BE(i, 1);
-    }
-}
+// void Communicator::SetInitPack(RotationList vQ, MatrixXi BE)
+// {
+//     for (int i = 0; i < BE_ROWS; i++)
+//     {
+//         initPack[6 * i] = vQ[i].w();
+//         initPack[6 * i + 1] = vQ[i].x();
+//         initPack[6 * i + 2] = vQ[i].y();
+//         initPack[6 * i + 3] = vQ[i].z();
+//         initPack[6 * i + 4] = BE(i, 0);
+//         initPack[6 * i + 5] = BE(i, 1);
+//     }
+// }
 
 // void Communicator::Initialization()
 // {

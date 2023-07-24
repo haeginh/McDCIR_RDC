@@ -7,9 +7,8 @@
 #include <thread>
 #include <chrono>
 
-#define BE_ROWS 22
-// #define SERVER_IP "192.168.0.100"
-#define SERVER_IP "127.0.0.1"
+#define SERVER_IP "192.168.0.100"
+// #define SERVER_IP "127.0.0.1"
 using namespace std;
 typedef tuple<string, int, Eigen::Affine3d> WORKER;
 struct Body
@@ -17,6 +16,8 @@ struct Body
     // clock_t time;
     RotationList posture = RotationList(18);
     MatrixXd jointC = MatrixXd::Zero(24, 3);
+    int confScore;
+    int trackedWorker;
     clock_t time;
 };
 
@@ -120,7 +121,7 @@ public:
     } 
 
     void InitializeDataSet();
-    void SetInitPack(RotationList vQ, MatrixXi BE);
+    // void SetInitPack(RotationList vQ, MatrixXi BE);
     double dist2Limit;
 private:
     Communicator():dist2Limit(40000),nextWorkerID(0)
@@ -139,7 +140,7 @@ private:
     thread mainLoop;
     bool stopSignal;
 
-
+    map<int, pair<int, int>> matched; 
 };
 
 #endif

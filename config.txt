@@ -1,8 +1,13 @@
 portNumber 30303
 IpAdress localhost
-phantomFile AM_2
-patientFile patient.ply
-cArmFile c-arm.ply
-glassFile glass.ply
-isoCenter    112    80 113.5
-#isoCenter    100    100 90.5
+dataDir /data/1_ocr_main/data
+phantomDir /data/DCIR_PHANTOM
+cArm c-arm.ply
+cArmDet FPD.ply
+table table.ply
+glass leadGlass.ply
+curtain pbShield.ply
+patient patient.ply
+beam beam.ply
+sphere sphere.ply
+profile profile.txt

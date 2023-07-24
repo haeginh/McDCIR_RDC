@@ -15,6 +15,7 @@ typedef
 class MapContainer{
     public:
     MapContainer(float _fl);
+    void ReadDAPdata(string name);
     void ReadSpectrum(string name);
     bool ReadMap(string name, ArrayXf& _skinMap, ArrayXf& _lensMap);
     bool SetCArm(int kVp, RowVector3f cArm, RowVector3f tableTrans, int fd);
@@ -53,6 +54,7 @@ class MapContainer{
     Matrix3f cArm_IT;
     
     // double dap;
+    map<int, double> dapMap;
     int rot0, ang0, kVp0, fd0, spot0;
 
     // map<int, double> spec;
