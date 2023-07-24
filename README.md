@@ -1,3 +1,7 @@
-# RDC module for DCIR system
-Real-time dose calculator for interventional radiologists.
-Based on dose map methodology.
+# GUI for VIR system
+## Installation
+## Classes
+* Config
+config.txt 
+
+libboost-all-dev

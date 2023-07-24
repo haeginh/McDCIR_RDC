@@ -1,10 +1,6 @@
-cmake_minimum_required(VERSION 3.9.0)
-
-project(RemoteCal)
-
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_C_STANDARD 99)
+cmake_minimum_required(VERSION 3.16)
+project(VIR_GUI)
+list(PREPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 #openMP
 FIND_PACKAGE(OpenMP)
@@ -14,67 +10,34 @@ if (OPENMP_FOUND)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 endif()
 
-#Geant4
-option(WITH_GEANT4_UIVIS "Build example with Geant4 UI and Vis drivers" ON)
-if(WITH_GEANT4_UIVIS)
-  find_package(Geant4 REQUIRED ui_all vis_all)
-else()
-  find_package(Geant4 REQUIRED)
-endif()
-
-#k4a
-FIND_PACKAGE(k4a REQUIRED)
-FIND_PACKAGE(k4abt REQUIRED)
-add_subdirectory(extern)
-add_subdirectory(helper)
+#boost
+find_package(Boost REQUIRED COMPONENTS system filesystem)
 
 # libigl
-option(LIBIGL_WITH_OPENGL            "Use OpenGL"         ON)
-option(LIBIGL_WITH_OPENGL_GLFW       "Use GLFW"           ON)
-option(LIBIGL_WITH_OPENGL_GLFW_IMGUI "Use imgui"           ON)
-option(LIBIGL_WITH_TETGEN            "Use TetGen"         ON)
-find_package(LIBIGL REQUIRED QUIET)
-link_directories(/home/hurel/codes/libigl/v2.2.0/lib/)
+option(LIBIGL_EMBREE           "Build target igl::embree"          ON)
+option(LIBIGL_GLFW             "Build target igl::glfw"            ON)
+option(LIBIGL_IMGUI            "Build target igl::imgui"           ON)
+option(LIBIGL_COPYLEFT_TETGEN  "Build target igl_copyleft::tetgen" ON)
+include(libigl)
 
-## trase
-#find_package(trase REQUIRED)
-
-file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cpp)
-file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.h)
-file(GLOB g4sources ${PROJECT_SOURCE_DIR}/src/*.cc)
-file(GLOB g4headers ${PROJECT_SOURCE_DIR}/include/*.hh)
+#include
+file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cc)
+file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hh)
+file(GLOB plotSource ${PROJECT_SOURCE_DIR}/implot-master/*.cpp)
+file(GLOB imgui $ENV{IMGUI_DIR}/*.cpp)
 include_directories(${PROJECT_SOURCE_DIR}/include
-                    ~/Azure-Kinect-Samples/body-tracking-samples/sample_helper_includes/
-#                    ~/codes/trase/src/
-                    ~/codes/libigl/v2.2.0/external/
-                    ~/codes/libigl/v2.2.0/include/
-                    ~/codes/libigl/v2.2.0/external/libigl-imgui/
-                    ~/codes/libigl/v2.2.0/external/imgui/examples/
-                    ~/codes/libigl/v2.2.0/external/imgui/
-                    ~/codes/libigl/v2.2.0/external/glfw/include
-                    ~/codes/libigl/v2.2.0/external/glad/include
+                    ${PROJECT_SOURCE_DIR}/implot-master
+                    ${Boost_INCLUDE_DIRS}
                     )
 
-add_executable(RemoteCal RemoteCal.cc ${sources} ${headers})
-add_executable(MapCalculator calculator.cc ${sources} ${headers} ${g4sources} ${g4headers})
+add_executable(${PROJECT_NAME} main.cc ${sources} ${headers} ${plotSource})
 
-# Dependencies of this library
-target_link_libraries(RemoteCal
-    igl::core
-    igl::opengl
-#    igl::opengl_glfw
-#    /usr/lib/libglfw3.a
-    /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
-    igl::opengl_glfw_imgui
-    igl::tetgen
-    k4a
-    k4arecord
-    k4abt
-    window_controller_3d::window_controller_3d
-#    glfw
-#    trase
-    ${Geant4_LIBRARIES}
-    /home/hurel/codes/libigl/v2.2.0/lib/libglfw3.a
-    )
-target_link_libraries(MapCalculator ${Geant4_LIBRARIES})
-
+target_link_libraries(${PROJECT_NAME} PUBLIC
+                     igl::core
+                     igl::glfw
+                     igl::imgui
+                     igl::embree
+                     igl_copyleft::tetgen
+                     mysqlclient
+                     ${Boost_LIBRARIES}
+                     )
